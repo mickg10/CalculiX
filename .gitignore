@@ -1,0 +1,6 @@
+SPOOLES.2.2
+src/arrow/
+*.o
+*.a
+ccx_accel
+*.log

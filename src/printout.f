@@ -43,6 +43,9 @@
      &     jfaces,mortar,islavsurf(2,*),ielprop(*),nload,i,ntmat_,id,
      &     nelemload(2,*),nrhcon(*),ipobody(2,*),ibody(3,*),nbody,
      &     nmethod,ne,iforce,nactdof(0:mi(2),*)
+#ifdef CCX_ACCEL
+      integer ccx_fastdat_active
+#endif
 !     
       real*8 v(0:mi(2),*),t1(*),fn(0:mi(2),*),stx(6,mi(1),*),bhetot,
      &     eei(6,mi(1),*),xstate(nstate_,mi(1),*),ener(2,mi(1),*),
@@ -638,6 +641,13 @@ c     &           ne,cflag,co,vold,iforce,mi,ielprop,prop)
           endif
         endif
       enddo
-!     
+!
+#ifdef CCX_ACCEL
+!     fast parallel C writer for the *EL PRINT,S block: flush Fortran unit 5, then append (env-gated)
+      if(ccx_fastdat_active().ne.0) then
+         flush(5)
+         call ccx_fastdat_flush()
+      endif
+#endif
       return
       end
