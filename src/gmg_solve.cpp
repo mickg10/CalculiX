@@ -15,6 +15,31 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+#if defined(__APPLE__) && defined(__aarch64__)
+#include <sys/sysctl.h>
+#endif
+// GMG solve thread policy (goal §20.8/§20.0): on this gather-latency-bound kernel, using all logical cores is
+// slower than the performance-core count, because efficiency cores cause OpenMP barrier load-imbalance. Cap the
+// SOLVE to the P-core count (auto-detected on Apple Silicon; ambient elsewhere) while leaving CCX assembly/output
+// at ambient threads. Override with GMG_THREADS. The cap affects speed only, never the result.
+namespace {
+int gmg_perf_core_default(int ambient){
+#if defined(__APPLE__) && defined(__aarch64__)
+    int p=0; size_t sz=sizeof p;
+    if(sysctlbyname("hw.perflevel0.physicalcpu",&p,&sz,nullptr,0)==0 && p>0 && p<ambient) return p;  // P-cores
+#endif
+    return ambient;
+}
+struct OmpThreadCap {       // RAII: cap on entry, restore ambient on every exit (returns + catch)
+#ifdef _OPENMP
+    int saved;
+    explicit OmpThreadCap(int cap): saved(omp_get_max_threads()){ if(cap>0 && cap!=saved) omp_set_num_threads(cap); }
+    ~OmpThreadCap(){ omp_set_num_threads(saved); }
+#else
+    explicit OmpThreadCap(int){}
+#endif
+};
+} // namespace
 // Coarse dense solve uses LAPACK (dpotrf/dpotrs). Apple Accelerate is the default on macOS (and is where AMX
 // lives); the rest of the solver is portable OpenMP C++. Compile-time control (-D...):
 //   default on macOS         -> CCX_GMG_ACCEL=1  (Apple Accelerate LAPACK)
@@ -228,6 +253,16 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     if((ev=getenv("GMG_MAXIT")) && atoi(ev)>0) maxit=atoi(ev);
     if((ev=getenv("GMG_TOL"))   && atof(ev)>0) tol=atof(ev);
     if(mt<3 || mt>64 || nk<=0 || maxit<=0 || !(tol>0)) return 1;   // invalid inputs -> direct fallback
+    int gmg_amb =
+#ifdef _OPENMP
+        omp_get_max_threads();
+#else
+        1;
+#endif
+    int gmg_cap = gmg_perf_core_default(gmg_amb);
+    if((ev=getenv("GMG_THREADS")) && atoi(ev)>0) gmg_cap=atoi(ev);
+    OmpThreadCap _gmg_omp_cap(gmg_cap);
+    if(verbose) fprintf(stderr,"[gmg] solve threads cap=%d (ambient=%d)\n", gmg_cap, gmg_amb);
   try {
     // disp columns -> eqnode/eqcomp
     std::vector<long> cnt(mt,0);
