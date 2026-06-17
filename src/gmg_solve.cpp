@@ -193,7 +193,11 @@ static void cheb4(const Level&L,int deg,const double*rhs,double*x,WS&w){
 }
 
 static std::vector<Level> LV; static std::vector<WS> WSP; static std::vector<double> Cfac; static int Cn=0;
-static int DEG=4,NPRE=1,NPOST=1,GAMMA=2;
+// Cycle defaults tuned for the bandwidth-bound regular-voxel solve (row236): the fine SpMV re-streams the
+// 2.4GB matrix from DRAM every apply, so minimizing SpMV COUNT wins. DEG=2 V-cycle (GAMMA=1) needs more PCG
+// iters than DEG=4 W-cycle but each iter is far cheaper -> ~20% faster e2e (measured). Env-overridable
+// (GMG_DEG/NPRE/NPOST/GAMMA); the acceptance gate falls back to a direct solve if a harder problem won't converge.
+static int DEG=2,NPRE=1,NPOST=1,GAMMA=1;
 
 static void vcycle(int lv,const double*rhs,double*x){
     if(lv==(int)LV.size()-1){ for(int i=0;i<Cn;i++) x[i]=rhs[i]; int nrhs=1,info; char uplo='L';
