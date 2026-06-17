@@ -128,7 +128,11 @@ ccc   to remove end
         call getnewline(inpc,textpart,istat,n,key,iline,ipol,inl,
      &       ipoinp,inp,ipoinpc)
         if((istat.lt.0).or.(key.eq.1)) return
+#ifdef CCX_FAST_PARSE
+        call ccxftoi(textpart(1),i,istat)
+#else
         read(textpart(1)(1:10),'(i10)',iostat=istat) i
+#endif
         if(istat.gt.0) then
           call inputerror(inpc,ipoinpc,iline,
      &         "*NODE%",ier)
@@ -137,7 +141,11 @@ ccc   to remove end
         if(n.eq.1) then
           co(1,i)=0.d0
         else
+#ifdef CCX_FAST_PARSE
+          call ccxftof(textpart(2),co(1,i),istat)
+#else
           read(textpart(2)(1:20),'(f20.0)',iostat=istat) co(1,i)
+#endif
           if(istat.gt.0) then
             call inputerror(inpc,ipoinpc,iline,
      &           "*NODE%",ier)
@@ -147,7 +155,11 @@ ccc   to remove end
         if(n.le.2) then
           co(2,i)=0.d0
         else
+#ifdef CCX_FAST_PARSE
+          call ccxftof(textpart(3),co(2,i),istat)
+#else
           read(textpart(3)(1:20),'(f20.0)',iostat=istat) co(2,i)
+#endif
           if(istat.gt.0) then
             call inputerror(inpc,ipoinpc,iline,
      &           "*NODE%",ier)
@@ -157,7 +169,11 @@ ccc   to remove end
         if(n.le.3) then
           co(3,i)=0.d0
         else
+#ifdef CCX_FAST_PARSE
+          call ccxftof(textpart(4),co(3,i),istat)
+#else
           read(textpart(4)(1:20),'(f20.0)',iostat=istat) co(3,i)
+#endif
           if(istat.gt.0) then
             call inputerror(inpc,ipoinpc,iline,
      &           "*NODE%",ier)

@@ -21,7 +21,10 @@ ifeq ($(UNAME_S),Darwin)
   SPOOLES_A   ?= $(SPOOLES_DIR)/spooles.a
   ACCEL_ARCH  ?= -mcpu=apple-m3
   ZSTD        ?= /opt/homebrew/opt/zstd
-  ACCEL_OBJS  = accel_solver.o gmg_solve.o ccx_fastdat.o ccx_zreader.o
+  ACCEL_OBJS  = accel_solver.o gmg_solve.o ccx_fastdat.o ccx_zreader.o ccx_fastnum.o
+  # Fast C deck parser (nodes.f/elements.f internal reads -> strtol/strtod). On by default;
+  # build with FAST_PARSE_DEF= to A/B the stock Fortran reads.
+  FAST_PARSE_DEF ?= -DCCX_FAST_PARSE
   ARROW ?= 0
   ifeq ($(ARROW),1)
     ARROW_DEF  = -DCCX_ACCEL_ARROW
@@ -29,7 +32,7 @@ ifeq ($(UNAME_S),Darwin)
   endif
   CFLAGS = -Wall -O2 -fopenmp -I$(SPOOLES_DIR) -DARCH="Linux" -DSPOOLES -DARPACK -DMATRIXSTORAGE \
            -DUSE_MT=1 -DCCX_ACCEL $(ARROW_DEF)
-  FFLAGS = -Wall -O2 -fopenmp -cpp -DCCX_ACCEL
+  FFLAGS = -Wall -O2 -fopenmp -cpp -DCCX_ACCEL $(FAST_PARSE_DEF)
   ARROW_INC = -Iarrow/include
   LIBS = \
          $(ACCEL_OBJS) $(ARROW_OBJS) \
@@ -83,6 +86,8 @@ ccx_fastdat.o: ccx_fastdat.c
 	$(CLANG) -O2 -Xpreprocessor -fopenmp -I$(LIBOMP)/include -c ccx_fastdat.c -o $@
 ccx_zreader.o: ccx_zreader.c
 	$(CLANG) -O2 -I$(ZSTD)/include -c ccx_zreader.c -o $@
+ccx_fastnum.o: ccx_fastnum.c
+	$(CLANG) -O3 -c ccx_fastnum.c -o $@
 ccx_arrowout.o: ccx_arrowout.c
 	$(CLANG) -O2 $(ARROW_INC) -c ccx_arrowout.c -o $@
 na_core.o: arrow/src/nanoarrow.c

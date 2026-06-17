@@ -4,3 +4,7 @@ src/arrow/
 *.a
 ccx_accel
 *.log
+# linked binaries (build artifacts)
+src/CalculiX
+src/CalculiX_MT
+src/CalculiX_MT_*
