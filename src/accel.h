@@ -24,4 +24,11 @@ void accel_set_coordmap_(double *co, ITG *nactdof, ITG *nk, ITG *mi);
 int  ccx_arrow_write(const char *path, long nk, int mt,
                      const double *co, const double *v, const double *stn);
 
+/* Transparent streaming reader for plain / gzip (.gz) / zstd (.zst) input decks (readinput.c). ccx_zopen
+   also tries <path>.gz then <path>.zst when <path> is absent; ccx_zgets matches fgets semantics. */
+typedef struct ccx_zfile ccx_zfile;
+ccx_zfile *ccx_zopen(const char *path);
+char      *ccx_zgets(char *buf, int n, ccx_zfile *z);
+void       ccx_zclose(ccx_zfile *z);
+
 #endif /* CCX_ACCEL_H */

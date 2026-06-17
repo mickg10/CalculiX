@@ -114,13 +114,15 @@ static void cfg_set(accel_config_t *c, const char *key, const char *val) {
     else if (!strcmp(key, "solve")) {
         /* high-level mode selector. direct|double -> exact double Cholesky;
            float -> float factor + Richardson; float-pcg -> float factor as
-           preconditioner for double CG (mixed->high precision). */
-        if (!strcmp(val, "direct") || !strcmp(val, "double")) { c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 0; }
-        else if (!strcmp(val, "float")) { c->use_float = 1; c->pcg = 0; c->defl = 0; c->gmg = 0; }
-        else if (!strcmp(val, "float-pcg") || !strcmp(val, "pcg")) { c->use_float = 1; c->pcg = 1; c->defl = 0; c->gmg = 0; }
-        else if (!strcmp(val, "defl-pcg") || !strcmp(val, "defl")) { c->use_float = 1; c->pcg = 1; c->defl = 1; c->gmg = 0; }
-        else if (!strcmp(val, "gmg")) { c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 1; c->gmg_auto = 0; }
-        else if (!strcmp(val, "auto")) { c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 1; c->gmg_auto = 1; }
+           preconditioner for double CG (mixed->high precision). Selecting any
+           recognized mode opts in to the accel backend (sets enabled). */
+        if (!strcmp(val, "direct") || !strcmp(val, "double")) { c->enabled = 1; c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 0; }
+        else if (!strcmp(val, "float")) { c->enabled = 1; c->use_float = 1; c->pcg = 0; c->defl = 0; c->gmg = 0; }
+        else if (!strcmp(val, "float-pcg") || !strcmp(val, "pcg")) { c->enabled = 1; c->use_float = 1; c->pcg = 1; c->defl = 0; c->gmg = 0; }
+        else if (!strcmp(val, "defl-pcg") || !strcmp(val, "defl")) { c->enabled = 1; c->use_float = 1; c->pcg = 1; c->defl = 1; c->gmg = 0; }
+        else if (!strcmp(val, "gmg")) { c->enabled = 1; c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 1; c->gmg_auto = 0; }
+        else if (!strcmp(val, "auto")) { c->enabled = 1; c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 1; c->gmg_auto = 1; }
+        /* unrecognized value: leave enabled as-is (does not opt in) */
     }
     else if (!strcmp(key, "pcg"))
         c->pcg = atoi(val) != 0;
@@ -158,7 +160,8 @@ static void cfg_load_file(accel_config_t *c, const char *path, int *loaded) {
 
 static accel_config_t accel_config_load(void) {
     accel_config_t c;
-    c.enabled = 1;
+    c.enabled = 0;   /* OPT-IN: a bare run (no CCX_ACCEL* env) falls back to stock SPOOLES -> zero default change.
+                        Enabled by CCX_ACCEL=on or by selecting a mode via CCX_ACCEL_SOLVE=<mode>. */
     snprintf(c.order, sizeof c.order, "%s", cfg_default_usermetis() ? "usermetis" : "metis");
     c.use_float = 0;
     c.pcg = 0;
@@ -195,6 +198,8 @@ static accel_config_t accel_config_load(void) {
     if ((e = getenv("CCX_ACCEL_PERMCACHE"))) { cfg_set(&c, "permcache", e); env_used = 1; }
     if (getenv("CCX_ACCEL_VERBOSE"))         { c.verbose = 1; env_used = 1; }
     if (env_used) snprintf(c.source + strlen(c.source), sizeof c.source - strlen(c.source), "env");
+    /* explicit CCX_ACCEL=off|0 always wins, regardless of any CCX_ACCEL_SOLVE mode selected above */
+    if ((e = getenv("CCX_ACCEL")) && (!strcmp(e, "off") || !strcmp(e, "0"))) c.enabled = 0;
     return c;
 }
 
