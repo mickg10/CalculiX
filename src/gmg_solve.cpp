@@ -15,7 +15,26 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
-#include <Accelerate/Accelerate.h>   // LAPACK dpotrf_/dpotrs_ (coarse dense solve)
+// Coarse dense solve uses LAPACK (dpotrf/dpotrs). Apple Accelerate is the default on macOS (and is where AMX
+// lives); the rest of the solver is portable OpenMP C++. Compile-time control (-D...):
+//   default on macOS         -> CCX_GMG_ACCEL=1  (Apple Accelerate LAPACK)
+//   -DCCX_GMG_NOACCEL        -> portable reference: standard LAPACK Fortran ABI (link OpenBLAS/MKL/Netlib)
+//   -DCCX_GMG_ACCEL=1 / =0   -> force either path explicitly
+#if defined(CCX_GMG_ACCEL)
+  /* caller forced it explicitly */
+#elif defined(__APPLE__) && !defined(CCX_GMG_NOACCEL)
+  #define CCX_GMG_ACCEL 1
+#else
+  #define CCX_GMG_ACCEL 0
+#endif
+#if CCX_GMG_ACCEL
+  #include <Accelerate/Accelerate.h>   // Accelerate LAPACK dpotrf_/dpotrs_ (AMX-backed)
+#else
+  extern "C" {                          // portable LAPACK Fortran ABI (OpenBLAS / MKL / Netlib)
+    void dpotrf_(const char*, const int*, double*, const int*, int*);
+    void dpotrs_(const char*, const int*, const int*, const double*, const int*, double*, const int*, int*);
+  }
+#endif
 
 namespace {
 using clk = std::chrono::high_resolution_clock;
