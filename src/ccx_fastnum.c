@@ -9,6 +9,7 @@
  */
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 void ccxftoi_(const char *s, int *v, int *istat, long slen) {
     char b[140];
@@ -30,4 +31,53 @@ void ccxftof_(const char *s, double *v, int *istat, long slen) {
     char *e; double x = strtod(p, &e);
     *istat = (e == p) ? 1 : 0;
     *v = x;
+}
+
+/* ccxsplit — byte-exact C port of splitline.f: split the input line `text` into `*np` comma-separated
+ * fields in `textpart` (16 fields, each `ltp`=132 chars, left-justified, space-padded). A space terminates
+ * the line (CalculiX convention: data fields have no embedded blanks). Replaces the per-char Fortran
+ * substring loop (the #2 front-end hotspot, ~2.5M calls on the row236 deck). Fortran passes the hidden
+ * char lengths last: lt = len(text) = 1320, ltp = element len(textpart) = 132. Called from splitline.f
+ * only under -DCCX_FAST_PARSE; produces identical textpart bytes -> deck parse stays bit-exact. */
+void ccxsplit_(const char *text, char *textpart, int *np, long lt, long ltp) {
+    const long FW = ltp;            /* field width (132) */
+    int n = 1;                      /* current field, 1-based */
+    long j = 0;                     /* chars placed in current field */
+    long i;
+    for (i = 0; i < lt; i++) {
+        char c = text[i];
+        if (c != ',') {
+            if (c == ' ') break;    /* space terminates the line */
+            j++;
+            if (j <= FW) textpart[(long)(n - 1) * FW + (j - 1)] = c;
+        } else {
+            for (long k = j; k < FW; k++) textpart[(long)(n - 1) * FW + k] = ' ';  /* pad field */
+            j = 0;
+            n++;
+            if (n > 16) {           /* >16 entries: match splitline.f error handling exactly */
+                int ierror = 0;
+                for (long k = i + 1; k < lt; k++) {
+                    if (text[k] == ',') continue;
+                    if (text[k] == ' ') {
+                        if (ierror == 0) break;
+                        fprintf(stderr, "*ERROR in splitline: there should not\n"
+                                        "       be more than 16 entries in a \n       line; \n");
+                        exit(201);
+                    }
+                    ierror = 1;
+                }
+                break;
+            }
+        }
+    }
+    if (j == 0) {
+        n = n - 1;
+    } else {
+        for (long k = j; k < FW; k++) textpart[(long)(n - 1) * FW + k] = ' ';
+    }
+    for (int f = n; f < 16; f++) {  /* clear unused fields n+1..16 (1-based) to spaces */
+        char *pf = textpart + (long)f * FW;
+        for (long k = 0; k < FW; k++) pf[k] = ' ';
+    }
+    *np = n;
 }
