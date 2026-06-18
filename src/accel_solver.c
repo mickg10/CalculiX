@@ -410,6 +410,16 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
     const long nnz = (long)n + (long)(*nzs);
     const double sig = (sigma) ? *sigma : 0.0;
 
+    /* Shifted/indefinite system (modal/buckling: K - sigma*M). accel_spooles is NOT passed the off-diagonal
+       mass aub, so it cannot form the shifted off-diagonals (stock SPOOLES uses au - sigma*aub). Solving the
+       diagonal-only-shifted matrix would silently return the answer to the WRONG system -> decline to stock
+       SPOOLES (which has aub). Static (sigma==0, the accel target) is unaffected. */
+    if (sig != 0.0) {
+        if (verbose) fprintf(stderr,
+            "[accel] sigma=%.3e (shifted matrix; off-diagonal mass unavailable here) -> stock SPOOLES\n", sig);
+        return 1;
+    }
+
     double t0 = now_s();
     long   *colStarts = (long*)  malloc((size_t)(n + 1) * sizeof(long));
     int    *rowIdx    = (int*)   malloc((size_t)nnz     * sizeof(int));
@@ -728,7 +738,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
            the float answer is untrustworthy -> fall back to a correct double solve. */
         const char *fa = getenv("CCX_ACCEL_FLOAT_ACCEPT");
         double accept = fa ? atof(fa) : 1e-2;   /* row217 reaches ~1e-4 (ok); row236 ~0.99 (reject) */
-        if (final_resid > accept) {
+        if (!(final_resid <= accept)) {          /* NaN-safe: NaN/inf resid -> fall back to double, never accept */
             if (verbose) fprintf(stderr,
                 "[accel] float refine resid %.2e > accept %.1e -> DOUBLE fallback (correct)\n",
                 final_resid, accept);
