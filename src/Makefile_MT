@@ -89,7 +89,7 @@ ccx_zreader.o: ccx_zreader.c
 ccx_fastnum.o: ccx_fastnum.c
 	$(CLANG) -O3 -c ccx_fastnum.c -o $@
 ccx_bulkparse.o: ccx_bulkparse.c
-	$(CLANG) -O3 -c ccx_bulkparse.c -o $@
+	$(CC) -O3 -fopenmp -c ccx_bulkparse.c -o $@   # gcc/libgomp: same OMP runtime as the Fortran active during parse
 ccx_arrowout.o: ccx_arrowout.c
 	$(CLANG) -O2 $(ARROW_INC) -c ccx_arrowout.c -o $@
 na_core.o: arrow/src/nanoarrow.c
