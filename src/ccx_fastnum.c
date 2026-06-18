@@ -17,8 +17,9 @@ void ccxftoi_(const char *s, int *v, int *istat, long slen) {
     if (n < 0) n = 0;
     memcpy(b, s, (size_t)n); b[n] = '\0';
     char *p = b; while (*p == ' ') p++;
+    if (*p == '\0') { *v = 0; *istat = 0; return; }  /* all-blank field -> 0, no error (matches Fortran i10) */
     char *e; long x = strtol(p, &e, 10);
-    *istat = (e == p) ? 1 : 0;     /* nothing parsed -> error, like the Fortran read */
+    *istat = (e == p) ? 1 : 0;     /* non-numeric -> error, like the Fortran read */
     *v = (int)x;
 }
 
@@ -28,6 +29,7 @@ void ccxftof_(const char *s, double *v, int *istat, long slen) {
     if (n < 0) n = 0;
     memcpy(b, s, (size_t)n); b[n] = '\0';
     char *p = b; while (*p == ' ') p++;
+    if (*p == '\0') { *v = 0.0; *istat = 0; return; }  /* all-blank field -> 0.0, no error (matches Fortran f20.0) */
     char *e; double x = strtod(p, &e);
     *istat = (e == p) ? 1 : 0;
     *v = x;
