@@ -21,7 +21,7 @@ ifeq ($(UNAME_S),Darwin)
   SPOOLES_A   ?= $(SPOOLES_DIR)/spooles.a
   ACCEL_ARCH  ?= -mcpu=apple-m3
   ZSTD        ?= /opt/homebrew/opt/zstd
-  ACCEL_OBJS  = accel_solver.o gmg_solve.o ccx_fastdat.o ccx_zreader.o ccx_fastnum.o
+  ACCEL_OBJS  = accel_solver.o gmg_solve.o ccx_fastdat.o ccx_zreader.o ccx_fastnum.o ccx_bulkparse.o
   # Fast C deck parser (nodes.f/elements.f internal reads -> strtol/strtod). On by default;
   # build with FAST_PARSE_DEF= to A/B the stock Fortran reads.
   FAST_PARSE_DEF ?= -DCCX_FAST_PARSE
@@ -88,6 +88,8 @@ ccx_zreader.o: ccx_zreader.c
 	$(CLANG) -O2 -I$(ZSTD)/include -c ccx_zreader.c -o $@
 ccx_fastnum.o: ccx_fastnum.c
 	$(CLANG) -O3 -c ccx_fastnum.c -o $@
+ccx_bulkparse.o: ccx_bulkparse.c
+	$(CLANG) -O3 -c ccx_bulkparse.c -o $@
 ccx_arrowout.o: ccx_arrowout.c
 	$(CLANG) -O2 $(ARROW_INC) -c ccx_arrowout.c -o $@
 na_core.o: arrow/src/nanoarrow.c
