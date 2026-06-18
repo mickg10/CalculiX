@@ -33,11 +33,7 @@
      &     iline,ipol,inl,ipoinp(2,*),inp(3,*),ipoinpc(0:*),ier
 !     
       real*8 co(3,*)
-#ifdef CCX_FAST_PARSE
-      integer ccxbulk_on
-      external ccxbulk_on
-#endif
-!     
+!
       inoset=0
 !     
 !     checking for set definition
@@ -128,15 +124,6 @@ ccc   to remove end
       endif
       enddo loop
 !
-#ifdef CCX_FAST_PARSE
-!     bulk C parse of the *NODE data block (common case: no NSET=); leaves the next
-!     keyword in textpart/n/istat exactly like getnewline. NSET= falls through to the loop.
-      if((inoset.eq.0).and.(ccxbulk_on().ne.0)) then
-        call ccxbulk_nodes(inpc,co,nk,nk_,ier,iline,ipol,inl,
-     &       ipoinp,inp,ipoinpc,textpart,n,key,istat)
-        return
-      endif
-#endif
       do
         call getnewline(inpc,textpart,istat,n,key,iline,ipol,inl,
      &       ipoinp,inp,ipoinpc)

@@ -51,4 +51,5 @@ done
 echo "=== parse integration: $i decks -> $pass pass, $fail fail, $skip skip (no output) ==="
 [ -n "$failed_list" ] && echo "FAILED:$failed_list"
 if [ "$pass" = 0 ]; then echo "PARSE INTEGRATION: INVALID (no deck produced comparable output -- check binaries)"; exit 2; fi
+if [ "$skip" -gt $(( i / 2 )) ]; then echo "PARSE INTEGRATION: INVALID (>50% of decks skipped -- under-coverage, check build/env)"; exit 2; fi
 if [ "$fail" = 0 ]; then echo "PARSE INTEGRATION: GREEN ($pass decks compared identical)"; else echo "PARSE INTEGRATION: RED"; exit 1; fi

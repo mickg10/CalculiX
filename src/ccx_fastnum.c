@@ -1,11 +1,16 @@
 /* ccx_fastnum.c — fast integer/float field parsers for the input deck. Tooling / APHYSICAL.
  *
  * CalculiX parses NODE/ELEMENT bulk data with Fortran internal reads (read(textpart(k),'(f20.0)') x), ~16M
- * of them for a 1.3M-node / 1.2M-element deck (~5.5s, serial -- the format machinery per number is the cost).
- * These C helpers (strtol/strtod on the comma-split, space-padded textpart field) replace them, called from
- * nodes.f/elements.f only under -DCCX_ACCEL. Semantics match the Fortran reads: istat>0 iff no number parsed.
- * Equivalent for the deck's tokens (no embedded blanks -- fields are already comma-split), incl E-notation and
- * the f20.0 "implied integer" case (strtod("15")==15.0). Fortran passes the hidden string length last.
+ * of them on a 1.3M-node / 1.2M-element deck. These C helpers (strtol/strtod on the comma-split, space-padded
+ * textpart field) replace them, called from nodes.f/elements.f/splitline.f only under -DCCX_FAST_PARSE (build
+ * with FAST_PARSE_DEF= to A/B the stock Fortran reads). Measured front-end win ~4s on row236.
+ *
+ * Equivalence to the Fortran reads (validated bit-exact by dev/parse_tests.sh): a blank field -> 0 with no
+ * error (matches i10/f20.0); E-notation and Fortran D-exponent ("1.5D3"); the f20.0 "implied integer" case
+ * (strtod("15")==15.0); trailing junk after an integer -> error (like i10). Known, documented scope limits
+ * (safe for valid machine-generated decks): the C reads the leading numeric token, so it does NOT enforce the
+ * i10/f20.0 column width (>10-digit ints / >20-char floats), does NOT replicate Fortran's bare-sign exponent
+ * ("1.5+3"==1500), and ccxftof accepts trailing junk after a float. Fortran passes the hidden string length last.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -19,7 +24,9 @@ void ccxftoi_(const char *s, int *v, int *istat, long slen) {
     char *p = b; while (*p == ' ') p++;
     if (*p == '\0') { *v = 0; *istat = 0; return; }  /* all-blank field -> 0, no error (matches Fortran i10) */
     char *e; long x = strtol(p, &e, 10);
-    *istat = (e == p) ? 1 : 0;     /* non-numeric -> error, like the Fortran read */
+    if (e == p) { *v = 0; *istat = 1; return; }      /* nothing parsed -> error, like the Fortran read */
+    while (*e == ' ') e++;
+    *istat = (*e == '\0') ? 0 : 1;                    /* trailing junk after the integer -> error, like i10 */
     *v = (int)x;
 }
 
@@ -30,6 +37,7 @@ void ccxftof_(const char *s, double *v, int *istat, long slen) {
     memcpy(b, s, (size_t)n); b[n] = '\0';
     char *p = b; while (*p == ' ') p++;
     if (*p == '\0') { *v = 0.0; *istat = 0; return; }  /* all-blank field -> 0.0, no error (matches Fortran f20.0) */
+    for (char *q = p; *q; q++) if (*q == 'D' || *q == 'd') *q = 'e';  /* Fortran D-exponent -> C e-exponent */
     char *e; double x = strtod(p, &e);
     *istat = (e == p) ? 1 : 0;
     *v = x;
