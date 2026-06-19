@@ -594,9 +594,13 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
         SparseSolve(F, (DenseVector_Double){ .count = n, .data = xb });
         SparseCleanup(F);
         t_solve = now_s() - t2;
-        /* residual gate: ||b - A*xb|| / ||b|| must be finite + tiny, else the factor/solve is untrustworthy
-           (singular LDLT, NaN, bad assembly) -> decline (rc=1) so the exact SPOOLES solve runs; never copy a
-           bad x into b. The exact Cholesky reaches ~1e-12 on the SPD static matrix, so this never fires there. */
+        /* residual gate: accept the solve iff the TRUE residual ||b-A*xb||/||b|| meets the §18 acceptable bar
+           (1e-2, the SAME ceiling M6 enforces for the GMG path), else decline (rc=1) so the exact SPOOLES solve
+           runs -- never copy an untrustworthy x (singular LDLT, NaN, bad assembly) into b. NOTE: the bar is
+           1e-2, NOT eps-level: a direct Cholesky's residual is ~growth*eps*cond(A), and a near-singular 3.87M
+           elasticity matrix (cond~1e10) legitimately lands at ~1e-6..1e-7 -- a CORRECT solve. An earlier 1e-8
+           bar falsely rejected exactly that and forced a slow (and on row236 buggy 16T) stock SPOOLES fallback.
+           A genuinely broken factor scores O(0.1-1), so 1e-2 cleanly separates correct from garbage. NaN-safe. */
         { double *rr = (double*)malloc((size_t)n * sizeof(double));
           if (!rr) { free(xb); rc = 2; goto done; }
           for (int i = 0; i < n; ++i) rr[i] = b[i];
@@ -605,9 +609,10 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
           for (int i = 0; i < n; ++i) { rn += rr[i]*rr[i]; bn += b[i]*b[i]; }
           free(rr);
           final_resid = (bn > 0.0) ? sqrt(rn / bn) : sqrt(rn);
-          if (!(final_resid < 1e-8)) {                              /* NaN-safe */
+          const double ACCEPT_MAX = 1e-2;                           /* §18/M6 acceptable-residual ceiling */
+          if (!(final_resid < ACCEPT_MAX)) {                        /* NaN-safe */
               if (verbose) fprintf(stderr,
-                  "[accel] direct solve resid %.3e (>=1e-8) -> stock SPOOLES fallback\n", final_resid);
+                  "[accel] direct solve resid %.3e (>=%.0e) -> stock SPOOLES fallback\n", final_resid, ACCEPT_MAX);
               free(xb); rc = 1; goto done; } }
         for (int i = 0; i < n; ++i) b[i] = xb[i];
         free(xb);
