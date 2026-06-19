@@ -14,9 +14,12 @@
  * interleave out of order. This accelerator targets unoriented stress decks (e.g. row236); for
  * mixed-orientation decks, omit CCX_ACCEL_OUT_DAT_FAST and use CalculiX's standard writer.
  *
- * Failure policy (opt-in tooling): never call exit(). On a record-time allocation failure the whole stress
- * block is dropped and a loud warning is printed (a partial block would look complete but be wrong); on a
- * write error the warning notes the .dat may be incomplete. In all cases CalculiX itself keeps running.
+ * Failure policy (opt-in tooling): FAIL-CLOSED. This path is requested explicitly via env, so if it cannot
+ * deliver the COMPLETE stress block -- record-time OOM, format-buffer OOM, or a write/close error -- it prints
+ * a loud diagnostic and exit(202)s. A missing or partial stress block must never be reported to a downstream
+ * pipeline as a successful run (exit 0): a partial block looks complete but is wrong, and an absent block with
+ * exit 0 looks valid but is incomplete -- both are silent-wrong-output. Malformed-WIDTH lines (NaN/Inf/huge
+ * values) are a different case: the block is still COMPLETE and row-aligned, so those are warned, not fatal.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,14 +79,19 @@ void ccx_fastdat_flush_(void) {
     const char *path = getenv("CCX_ACCEL_OUT_DAT_FAST");
     if (!path || !*path) { ccx_fastdat_reset(); return; }
     if (g_oom) {
-        fprintf(stderr, "[accel] fast .dat: prior OOM -> stress block NOT written; rerun without "
-                        "CCX_ACCEL_OUT_DAT_FAST for complete output\n");
-        ccx_fastdat_reset(); return;
+        fprintf(stderr, "[accel] fast .dat: record-time OOM -> cannot write a complete stress block; failing "
+                        "closed (exit 202). Rerun without CCX_ACCEL_OUT_DAT_FAST for complete output.\n");
+        ccx_fastdat_reset(); exit(202);
     }
     if (g_n == 0) { ccx_fastdat_reset(); return; }
 
     FILE *f = fopen(path, "ab");
-    if (!f) { perror("[accel] fast .dat fopen"); ccx_fastdat_reset(); return; }
+    if (!f) {                                /* cannot open the .dat -> stress block would be lost (the Fortran
+                                                write is bypassed when this path is active) -> fail closed */
+        perror("[accel] fast .dat fopen");
+        fprintf(stderr, "[accel] fast .dat: cannot open '%s' -> stress block lost; failing closed (exit 202)\n", path);
+        ccx_fastdat_reset(); exit(202);
+    }
     setvbuf(f, NULL, _IOFBF, 1 << 22);
 
     /* bounded scratch (no single giant malloc): 1M lines (~99 MB), shrinking if memory is tight. */
@@ -91,8 +99,9 @@ void ccx_fastdat_flush_(void) {
     char *buf = NULL;
     while (chunk >= 4096 && !(buf = (char *)malloc(chunk * CCX_DAT_LINE))) chunk >>= 1;
     if (!buf) {
-        fprintf(stderr, "[accel] fast .dat: cannot allocate format buffer -> stress block NOT written\n");
-        fclose(f); ccx_fastdat_reset(); return;
+        fprintf(stderr, "[accel] fast .dat: cannot allocate format buffer -> incomplete stress block; "
+                        "failing closed (exit 202)\n");
+        fclose(f); ccx_fastdat_reset(); exit(202);
     }
 
     long malformed = 0; int werr = 0;
@@ -118,12 +127,13 @@ void ccx_fastdat_flush_(void) {
     }
     free(buf);
     int cerr = (fclose(f) != 0);
-    if (werr || cerr)
-        fprintf(stderr, "[accel] fast .dat: WRITE ERROR (%s) -> .dat stress block may be incomplete\n",
-                werr ? "fwrite" : "fclose");
-    else
-        fprintf(stderr, "[accel] fast .dat: wrote %.1f MB stress (%zu lines, parallel C)%s\n",
-                (double)g_n * CCX_DAT_LINE / 1e6, g_n, malformed ? " [WARN below]" : "");
+    if (werr || cerr) {
+        fprintf(stderr, "[accel] fast .dat: WRITE ERROR (%s) -> .dat stress block incomplete; failing "
+                        "closed (exit 202)\n", werr ? "fwrite" : "fclose");
+        ccx_fastdat_reset(); exit(202);
+    }
+    fprintf(stderr, "[accel] fast .dat: wrote %.1f MB stress (%zu lines, parallel C)%s\n",
+            (double)g_n * CCX_DAT_LINE / 1e6, g_n, malformed ? " [WARN below]" : "");
     if (malformed)
         fprintf(stderr, "[accel] fast .dat: %ld line(s) had non-standard width (NaN/Inf/huge stress?) -> "
                         "space-padded to stay row-aligned; check the solution\n", malformed);

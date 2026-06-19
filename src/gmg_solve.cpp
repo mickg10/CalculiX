@@ -187,6 +187,10 @@ static void bj_apply(const std::vector<double>&Dinv,const double*r,double*z,int 
     for(int b=0;b<nb;b++){ const double*M=&Dinv[9*b]; const double*rr=&r[3*b]; double*zz=&z[3*b];
         zz[0]=M[0]*rr[0]+M[1]*rr[1]+M[2]*rr[2]; zz[1]=M[3]*rr[0]+M[4]*rr[1]+M[5]*rr[2]; zz[2]=M[6]*rr[0]+M[7]*rr[1]+M[8]*rr[2]; }
 }
+// Determinism (M7): the OpenMP reduction combines per-thread partial sums in an unspecified order, so this
+// dot product is NOT bit-identical run-to-run even at a fixed thread count. That perturbs the PCG path at the
+// ~1e-16 level; the iteration still converges to the same true residual, so maxU is reproducible to solver
+// tolerance -- far inside the §18 ±1% bound. Bit-exact reproducibility would need an ordered tree reduction.
 static double ddot(const double*a,const double*b,int n){ double s=0;
     #pragma omp parallel for reduction(+:s) schedule(static)
     for(int i=0;i<n;i++) s+=a[i]*b[i]; return s; }
@@ -381,8 +385,16 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     double true_rel=std::sqrt(tr)/res0;
     if(verbose) fprintf(stderr,"[gmg] PCG iters=%d rel=%.2e true_rel=%.2e solve=%.2fs total=%.2fs\n",
                         iters,rel,true_rel,secs(ts,clk::now()),secs(T0,clk::now()));
-    if(!(true_rel < tol*2.0)){
-        fprintf(stderr,"[gmg] NOT CONVERGED (true_rel=%.3e tol=%.1e iters=%d) -> direct fallback\n",true_rel,tol,iters);
+    // SAFETY ceiling decoupled from the perf tol: accept only if the TRUE residual is below BOTH a small
+    // multiple of the requested convergence tol AND a hard physical ceiling (1e-2, the §18 accept floor).
+    // Loosening GMG_TOL for speed can therefore never silently lower the correctness bar -- a looser perf
+    // tol only triggers the exact-solve fallback sooner; it never lets a worse-than-1% solution pass.
+    // (NaN-safe: !(NaN < accept) == true -> reject -> fallback.) Not env-overridable on purpose.
+    const double GMG_ACCEPT_MAX = 1e-2;
+    double accept = tol*2.0; if(accept > GMG_ACCEPT_MAX) accept = GMG_ACCEPT_MAX;
+    if(!(true_rel < accept)){
+        fprintf(stderr,"[gmg] NOT ACCEPTED (true_rel=%.3e accept=%.1e tol=%.1e iters=%d) -> direct fallback\n",
+                true_rel,accept,tol,iters);
         LV.clear(); WSP.clear(); Cfac.clear(); Cfac.shrink_to_fit();
         return 4;   // b untouched
     }

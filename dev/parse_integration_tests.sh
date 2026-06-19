@@ -36,8 +36,9 @@ for inp in ../test/*.inp; do
   for e in dat frd; do
     if [ -s "$df/$stem.$e" ] || [ -s "$ds/$stem.$e" ]; then any=1; fi
     if [ -s "$df/$stem.$e" ] && [ -s "$ds/$stem.$e" ]; then
-      if [ "$e" = frd ]; then  # drop the run-time DATE/TIME/HOST header lines before comparing
-        diff -q <(grep -av -E '1U(DATE|TIME|HOST)' "$df/$stem.$e") <(grep -av -E '1U(DATE|TIME|HOST)' "$ds/$stem.$e") >/dev/null 2>&1 || bad=1
+      if [ "$e" = frd ]; then  # drop build/run metadata header lines (1UDATE/TIME/HOST + 1UCOMPILETIME/VERSION,
+                               # which carry the per-binary build stamp) before comparing the parse output
+        diff -q <(grep -av -E '1U(DATE|TIME|HOST|COMPILETIME|VERSION)' "$df/$stem.$e") <(grep -av -E '1U(DATE|TIME|HOST|COMPILETIME|VERSION)' "$ds/$stem.$e") >/dev/null 2>&1 || bad=1
       else cmp -s "$df/$stem.$e" "$ds/$stem.$e" || bad=1; fi
     elif { [ -s "$df/$stem.$e" ] && [ ! -s "$ds/$stem.$e" ]; } || { [ ! -s "$df/$stem.$e" ] && [ -s "$ds/$stem.$e" ]; }; then
       bad=1   # asymmetric output -> parse divergence

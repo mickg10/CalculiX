@@ -132,6 +132,8 @@ int main(void) {
         "1.5E-3","1.5e+10","1E10","1e-10",".5","5.","-0.0","100.0","0.001","123456.789",
         "1.234567890123456E2","2.0","-999.999","0.","1.5E3","6.022e23","0.0001234","   ","",
         "1.5D3","-2.5d-2","1.0D-3","6.022D23",     /* Fortran D-exponent -> must match f20.0 */
+        "1.5+3","-2.5-3",".5+3","2+5",             /* Fortran bare-sign exponent -> must match f20.0 */
+        "1.5X","1.5.3",                            /* trailing junk -> error (matches f20.0) */
         NULL};
     for (int i=0; flts[i]; i++) test_flt(flts[i]);
     /* ---- tokenizer corpus (deck-style: no embedded blanks) ---- */

@@ -5,12 +5,12 @@
  * textpart field) replace them, called from nodes.f/elements.f/splitline.f only under -DCCX_FAST_PARSE (build
  * with FAST_PARSE_DEF= to A/B the stock Fortran reads). Measured front-end win ~4s on row236.
  *
- * Equivalence to the Fortran reads (validated bit-exact by dev/parse_tests.sh): a blank field -> 0 with no
- * error (matches i10/f20.0); E-notation and Fortran D-exponent ("1.5D3"); the f20.0 "implied integer" case
- * (strtod("15")==15.0); trailing junk after an integer -> error (like i10). Known, documented scope limits
- * (safe for valid machine-generated decks): the C reads the leading numeric token, so it does NOT enforce the
- * i10/f20.0 column width (>10-digit ints / >20-char floats), does NOT replicate Fortran's bare-sign exponent
- * ("1.5+3"==1500), and ccxftof accepts trailing junk after a float. Fortran passes the hidden string length last.
+ * Equivalence to the Fortran reads (validated bit-exact by dev/parse_tests.sh): blank field -> 0, no error
+ * (matches i10/f20.0); E-notation, Fortran D-exponent ("1.5D3") and bare-sign exponent ("1.5+3"==1500); the
+ * f20.0 "implied integer" case (strtod("15")==15.0); trailing junk -> error (like i10/f20.0). One documented
+ * scope limit (safe for valid machine-generated decks; pathological otherwise): the C reads the leading numeric
+ * token rather than enforcing the i10/f20.0 COLUMN WIDTH, so >10-digit ints / >20-char floats are not truncated
+ * to the first 10/20 columns the way the Fortran read would. Fortran passes the hidden string length last.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -31,15 +31,20 @@ void ccxftoi_(const char *s, int *v, int *istat, long slen) {
 }
 
 void ccxftof_(const char *s, double *v, int *istat, long slen) {
-    char b[140];
-    long n = (slen < 139) ? slen : 139;
+    char b[160];                                       /* +room for an inserted 'e' (field is <=132) */
+    long n = (slen < 150) ? slen : 150;
     if (n < 0) n = 0;
     memcpy(b, s, (size_t)n); b[n] = '\0';
     char *p = b; while (*p == ' ') p++;
     if (*p == '\0') { *v = 0.0; *istat = 0; return; }  /* all-blank field -> 0.0, no error (matches Fortran f20.0) */
     for (char *q = p; *q; q++) if (*q == 'D' || *q == 'd') *q = 'e';  /* Fortran D-exponent -> C e-exponent */
+    { char *q = p; if (*q == '+' || *q == '-') q++;    /* Fortran bare-sign exponent "1.5+3"==1500 -> "1.5e+3" */
+      while ((*q >= '0' && *q <= '9') || *q == '.') q++;
+      if (*q == '+' || *q == '-') { memmove(q + 1, q, strlen(q) + 1); *q = 'e'; } }
     char *e; double x = strtod(p, &e);
-    *istat = (e == p) ? 1 : 0;
+    if (e == p) { *v = 0.0; *istat = 1; return; }      /* nothing parsed -> error, like the Fortran read */
+    while (*e == ' ') e++;
+    *istat = (*e == '\0') ? 0 : 1;                     /* trailing junk after the float -> error, like f20.0 */
     *v = x;
 }
 

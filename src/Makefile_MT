@@ -1,7 +1,11 @@
 
 # Platform autodetect. On Linux this is the stock upstream multithreaded build (UNCHANGED). On macOS
 # (Darwin) it additionally compiles in the optional Apple Accelerate / geometric-multigrid backend
-# (clang-built accel objects + -DCCX_ACCEL + Accelerate/libomp). The source hooks are guarded by
+# (accel objects + -DCCX_ACCEL + Accelerate). All OpenMP code is built with the GCC toolchain so the
+# WHOLE process shares ONE OpenMP runtime (libgomp): gfortran-14 mandates libgomp, so the GMG/.dat
+# OpenMP objects use g++-14/gcc-14 too -- otherwise omp_set_num_threads (the GMG P-core cap) would
+# bind to libgomp while the clang/libomp parallel regions run on libomp, silently voiding the cap and
+# risking oversubscription. The no-OpenMP Accelerate objects stay on clang. The source hooks are guarded by
 # #ifdef CCX_ACCEL, so the define and the objects always travel together (no undefined symbols).
 # The backend is RUNTIME OPT-IN: a bare run falls back to stock SPOOLES; activate with
 #   CCX_ACCEL_SOLVE=auto|gmg|direct|float-pcg   (and CCX_ACCEL=off forces stock SPOOLES).
@@ -13,9 +17,8 @@ ifeq ($(UNAME_S),Darwin)
   # ---- macOS (Apple Silicon): Homebrew gcc/gfortran body + clang accel objects ----
   CC  = gcc-14
   FC  = gfortran-14
-  CLANG   = clang
-  CLANGXX = clang++
-  LIBOMP      ?= /opt/homebrew/opt/libomp
+  CXX = g++-14            # GNU C++ for the OpenMP GMG object -> libgomp (same runtime as gfortran)
+  CLANG   = clang         # no-OpenMP Accelerate objects only (accel_solver/zreader/fastnum)
   ARPACK      ?= /opt/homebrew/opt/arpack
   SPOOLES_DIR ?= ../../SPOOLES.2.2
   SPOOLES_A   ?= $(SPOOLES_DIR)/spooles.a
@@ -39,7 +42,7 @@ ifeq ($(UNAME_S),Darwin)
          $(SPOOLES_A) \
          -L$(ARPACK)/lib -larpack \
          -framework Accelerate \
-         -L$(LIBOMP)/lib -lomp -lc++ \
+         -lstdc++ \
          -lz -L$(ZSTD)/lib -lzstd -lm
 else
   # ---- Linux (stock upstream Makefile_MT, unchanged) ----
@@ -79,11 +82,14 @@ CalculiX_MT.a: $(OCCXF) $(OCCXC)
 # ---- macOS accel objects: clang/clang++ with their own flags (NOT the gcc .c.o rule above) ----
 accel_solver.o: accel_solver.c accel.h
 	$(CLANG) -O3 $(ACCEL_ARCH) -c accel_solver.c -o $@
+# GMG solver: GNU C++ so its OpenMP (incl. the P-core OmpThreadCap) shares libgomp with the Fortran body.
+# -flax-vector-conversions lets g++ accept Apple's vecLib NEON headers pulled in by <Accelerate/Accelerate.h>.
 gmg_solve.o: gmg_solve.cpp
-	$(CLANGXX) -std=c++17 -O3 $(ACCEL_ARCH) -DNDEBUG -DACCELERATE_NEW_LAPACK \
-	    -Xpreprocessor -fopenmp -I$(LIBOMP)/include -c gmg_solve.cpp -o $@
+	$(CXX) -std=c++17 -O3 $(ACCEL_ARCH) -DNDEBUG -DACCELERATE_NEW_LAPACK \
+	    -flax-vector-conversions -fopenmp -c gmg_solve.cpp -o $@
+# Parallel .dat writer: GNU C so its OpenMP shares libgomp too (no clang/libomp object in the process).
 ccx_fastdat.o: ccx_fastdat.c
-	$(CLANG) -O2 -Xpreprocessor -fopenmp -I$(LIBOMP)/include -c ccx_fastdat.c -o $@
+	$(CC) -O2 -fopenmp -c ccx_fastdat.c -o $@
 ccx_zreader.o: ccx_zreader.c
 	$(CLANG) -O2 -I$(ZSTD)/include -c ccx_zreader.c -o $@
 ccx_fastnum.o: ccx_fastnum.c

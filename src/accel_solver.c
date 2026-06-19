@@ -558,6 +558,18 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
     if (!strcmp(cfg.order, "usermetis")) ordname = "metis(no-libmetis)";
 #endif
 
+    /* M7 determinism: the default ordering (usermetis/metis) is SERIAL METIS -> a fixed fill-reducing
+       permutation -> the factorization, and therefore maxU, is reproducible run-to-run (the §18 gate).
+       MTMetis and SparseOrderDefault may order in PARALLEL, whose result depends on thread scheduling ->
+       NOT reproducible. Warn unconditionally if such an ordering is in effect so a reproducibility-critical
+       run is never silently nondeterministic. (Fixed-thread numeric reproducibility: SparseSolve / the GMG
+       PCG combine partial sums in unspecified order, so results are reproducible to solver tolerance, not
+       bit-identical; that is well inside the §18 ±1% maxU bound and far below the accept ceiling.) */
+    if (sfo.orderMethod == SparseOrderMTMetis || sfo.orderMethod == SparseOrderDefault)
+        fprintf(stderr, "[accel] WARNING: ordering '%s' is parallel/nondeterministic -> results are NOT "
+                        "reproducible run-to-run; use 'metis'/'usermetis' (default) for reproducibility.\n",
+                cfg.order);
+
     int rc = 0;
     double t_factor = 0, t_solve = 0;
     int refine_iters = 0;
@@ -576,10 +588,30 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
         t_factor = now_s() - t1;
         MEMLOG("after Cholesky factor (+L)");
         double t2 = now_s();
-        SparseSolve(F, (DenseVector_Double){ .count = n, .data = b });
-        t_solve = now_s() - t2;
-        MEMLOG("after solve");
+        double *xb = (double*)malloc((size_t)n * sizeof(double));
+        if (!xb) { SparseCleanup(F); rc = 2; goto done; }
+        for (int i = 0; i < n; ++i) xb[i] = b[i];
+        SparseSolve(F, (DenseVector_Double){ .count = n, .data = xb });
         SparseCleanup(F);
+        t_solve = now_s() - t2;
+        /* residual gate: ||b - A*xb|| / ||b|| must be finite + tiny, else the factor/solve is untrustworthy
+           (singular LDLT, NaN, bad assembly) -> decline (rc=1) so the exact SPOOLES solve runs; never copy a
+           bad x into b. The exact Cholesky reaches ~1e-12 on the SPD static matrix, so this never fires there. */
+        { double *rr = (double*)malloc((size_t)n * sizeof(double));
+          if (!rr) { free(xb); rc = 2; goto done; }
+          for (int i = 0; i < n; ++i) rr[i] = b[i];
+          symm_lower_spmv_sub(n, colStarts, rowIdx, vals, xb, rr);   /* rr = b - A*xb */
+          double rn = 0.0, bn = 0.0;
+          for (int i = 0; i < n; ++i) { rn += rr[i]*rr[i]; bn += b[i]*b[i]; }
+          free(rr);
+          final_resid = (bn > 0.0) ? sqrt(rn / bn) : sqrt(rn);
+          if (!(final_resid < 1e-8)) {                              /* NaN-safe */
+              if (verbose) fprintf(stderr,
+                  "[accel] direct solve resid %.3e (>=1e-8) -> stock SPOOLES fallback\n", final_resid);
+              free(xb); rc = 1; goto done; } }
+        for (int i = 0; i < n; ++i) b[i] = xb[i];
+        free(xb);
+        MEMLOG("after solve");
         MEMLOG("after factor cleanup");
     } else {
         float *valsf = (float*)malloc((size_t)nnz * sizeof(float));
