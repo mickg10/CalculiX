@@ -351,36 +351,6 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     if(verbose) fprintf(stderr,"[gmg] hierarchy %zu levels, coarsest n=%d, total setup %.2fs (deg=%d npre=%d npost=%d gamma=%d)\n",
                         LV.size(),Cn,secs(T0,clk::now()),DEG,NPRE,NPOST,GAMMA);
 
-    // STENCIL-AUDIT (§20.9 P0 kill-test, env GMG_STENCIL_AUDIT): what fraction of fine block-rows are EXACTLY
-    // representable by ONE constant 27-point block stencil (+mask for missing neighbors)? Surface/boundary nodes
-    // (fewer incident elements -> different diagonal+coupling blocks) are the exceptions. If that fraction is
-    // large the "regular-grid stencil SpMV" degenerates into an irregular format -> demote the stencil lever.
-    // Read-only; uses the fine BCSR (LV[0].B) + lattice (LV[0].ijk). Zero cost unless the env is set.
-    if(getenv("GMG_STENCIL_AUDIT")){
-        const BCSR&B=LV[0].B; const std::vector<long>&ijk=LV[0].ijk; int nbf=B.nb;
-        auto key=[](long dx,long dy,long dz){ return (int)(((dx+2)*5+(dy+2))*5+(dz+2)); };  // dx,dy,dz in [-2,2]
-        long tI=0,tcnt=-1; for(int I=0;I<nbf;I++){ long c=B.ptr[I+1]-B.ptr[I]; if(c>tcnt){tcnt=c;tI=I;} } // template = max-degree (interior) node
-        std::vector<double> tmpl((size_t)125*9, std::nan("")); std::vector<char> have(125,0);
-        long ix0=ijk[3*tI],iy0=ijk[3*tI+1],iz0=ijk[3*tI+2];
-        for(long b=B.ptr[tI];b<B.ptr[tI+1];b++){ int J=B.col[b]; long dx=ijk[3*J]-ix0,dy=ijk[3*J+1]-iy0,dz=ijk[3*J+2]-iz0;
-            if(dx<-2||dx>2||dy<-2||dy>2||dz<-2||dz>2) continue; int k=key(dx,dy,dz); have[k]=1; for(int q=0;q<9;q++) tmpl[(size_t)k*9+q]=B.val[(size_t)b*9+q]; }
-        double dnorm=0; { int k=key(0,0,0); for(int q=0;q<9;q++) dnorm+=tmpl[(size_t)k*9+q]*tmpl[(size_t)k*9+q]; } dnorm=std::sqrt(dnorm); if(dnorm<=0) dnorm=1;
-        const double rtol=1e-9; long exact=0,exc_val=0,exc_wide=0,full27=0;
-        for(int I=0;I<nbf;I++){ long ix=ijk[3*I],iy=ijk[3*I+1],iz=ijk[3*I+2]; int ok=1,wide=0;
-            if(B.ptr[I+1]-B.ptr[I]==27) full27++;
-            for(long b=B.ptr[I];b<B.ptr[I+1];b++){ int J=B.col[b]; long dx=ijk[3*J]-ix,dy=ijk[3*J+1]-iy,dz=ijk[3*J+2]-iz;
-                if(dx<-1||dx>1||dy<-1||dy>1||dz<-1||dz>1){ ok=0;wide=1;break; } int k=key(dx,dy,dz);
-                if(!have[k]){ ok=0; break; } double d2=0; for(int q=0;q<9;q++){ double e=B.val[(size_t)b*9+q]-tmpl[(size_t)k*9+q]; d2+=e*e; }
-                if(std::sqrt(d2) > rtol*dnorm){ ok=0; break; } }
-            if(ok) exact++; else if(wide) exc_wide++; else exc_val++; }
-        double fexc=(double)(exc_val+exc_wide)/nbf, fex=(double)exact/nbf;
-        double ceil2=1.0/(fex/2.0+fexc), ceilInf=(fexc>0?1.0/fexc:1e9);   // Amdahl blended fine-SpMV speedup ceilings
-        fprintf(stderr,"[gmg] STENCIL AUDIT: nbf=%d template_nbrs=%ld full27=%ld(%.1f%%) stencil_exact=%ld(%.2f%%) "
-                       "exc_value=%ld(%.2f%%) exc_wide=%ld(%.2f%%) | blended fine-SpMV ceiling: S=2 -> %.2fx, S=inf -> %.2fx\n",
-                nbf,tcnt,full27,100.0*full27/nbf,exact,100.0*exact/nbf,exc_val,100.0*exc_val/nbf,exc_wide,100.0*exc_wide/nbf,
-                ceil2,ceilInf);
-    }
-
     // ---- PCG with V/W-cycle preconditioner ----
     const BCSR&A0=LV[0].B; int N=n;
     std::vector<double> x(N,0.0),r(N),z(N),p(N),Ap(N);
@@ -444,8 +414,14 @@ extern "C" int ccx_gmg_solve(int n, const long* cs, const int* ri, const double*
     FILE*g=fopen(coordmap,"rb"); if(!g){ if(verbose)fprintf(stderr,"[gmg] cannot open coordmap %s\n",coordmap); return 1; }
     int64_t nk64,mt64; if(fread(&nk64,8,1,g)!=1||fread(&mt64,8,1,g)!=1){fclose(g);return 1;}
     long nk=(long)nk64; int mt=(int)mt64; if(mt<3||mt>64||nk<=0){fclose(g);return 1;}   // validate before alloc
-    std::vector<double> co((size_t)3*nk); std::vector<int> na((size_t)mt*nk);
-    if(fread(co.data(),8,(size_t)3*nk,g)!=(size_t)3*nk||fread(na.data(),4,(size_t)mt*nk,g)!=(size_t)mt*nk){fclose(g);return 1;}
-    fclose(g);
-    return ccx_gmg_solve_mem(n,cs,ri,va,b,co.data(),na.data(),nk,mt,maxit,tol,verbose);
+    int rc=1;
+    try {                                            // bad_alloc from the co/na vectors must not cross extern "C"
+        std::vector<double> co((size_t)3*nk); std::vector<int> na((size_t)mt*nk);
+        if(fread(co.data(),8,(size_t)3*nk,g)==(size_t)3*nk && fread(na.data(),4,(size_t)mt*nk,g)==(size_t)mt*nk){
+            fclose(g); g=NULL;
+            return ccx_gmg_solve_mem(n,cs,ri,va,b,co.data(),na.data(),nk,mt,maxit,tol,verbose);
+        }
+    } catch(...) { rc=6; }
+    if(g) fclose(g);
+    return rc;
 }
