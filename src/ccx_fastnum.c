@@ -5,20 +5,19 @@
  * textpart field) replace them, called from nodes.f/elements.f/splitline.f only under -DCCX_FAST_PARSE (build
  * with FAST_PARSE_DEF= to A/B the stock Fortran reads). Measured front-end win ~4s on row236.
  *
- * Equivalence to the Fortran reads (validated bit-exact by dev/parse_tests.sh): blank field -> 0, no error
- * (matches i10/f20.0); E-notation, Fortran D-exponent ("1.5D3") and bare-sign exponent ("1.5+3"==1500); the
- * f20.0 "implied integer" case (strtod("15")==15.0); trailing junk -> error (like i10/f20.0). One documented
- * scope limit (safe for valid machine-generated decks; pathological otherwise): the C reads the leading numeric
- * token rather than enforcing the i10/f20.0 COLUMN WIDTH, so >10-digit ints / >20-char floats are not truncated
- * to the first 10/20 columns the way the Fortran read would. Fortran passes the hidden string length last.
+ * Equivalence to the Fortran reads (validated bit-exact by dev/parse_tests.sh): the i10/f20.0 COLUMN WIDTH is
+ * enforced (only the first 10 / 20 columns are read, exactly as read(textpart(k)(1:10),'(i10)') /
+ * (1:20),'(f20.0)' do); blank field -> 0, no error; E-notation, Fortran D-exponent ("1.5D3") and bare-sign
+ * exponent ("1.5+3"==1500); the f20.0 "implied integer" case (strtod("15")==15.0); trailing junk -> error.
+ * Fortran passes the hidden string length of textpart(k) (132) last; the width cap is applied here.
  */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
 void ccxftoi_(const char *s, int *v, int *istat, long slen) {
-    char b[140];
-    long n = (slen < 139) ? slen : 139;
+    char b[16];
+    long n = (slen < 10) ? slen : 10;   /* i10: the Fortran read consumes only the first 10 columns */
     if (n < 0) n = 0;
     memcpy(b, s, (size_t)n); b[n] = '\0';
     char *p = b; while (*p == ' ') p++;
@@ -31,8 +30,8 @@ void ccxftoi_(const char *s, int *v, int *istat, long slen) {
 }
 
 void ccxftof_(const char *s, double *v, int *istat, long slen) {
-    char b[160];                                       /* +room for an inserted 'e' (field is <=132) */
-    long n = (slen < 150) ? slen : 150;
+    char b[32];                                        /* 20 cols + room for an inserted 'e' */
+    long n = (slen < 20) ? slen : 20;                  /* f20.0: the Fortran read consumes only the first 20 columns */
     if (n < 0) n = 0;
     memcpy(b, s, (size_t)n); b[n] = '\0';
     char *p = b; while (*p == ' ') p++;

@@ -8,8 +8,9 @@
  *  - integer: Fortran read(field(1:10),'(i10)') ; success iff istat<=0. Compare error-flag + value.
  *  - real   : Fortran read(field(1:20),'(f20.0)'); compare error-flag + the double BIT-for-bit.
  *  - tokenizer: splitline(text)->(n,textpart[16][132]); compare n + all 16*132 bytes.
- * Note: integer fields >10 digits and D-exponent floats are out of scope (never emitted by valid decks;
- * the i10/f20 width vs whole-field strtol diverge only there) and are excluded from the corpus.
+ * The i10/f20.0 column-width truncation and Fortran D-exponent floats are both covered. The only remaining
+ * out-of-scope case (never emitted by valid decks) is a 10-digit integer VALUE that overflows 32-bit int,
+ * where Fortran i10 flags an iostat error but strtol wraps -- an overflow difference, not a width one.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -118,12 +119,14 @@ static void rand_flt_tok(char *o){
 
 int main(void) {
     /* ---- integer corpus ---- */
-    /* valid-deck integer fields: positive IDs <=10 digits (non-overflowing) + small negatives + blanks.
-     * Out of scope (documented, never emitted by valid decks): >10-digit fields and INT_MIN's 11-char form,
-     * where Fortran's i10 reads only the first 10 chars while ccxftoi reads the whole field. */
+    /* valid-deck integer fields: positive IDs <=10 digits (non-overflowing) + small negatives + blanks, plus
+     * a few >10-char tokens that lock in the i10 WIDTH CAP -- Fortran reads cols 1:10 and ccxftoi now matches.
+     * Still out of scope (never emitted by valid decks): a 10-digit VALUE that overflows 32-bit int, where the
+     * Fortran i10 read flags an iostat error but strtol wraps -- an overflow difference, not a width one. */
     const char *ints[] = {"0","1","-1","7","42","100","999","1000","12345","123456","1234567",
         "7654321","2147483647","  5","5  "," 123 ","007","+5","000","999999999",
         "1000000000","-7","   ","",
+        "12345678901","123456789012",             /* >10 chars: first 10 cols == 1234567890 (width cap) */
         "3.5","12x4","99z",                       /* trailing junk -> error (matches i10) */
         NULL};
     for (int i=0; ints[i]; i++) test_int(ints[i]);
@@ -133,6 +136,7 @@ int main(void) {
         "1.234567890123456E2","2.0","-999.999","0.","1.5E3","6.022e23","0.0001234","   ","",
         "1.5D3","-2.5d-2","1.0D-3","6.022D23",     /* Fortran D-exponent -> must match f20.0 */
         "1.5+3","-2.5-3",".5+3","2+5",             /* Fortran bare-sign exponent -> must match f20.0 */
+        "123456789.123456789012345","1.23456789012345678901234",  /* >20 chars: first 20 cols only (width cap) */
         "1.5X","1.5.3",                            /* trailing junk -> error (matches f20.0) */
         NULL};
     for (int i=0; flts[i]; i++) test_flt(flts[i]);
