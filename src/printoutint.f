@@ -415,6 +415,12 @@ c     &              (stx(k,j,nelel),k=1,6)
      &              (stx(k,j,nelel),k=1,6)
 #endif
             else
+#ifdef CCX_ACCEL
+               if((prlab(ii)(1:1).eq.'S').and.
+     &            (ccx_fastdat_active().ne.0)) then
+                  call ccx_fastdat_mark_oriented()
+               endif
+#endif
                call transformatrix(orab(1,iorien),coords(1,j),a)
                b(1,1)=stx(1,j,nelel)
                b(2,2)=stx(2,j,nelel)

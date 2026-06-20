@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -38,6 +39,7 @@ static const double **g_s     = NULL;   /* pointer to the 6 contiguous stx compo
 static size_t         g_n = 0, g_cap = 0;
 static int            g_active = -1;
 static int            g_oom = 0;        /* sticky: a record-time alloc failed -> emit nothing, not a partial block */
+static int            g_oriented = 0;   /* sticky: an ORIENTED 'S' line was written via Fortran while active */
 
 int ccx_fastdat_active_(void) {
     if (g_active < 0) {
@@ -70,9 +72,14 @@ void ccx_fastdat_s_(const int *nelem, const int *j, const double *s) {
     g_nelem[g_n] = *nelem; g_j[g_n] = *j; g_s[g_n] = s; g_n++;
 }
 
+/* Fortran marks here when it writes an ORIENTED 'S' line (the trailing-a20-label format that this buffer does
+   NOT redirect). If non-oriented 'S' lines were also buffered, the two streams would interleave out of order
+   -> the flush fails closed. */
+void ccx_fastdat_mark_oriented_(void) { g_oriented = 1; }
+
 static void ccx_fastdat_reset(void) {
     free(g_nelem); free(g_j); free((void *)g_s);
-    g_nelem = NULL; g_j = NULL; g_s = NULL; g_n = 0; g_cap = 0; g_oom = 0;
+    g_nelem = NULL; g_j = NULL; g_s = NULL; g_n = 0; g_cap = 0; g_oom = 0; g_oriented = 0;
 }
 
 /* parallel-format every recorded line at its exact offset (bounded chunks), append to the .dat; reset. */
@@ -85,6 +92,32 @@ void ccx_fastdat_flush_(void) {
         ccx_fastdat_reset(); exit(202);
     }
     if (g_n == 0) { ccx_fastdat_reset(); return; }
+
+    if (g_oriented) {  /* both non-oriented (buffered here) and oriented (written inline by Fortran) 'S' lines
+                          exist in this *EL PRINT -> appending the buffer now would reorder them. Fail closed;
+                          rerun without CCX_ACCEL_OUT_DAT_FAST (the stock writer keeps deck order). */
+        fprintf(stderr, "[accel] fast .dat: deck mixes oriented and non-oriented stress output -> the fast "
+                        "writer would reorder it; failing closed (exit 202). Rerun without "
+                        "CCX_ACCEL_OUT_DAT_FAST.\n");
+        ccx_fastdat_reset(); exit(202);
+    }
+
+    /* preflight: a non-representable value (NaN/Inf, or a magnitude needing a 3-digit exponent) cannot be
+       encoded in the fixed e13.6 width. Detect it BEFORE opening/appending, so the malformed path leaves no
+       partial or clamped .dat on disk -- fail closed and let the stock writer produce the block on a rerun.
+       (Conservative superset of the format-time width check; only a non-physical solution can trip it.) */
+    for (size_t k = 0; k < g_n; k++) {
+        const double *s = g_s[k];
+        for (int c = 0; c < 6; c++) {
+            double a = fabs(s[c]);
+            if (!isfinite(s[c]) || a >= 1e100 || (a != 0.0 && a < 1e-99)) {
+                fprintf(stderr, "[accel] fast .dat: stress value not representable in the fixed e13.6 width "
+                                "(NaN/Inf/huge stress?) -> failing closed (exit 202) before writing; rerun "
+                                "without CCX_ACCEL_OUT_DAT_FAST and check the solution\n");
+                ccx_fastdat_reset(); exit(202);
+            }
+        }
+    }
 
     FILE *f = fopen(path, "ab");
     if (!f) {                                /* cannot open the .dat -> stress block would be lost (the Fortran
