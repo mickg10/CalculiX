@@ -54,11 +54,6 @@ void frd(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,ITG *ne0,
      ist, i.e. structural nodes
      iselect=0  means both of the above */
 
-#ifdef CCX_ACCEL
-  /* optional output overrides (env-gated, default off): force binary/ascii .frd. No-op unless set. */
-  { const char *e=getenv("CCX_ACCEL_OUT_FRD");
-    if(e&&!strcmp(e,"bin")) strcpy(output,"bin"); else if(e&&!strcmp(e,"asc")) strcpy(output,"asc"); }
-#endif
 #ifdef CCX_ACCEL_ARROW
   /* optional: dump nodal fields (coords, displacement, optional stress) as Arrow IPC. No-op unless set. */
   { const char *e=getenv("CCX_ACCEL_OUT_ARROW");
@@ -218,7 +213,7 @@ void frd(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,ITG *ne0,
     fprintf(f1,"%5sUHOST                                                              \n",p1);
     fprintf(f1,"%5sUPGM               CalculiX                                        \n",p1);
     fprintf(f1,"%5sUVERSION           Version DEVELOPMENT                             \n",p1);
-    fprintf(f1,"%5sUCOMPILETIME       Wed Jun 17 03:51:47 EDT 2026                    \n",p1);
+    fprintf(f1,"%5sUCOMPILETIME       Mon Jun  8 19:18:34 CEST 2026                    \n",p1);
     fprintf(f1,"%5sUDIR                                                               \n",p1);
     fprintf(f1,"%5sUDBN                                                               \n",p1);
     
