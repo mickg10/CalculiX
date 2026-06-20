@@ -5,7 +5,7 @@
 # any edit that breaks correctness, regresses convergence, or breaks the output is caught here.
 #
 # GATES (a regression in any FAILS):
-#   * correctness : maxU(read back from the .dat) within REL (default 1e-2, the §18 screening bar) of GOLDEN.
+#   * correctness : maxU(read back from the .dat) within REL (default 1e-2, the 1% screening bar) of GOLDEN.
 #   * no-slowdown : GMG PCG iters <= ITER_CAP (default 40). Iters are load-INDEPENDENT, so this is the robust
 #                   "did we slow the solve down" signal -- an algorithmic regression raises iters.
 #   * round-trip  : the .dat is produced and parses (the field actually comes back).
@@ -14,8 +14,8 @@
 #                   re-run on a quiet box for the authoritative wall number.
 #
 # Usage: roundtrip_test.sh [deck.inp] [golden_maxU]
-#   deck   default: the row236 path02 reproducer (121 MB; not bundled -> SKIP if absent).
-#   golden default: 107.0569734213358 (row236 direct golden). Pass both for another deck.
+#   deck   default: a bundled large reproducer (~120 MB; not bundled -> SKIP if absent).
+#   golden default: 107.0569734213358 (the default deck's direct-solve golden). Pass both for another deck.
 # Env: OMP_NUM_THREADS (default 16), GMG_TOL (default 3e-3), ITER_CAP, WALL_MAX, REL.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"

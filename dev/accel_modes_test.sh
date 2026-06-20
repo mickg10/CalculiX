@@ -5,7 +5,7 @@
 # golden). GREEN iff every mode matches direct within REL (default 1e-4). Tooling / test-only.
 #
 # Usage: accel_modes_test.sh [deck.inp] [rel]
-#   The deck must write displacement to the .dat (i.e. have *NODE PRINT,U). Default = the row217 source coupon
+#   The deck must write displacement to the .dat (i.e. have *NODE PRINT,U). Default = a bundled near-singular source coupon
 #   (near-singular -> the case defl-pcg's RBM deflation targets); pass any such deck explicitly otherwise.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"

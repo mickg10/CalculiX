@@ -1,30 +1,30 @@
-# GMG solver: portable reference vs Apple-accelerated (build-both tests)
+# Accel backend — developer tests
 
-The geometric-multigrid solver (`src/gmg_solve.cpp`) is **portable by default** (OpenMP + standard LAPACK
-Fortran ABI) with Apple Accelerate layered on macOS behind a compile-time switch. Everything here builds and
-compares **both** variants so the algorithm is never silently locked to one platform.
+Tests for the optional Apple Accelerate / geometric-multigrid backend (`-DCCX_ACCEL`, runtime opt-in via
+`CCX_ACCEL_SOLVE`). Build the binary first:
 
-## Compile-time switch (`src/gmg_solve.cpp`)
-- default on macOS → `CCX_GMG_ACCEL=1` (Apple Accelerate LAPACK; this is also where AMX lives)
-- `-DCCX_GMG_NOACCEL` → portable reference: standard `dpotrf_/dpotrs_` linked against **OpenBLAS / MKL / Netlib**
-- `-DCCX_GMG_ACCEL=1` or `=0` → force either path explicitly
-- non-Apple platforms → automatically the portable reference
-
-Only the tiny coarse dense solve (`dpotrf`) is platform-specific; the SpMV / Chebyshev smoother / PCG / Galerkin
-RAP are plain OpenMP C++.
+```
+(cd ../src && make -f Makefile_MT SPOOLES_DIR=../SPOOLES.2.2 ARROW=1 -j8 CalculiX_MT)
+```
 
 ## Tests
-Both need a dumped matrix + coord/DOF map (any CalculiX run with the accel backend:
-`CCX_ACCEL_SOLVE=gmg CCX_ACCEL_DUMP=m.bin CCX_ACCEL_DUMP2=cm.bin ./ccx -i job` → builds the CSC matrix + map
-and exits). Pass the directory holding `m2.mat` + `coordmap.bin` as the first arg.
 
-- **`gmg_bench.sh <dir>`** — builds the *production* `gmg_solve.cpp` BOTH ways (Apple Accelerate vs OpenBLAS),
-  runs the full solve in each, and checks they converge to the **same maxU** (correctness) while reporting each
-  solve time. Result on row236: identical maxU to 6e-10, ~equal speed (the GMG is memory-bound, so Accelerate
-  buys ~nothing — the reference is Apple-free with no penalty).
-- **`mf_test.sh <dir>`** — builds the matrix-free C3D8 element operator (`mf_verify.cpp`) BOTH ways
-  (portable OpenMP vs Apple-AMX `cblas_dgemm`), verifies each reproduces the assembled `A0` to roundoff, and
-  reports the apply speed. Finding: the apply is memory-bound, so the portable reference is competitive/faster
-  and AMX does not help.
+- **`roundtrip_test.sh [deck.inp] [golden_maxU]`** — end-to-end fast-iteration gate on a large deck: read
+  `.inp` → GMG solve → fast `.dat` output → read the displacement field back → verify it. Gates: correctness
+  (maxU within 1% of golden), no-slowdown (GMG PCG iters under a cap; load-independent), round-trip (the `.dat`
+  parses), and wall time (PASS under 25 s; reported INDETERMINATE when the machine is loaded). Defaults to a
+  bundled large reproducer if present, else SKIPs; pass a deck + golden maxU for any other case.
 
-Tooling / experimental.
+- **`accel_modes_test.sh [deck.inp] [rel]`** — runs one deck through `CCX_ACCEL_SOLVE` = `direct` / `float-pcg`
+  / `defl-pcg` and checks every mode agrees with the exact `direct` Cholesky golden (default 1e-4). The deck
+  must request displacement output (`*NODE PRINT,U`).
+
+- **`parse_tests.sh`** — differential red/green suite for the fast C deck parser (`ccxftoi`/`ccxftof`/
+  `ccxsplit`, `-DCCX_FAST_PARSE`): a corpus plus a large reproducible fuzz run, each compared bit-for-bit
+  against the Fortran reads they replace (`parse_ref.f`). Builds `parse_test.c`.
+
+- **`parse_integration_tests.sh`** — runs whole decks through CalculiX with the fast parser on vs off and
+  diffs the results, so the parser is exercised end-to-end, not just in isolation.
+
+- **`arrow_read.py`** — reads a CCX Arrow IPC field file (written when `CCX_ACCEL_OUT_ARROW=<path>`) with
+  pyarrow and prints schema / row count / field ranges; a reader/validation example for the Arrow output.

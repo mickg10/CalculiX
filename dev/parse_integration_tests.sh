@@ -12,7 +12,7 @@ N="${1:-0}"; TO="${2:-25}"
 SRCABS="$(cd "$SRC" && pwd)"
 FAST="$SRCABS/CalculiX_MT_fastparse"; STOCK="$SRCABS/CalculiX_MT_noparse"
 # Deterministic solve so any fast-vs-stock output difference is the PARSE, not MT-SPOOLES nondeterminism
-# (the goal documents row164/row217 multithreaded irreproducibility). Single thread = reproducible.
+# (multithreaded direct solvers can be irreproducible run-to-run). Single thread = reproducible.
 export OMP_NUM_THREADS=1
 
 echo "== build fast-parse + stock-parse binaries (differ only in CCX_FAST_PARSE) =="
