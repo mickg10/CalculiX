@@ -226,19 +226,6 @@ static void symm_lower_spmv_sub(int n, const long *colStarts, const int *rowIdx,
         }
 }
 
-/* y = A*x for a symmetric matrix stored as lower triangle (diag+subdiag) in CSC. */
-static void symm_lower_spmv(int n, const long *colStarts, const int *rowIdx,
-                            const double *vals, const double *x, double *y) {
-    for (int i = 0; i < n; ++i) y[i] = 0.0;
-    for (int c = 0; c < n; ++c)
-        for (long p = colStarts[c]; p < colStarts[c + 1]; ++p) {
-            int r = rowIdx[p];
-            double v = vals[p];
-            if (r == c) y[c] += v * x[c];
-            else { y[r] += v * x[c]; y[c] += v * x[r]; }
-        }
-}
-
 static double ddot(int n, const double *a, const double *b) {
     double s = 0.0; for (int i = 0; i < n; ++i) s += a[i] * b[i]; return s;
 }
@@ -454,27 +441,6 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
     colStarts[n] = pos;
     double t_build = now_s() - t0;
     MEMLOG("after CSC build (+matrix)");
-
-    /* optional: dump the symmetric lower-CSC matrix + RHS for offline analysis, then exit.
-       Format (little-endian): int64 n, int64 nnz, then colStarts[n+1] (int64),
-       rowIdx[nnz] (int32), vals[nnz] (f64), b[n] (f64). */
-    const char *dump = getenv("CCX_ACCEL_DUMP");
-    if (dump && *dump) {
-        FILE *df = fopen(dump, "wb");
-        if (df) {
-            int64_t hn = n, hnnz = nnz;
-            fwrite(&hn, sizeof(int64_t), 1, df);
-            fwrite(&hnnz, sizeof(int64_t), 1, df);
-            fwrite(colStarts, sizeof(long), (size_t)(n + 1), df);
-            fwrite(rowIdx, sizeof(int), (size_t)nnz, df);
-            fwrite(vals, sizeof(double), (size_t)nnz, df);
-            fwrite(b, sizeof(double), (size_t)n, df);
-            fclose(df);
-            fprintf(stderr, "[accel] dumped matrix n=%d nnz=%ld -> %s (exiting)\n", n, nnz, dump);
-        }
-        free(colStarts); free(rowIdx); free(vals);
-        exit(0);
-    }
 
     /* factorization-free geometric multigrid path (regular voxel grid). Needs the coord/DOF-map
        (CCX_ACCEL_DUMP2 / rbmmap). On success returns immediately; on failure falls through to direct. */
@@ -785,10 +751,12 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
             }
         }
         t_solve = now_s() - t2;
-        /* residual gate: if float refinement did not converge (ill-conditioned matrix),
-           the float answer is untrustworthy -> fall back to a correct double solve. */
+        /* residual gate: if float refinement did not converge (ill-conditioned matrix), the float answer is
+           untrustworthy -> fall back to a correct double solve. The accept bar is the §18 ceiling; the env can
+           only TIGHTEN it (capped at 1e-2), never loosen past it, so a knob can't let garbage through. */
         const char *fa = getenv("CCX_ACCEL_FLOAT_ACCEPT");
-        double accept = fa ? atof(fa) : 1e-2;   /* row217 reaches ~1e-4 (ok); row236 ~0.99 (reject) */
+        double accept = fa ? atof(fa) : 1e-2;
+        if (!(accept <= 1e-2)) accept = 1e-2;   /* hard safety ceiling (row217 reaches ~1e-4; row236 ~0.99 reject) */
         if (!(final_resid <= accept)) {          /* NaN-safe: NaN/inf resid -> fall back to double, never accept */
             if (verbose) fprintf(stderr,
                 "[accel] float refine resid %.2e > accept %.1e -> DOUBLE fallback (correct)\n",
@@ -803,8 +771,26 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
                 Fd = SparseFactor(SparseFactorizationLDLT, Ad, sfo, nfod);
                 if (Fd.status != SparseStatusOK) { SparseCleanup(Fd); SparseCleanup(F); rc = 3; goto done; }
             }
-            SparseSolve(Fd, (DenseVector_Double){ .count = n, .data = b });
+            /* same residual gate as the main double path (H3): solve into scratch, verify ||b-A*xb||/||b||,
+               only then copy into b -- never return an untrustworthy double solve as success either. */
+            double *xb = (double*)malloc((size_t)n * sizeof(double));
+            if (!xb) { SparseCleanup(Fd); SparseCleanup(F); rc = 2; goto done; }
+            for (int i = 0; i < n; ++i) xb[i] = b[i];
+            SparseSolve(Fd, (DenseVector_Double){ .count = n, .data = xb });
             SparseCleanup(Fd);
+            double *rr = (double*)malloc((size_t)n * sizeof(double));
+            if (!rr) { free(xb); SparseCleanup(F); rc = 2; goto done; }
+            for (int i = 0; i < n; ++i) rr[i] = b[i];
+            symm_lower_spmv_sub(n, colStarts, rowIdx, vals, xb, rr);
+            double rn = 0.0, bn = 0.0; for (int i = 0; i < n; ++i) { rn += rr[i]*rr[i]; bn += b[i]*b[i]; }
+            free(rr);
+            final_resid = (bn > 0.0) ? sqrt(rn / bn) : sqrt(rn);
+            if (!(final_resid < 1e-2)) {          /* double redo itself untrustworthy -> stock SPOOLES */
+                if (verbose) fprintf(stderr, "[accel] double fallback resid %.3e -> stock SPOOLES\n", final_resid);
+                free(xb); SparseCleanup(F); rc = 1; goto done;
+            }
+            for (int i = 0; i < n; ++i) b[i] = xb[i];
+            free(xb);
             t_factor += now_s() - td;     /* report includes the double redo */
             cfg.use_float = 0;            /* result is now double-accurate */
         } else {
