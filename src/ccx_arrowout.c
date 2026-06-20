@@ -7,7 +7,7 @@
 /*     but WITHOUT ANY WARRANTY; see the GNU General Public License.      */
 
 /* ccx_arrowout.c - self-contained Arrow IPC "file" (Feather v2) writer for the nodal solution field.
- * Tooling / APHYSICAL. DEPENDENCY-FREE pure C: a tiny FlatBuffers builder writes the Arrow metadata
+ * DEPENDENCY-FREE pure C: a tiny FlatBuffers builder writes the Arrow metadata
  * (Message/Schema/RecordBatch/Footer), so there is NO nanoarrow/flatcc/libarrow to vendor or link -- the
  * file is GPL-clean and avoids the libc++/libstdc++ ABI clash a system libarrow would create.
  *

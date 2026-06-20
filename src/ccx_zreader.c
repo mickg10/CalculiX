@@ -1,7 +1,7 @@
-/* ccx_zreader.c — transparent streaming reader for plain / gzip / zstd input files. Tooling / APHYSICAL.
+/* ccx_zreader.c — transparent streaming reader for plain / gzip / zstd input files.
  *
  * Lets CalculiX read compressed .inp and *INCLUDE decks (large meshes) WITHOUT decompressing to disk first
- * — important on space-constrained hosts (a 121 MB row236 deck is ~6-10 MB gz/zst). Used by readinput.c via
+ * — important on space-constrained hosts (a ~120 MB deck is ~6-10 MB gz/zst). Used by readinput.c via
  * the CCX_FOPEN/CCX_FGETS/CCX_FCLOSE macros (drop-in fopen/fgets/fclose semantics), only under -DCCX_ACCEL.
  *
  * Detection is by magic bytes (gzip 1f 8b, zstd 28 b5 2f fd); ccx_zopen also tries <path>.gz then <path>.zst

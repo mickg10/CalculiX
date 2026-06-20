@@ -1,9 +1,9 @@
-/* ccx_fastnum.c — fast integer/float field parsers for the input deck. Tooling / APHYSICAL.
+/* ccx_fastnum.c — fast integer/float field parsers for the input deck.
  *
  * CalculiX parses NODE/ELEMENT bulk data with Fortran internal reads (read(textpart(k),'(f20.0)') x), ~16M
  * of them on a 1.3M-node / 1.2M-element deck. These C helpers (strtol/strtod on the comma-split, space-padded
  * textpart field) replace them, called from nodes.f/elements.f/splitline.f only under -DCCX_FAST_PARSE (build
- * with FAST_PARSE_DEF= to A/B the stock Fortran reads). Measured front-end win ~4s on row236.
+ * with FAST_PARSE_DEF= to A/B the stock Fortran reads). Measured front-end win ~4s on a large deck.
  *
  * Equivalence to the Fortran reads (validated bit-exact by dev/parse_tests.sh): the i10/f20.0 COLUMN WIDTH is
  * enforced (only the first 10 / 20 columns are read, exactly as read(textpart(k)(1:10),'(i10)') /
@@ -50,7 +50,7 @@ void ccxftof_(const char *s, double *v, int *istat, long slen) {
 /* ccxsplit — byte-exact C port of splitline.f: split the input line `text` into `*np` comma-separated
  * fields in `textpart` (16 fields, each `ltp`=132 chars, left-justified, space-padded). A space terminates
  * the line (CalculiX convention: data fields have no embedded blanks). Replaces the per-char Fortran
- * substring loop (the #2 front-end hotspot, ~2.5M calls on the row236 deck). Fortran passes the hidden
+ * substring loop (the #2 front-end hotspot, ~2.5M calls on a large deck). Fortran passes the hidden
  * char lengths last: lt = len(text) = 1320, ltp = element len(textpart) = 132. Called from splitline.f
  * only under -DCCX_FAST_PARSE; produces identical textpart bytes -> deck parse stays bit-exact. */
 void ccxsplit_(const char *text, char *textpart, int *np, long lt, long ltp) {

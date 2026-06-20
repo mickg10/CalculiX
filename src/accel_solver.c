@@ -1,4 +1,4 @@
-/* Apple Accelerate Sparse backend for CalculiX. Tooling / APHYSICAL.
+/* Apple Accelerate Sparse backend for CalculiX.
  *
  * Drop-in symmetric real direct solve behind the patched spooles() entry, using
  * Apple's Accelerate Sparse Solvers (deterministic, lock-free, AMX, GCD-parallel
@@ -533,13 +533,13 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
     if (!strcmp(cfg.order, "usermetis")) ordname = "metis(no-libmetis)";
 #endif
 
-    /* M7 determinism: the default ordering (usermetis/metis) is SERIAL METIS -> a fixed fill-reducing
-       permutation -> the factorization, and therefore maxU, is reproducible run-to-run (the §18 gate).
+    /* Determinism: the default ordering (usermetis/metis) is SERIAL METIS -> a fixed fill-reducing
+       permutation -> the factorization, and therefore maxU, is reproducible run-to-run (the acceptance gate).
        MTMetis and SparseOrderDefault may order in PARALLEL, whose result depends on thread scheduling ->
        NOT reproducible. Warn unconditionally if such an ordering is in effect so a reproducibility-critical
        run is never silently nondeterministic. (Fixed-thread numeric reproducibility: SparseSolve / the GMG
        PCG combine partial sums in unspecified order, so results are reproducible to solver tolerance, not
-       bit-identical; that is well inside the §18 ±1% maxU bound and far below the accept ceiling.) */
+       bit-identical; that is well inside the ±1% maxU bound and far below the accept ceiling.) */
     if (sfo.orderMethod == SparseOrderMTMetis || sfo.orderMethod == SparseOrderDefault)
         fprintf(stderr, "[accel] WARNING: ordering '%s' is parallel/nondeterministic -> results are NOT "
                         "reproducible run-to-run; use 'metis'/'usermetis' (default) for reproducibility.\n",
@@ -569,12 +569,12 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
         SparseSolve(F, (DenseVector_Double){ .count = n, .data = xb });
         SparseCleanup(F);
         t_solve = now_s() - t2;
-        /* residual gate: accept the solve iff the TRUE residual ||b-A*xb||/||b|| meets the §18 acceptable bar
-           (1e-2, the SAME ceiling M6 enforces for the GMG path), else decline (rc=1) so the exact SPOOLES solve
+        /* residual gate: accept the solve iff the TRUE residual ||b-A*xb||/||b|| meets the acceptable-accuracy bar
+           (1e-2, the same ceiling enforced for the GMG path), else decline (rc=1) so the exact SPOOLES solve
            runs -- never copy an untrustworthy x (singular LDLT, NaN, bad assembly) into b. NOTE: the bar is
            1e-2, NOT eps-level: a direct Cholesky's residual is ~growth*eps*cond(A), and a near-singular 3.87M
            elasticity matrix (cond~1e10) legitimately lands at ~1e-6..1e-7 -- a CORRECT solve. An earlier 1e-8
-           bar falsely rejected exactly that and forced a slow (and on row236 buggy 16T) stock SPOOLES fallback.
+           bar falsely rejected exactly that and forced a slow stock SPOOLES fallback.
            A genuinely broken factor scores O(0.1-1), so 1e-2 cleanly separates correct from garbage. NaN-safe. */
         { double *rr = (double*)malloc((size_t)n * sizeof(double));
           if (!rr) { free(xb); rc = 2; goto done; }
@@ -584,7 +584,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
           for (int i = 0; i < n; ++i) { rn += rr[i]*rr[i]; bn += b[i]*b[i]; }
           free(rr);
           final_resid = (bn > 0.0) ? sqrt(rn / bn) : sqrt(rn);
-          const double ACCEPT_MAX = 1e-2;                           /* §18/M6 acceptable-residual ceiling */
+          const double ACCEPT_MAX = 1e-2;                           /* acceptable-residual ceiling */
           if (!(final_resid < ACCEPT_MAX)) {                        /* NaN-safe */
               if (verbose) fprintf(stderr,
                   "[accel] direct solve resid %.3e (>=%.0e) -> stock SPOOLES fallback\n", final_resid, ACCEPT_MAX);
@@ -757,11 +757,11 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
         }
         t_solve = now_s() - t2;
         /* residual gate: if float refinement did not converge (ill-conditioned matrix), the float answer is
-           untrustworthy -> fall back to a correct double solve. The accept bar is the §18 ceiling; the env can
+           untrustworthy -> fall back to a correct double solve. The accept bar is the acceptable-accuracy ceiling; the env can
            only TIGHTEN it (capped at 1e-2), never loosen past it, so a knob can't let garbage through. */
         const char *fa = getenv("CCX_ACCEL_FLOAT_ACCEPT");
         double accept = fa ? atof(fa) : 1e-2;
-        if (!(accept <= 1e-2)) accept = 1e-2;   /* hard safety ceiling (row217 reaches ~1e-4; row236 ~0.99 reject) */
+        if (!(accept <= 1e-2)) accept = 1e-2;   /* hard safety ceiling (well-conditioned solves reach ~1e-4; a near-singular one is rejected) */
         if (!(final_resid <= accept)) {          /* NaN-safe: NaN/inf resid -> fall back to double, never accept */
             if (verbose) fprintf(stderr,
                 "[accel] float refine resid %.2e > accept %.1e -> DOUBLE fallback (correct)\n",
@@ -776,7 +776,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
                 Fd = SparseFactor(SparseFactorizationLDLT, Ad, sfo, nfod);
                 if (Fd.status != SparseStatusOK) { SparseCleanup(Fd); SparseCleanup(F); rc = 3; goto done; }
             }
-            /* same residual gate as the main double path (H3): solve into scratch, verify ||b-A*xb||/||b||,
+            /* same residual gate as the main double path: solve into scratch, verify ||b-A*xb||/||b||,
                only then copy into b -- never return an untrustworthy double solve as success either. */
             double *xb = (double*)malloc((size_t)n * sizeof(double));
             if (!xb) { SparseCleanup(Fd); SparseCleanup(F); rc = 2; goto done; }

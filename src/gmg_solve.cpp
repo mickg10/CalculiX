@@ -1,5 +1,5 @@
-// gmg_solve.cpp — geometric multigrid solver for CCX, callable from accel_solver.c. Tooling / APHYSICAL.
-// The row236-class problem is a homogeneous regular 0.1mm Cartesian voxel grid C3D8 (3 DOF/node).
+// gmg_solve.cpp — geometric multigrid solver for CCX, callable from accel_solver.c.
+// The target problem is a homogeneous regular Cartesian voxel-grid C3D8 model (3 DOF/node).
 // Validated in Python (scripts/gmg_proto.py) and C (_amg/gmg_test.cpp): support-closed trilinear P +
 // Galerkin A_c=P^T A P + block-Jacobi 4th-kind Chebyshev + PCG (W-cycle) => 15 iters, maxU exact.
 // Entry: ccx_gmg_solve(n, cs, ri, va, b, coordmap_path, ...). Returns 0 on success (solution into b).
@@ -18,7 +18,7 @@
 #if defined(__APPLE__) && defined(__aarch64__)
 #include <sys/sysctl.h>
 #endif
-// GMG solve thread policy (goal §20.8/§20.0): on this gather-latency-bound kernel, using all logical cores is
+// GMG solve thread policy: on this gather-latency-bound kernel, using all logical cores is
 // slower than the performance-core count, because efficiency cores cause OpenMP barrier load-imbalance. Cap the
 // SOLVE to the P-core count (auto-detected on Apple Silicon; ambient elsewhere) while leaving CCX assembly/output
 // at ambient threads. Override with GMG_THREADS. The cap affects speed only, never the result.
@@ -72,7 +72,7 @@ static void spmv(const CSR&A,const double*x,double*y){
     #pragma omp parallel for schedule(static)
     for(int i=0;i<A.nr;i++){ double s=0; for(long p=A.ptr[i];p<A.ptr[i+1];p++) s+=A.val[p]*x[A.col[p]]; y[i]=s; }
 }
-// block-3x3 CSR. Phase-0 (iter16) showed the SpMV is matrix-STREAM-bound (val+col), x is SLC-resident.
+// block-3x3 CSR. Profiling showed the SpMV is matrix-STREAM-bound (val+col), x is SLC-resident.
 // BCSR collapses col indices 9x (297M->33M, col 1.19GB->0.13GB) -> ~1.4x fine SpMV, exact. nb block-rows,
 // each block = 9 doubles row-major (3x3); block (I,J)[r][c] = A[3I+r, 3J+c].
 struct BCSR { int nb=0; std::vector<long> ptr; std::vector<int> col; std::vector<double> val; };
@@ -187,10 +187,10 @@ static void bj_apply(const std::vector<double>&Dinv,const double*r,double*z,int 
     for(int b=0;b<nb;b++){ const double*M=&Dinv[9*b]; const double*rr=&r[3*b]; double*zz=&z[3*b];
         zz[0]=M[0]*rr[0]+M[1]*rr[1]+M[2]*rr[2]; zz[1]=M[3]*rr[0]+M[4]*rr[1]+M[5]*rr[2]; zz[2]=M[6]*rr[0]+M[7]*rr[1]+M[8]*rr[2]; }
 }
-// Determinism (M7): the OpenMP reduction combines per-thread partial sums in an unspecified order, so this
+// Determinism: the OpenMP reduction combines per-thread partial sums in an unspecified order, so this
 // dot product is NOT bit-identical run-to-run even at a fixed thread count. That perturbs the PCG path at the
 // ~1e-16 level; the iteration still converges to the same true residual, so maxU is reproducible to solver
-// tolerance -- far inside the §18 ±1% bound. Bit-exact reproducibility would need an ordered tree reduction.
+// tolerance -- far inside the ±1% acceptance bound. Bit-exact reproducibility would need an ordered tree reduction.
 static double ddot(const double*a,const double*b,int n){ double s=0;
     #pragma omp parallel for reduction(+:s) schedule(static)
     for(int i=0;i<n;i++) s+=a[i]*b[i]; return s; }
@@ -223,7 +223,7 @@ static void cheb4(const Level&L,int deg,const double*rhs,double*x,WS&w){
 
 // Solver state lives in a GmgCtx, one per ccx_gmg_solve_mem() call -> the solver is REENTRANT; nothing persists
 // across calls and the ctx frees itself on return. Cycle defaults are tuned for the bandwidth-bound regular-voxel
-// solve (row236): the fine SpMV re-streams the 2.4GB matrix from DRAM every apply, so minimizing SpMV COUNT wins.
+// solve: the fine SpMV re-streams the multi-GB matrix from DRAM every apply, so minimizing SpMV COUNT wins.
 // DEG=2 V-cycle (GAMMA=1) needs more PCG iters than DEG=4 W-cycle but each iter is far cheaper -> ~20% faster e2e.
 // Env-overridable (GMG_DEG/NPRE/NPOST/GAMMA); the acceptance gate falls back to a direct solve if it won't converge.
 struct GmgCtx {
@@ -340,7 +340,7 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
         LV[fi].P=std::move(P); LV[fi].Pt=std::move(Pt);
         Level C; C.A=std::move(Ac); C.ijk=std::move(cijk); LV.push_back(std::move(C));
     }
-    for(int lv=0;lv<(int)LV.size()-1;lv++){ LV[lv].B=to_bcsr(LV[lv].A);   // block-3x3 (matrix-stream win, iter16)
+    for(int lv=0;lv<(int)LV.size()-1;lv++){ LV[lv].B=to_bcsr(LV[lv].A);   // block-3x3 (matrix-stream win)
         if(verbose){ int nn=LV[lv].A.nr; std::vector<double> tv(nn),ya(nn),yb(nn); uint64_t s=12345+lv;
             for(int i=0;i<nn;i++){ s^=s<<13;s^=s>>7;s^=s<<17; tv[i]=(double)((s>>11)&1023)/1024.0-0.5; }
             spmv(LV[lv].A,tv.data(),ya.data()); bspmv(LV[lv].B,tv.data(),yb.data());
@@ -395,7 +395,7 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     if(verbose) fprintf(stderr,"[gmg] PCG iters=%d rel=%.2e true_rel=%.2e solve=%.2fs total=%.2fs\n",
                         iters,rel,true_rel,secs(ts,clk::now()),secs(T0,clk::now()));
     // SAFETY ceiling decoupled from the perf tol: accept only if the TRUE residual is below BOTH a small
-    // multiple of the requested convergence tol AND a hard physical ceiling (1e-2, the §18 accept floor).
+    // multiple of the requested convergence tol AND a hard physical ceiling (1e-2, the acceptable-accuracy floor).
     // Loosening GMG_TOL for speed can therefore never silently lower the correctness bar -- a looser perf
     // tol only triggers the exact-solve fallback sooner; it never lets a worse-than-1% solution pass.
     // (NaN-safe: !(NaN < accept) == true -> reject -> fallback.) Not env-overridable on purpose.

@@ -1,6 +1,6 @@
 /* ccx_fastdat.c — fast PARALLEL C buffered writer for the *EL PRINT,S stress section of the .dat file.
- * Replaces CalculiX's serial gfortran formatted write (i10,1x,i3,1p,6(1x,e13.6)), which dominates row236
- * output (~15s for 948MB). Tooling / APHYSICAL. Output is byte-format-identical to gfortran (verified over
+ * Replaces CalculiX's serial gfortran formatted write (i10,1x,i3,1p,6(1x,e13.6)), which dominates output on
+ * a large stress deck (~15s for a ~1 GB .dat). Output is byte-format-identical to gfortran (verified over
  * 200k lines). The line is FIXED-WIDTH: i10(10)+1x(1)+i3(3)+6*(1x(1)+e13.6(13)) = 98 chars + '\n' = 99.
  * That lets us format all lines in parallel at exact offsets, then write in bounded chunks.
  *
@@ -11,7 +11,7 @@
  * LIMITATION (mixed orientation): only the iorien==0 'S'/'SVF' path is redirected here; oriented stress
  * writes (the trailing-a20-label format) still go through Fortran unit 5 and are flushed BEFORE this buffer
  * is appended. A single *EL PRINT that mixes oriented and non-oriented printed elements would therefore
- * interleave out of order. This accelerator targets unoriented stress decks (e.g. row236); for
+ * interleave out of order. This accelerator targets unoriented stress decks; for
  * mixed-orientation decks, omit CCX_ACCEL_OUT_DAT_FAST and use CalculiX's standard writer.
  *
  * Failure policy (opt-in tooling): FAIL-CLOSED. This path is requested explicitly via env, so if it cannot
@@ -115,8 +115,9 @@ void ccx_fastdat_flush_(void) {
             int r = snprintf(tmp, sizeof tmp, "%10d %3d %13.6E %13.6E %13.6E %13.6E %13.6E %13.6E",
                              g_nelem[base + k], g_j[base + k], s[0], s[1], s[2], s[3], s[4], s[5]);
             char *p = buf + k * (size_t)CCX_DAT_LINE;
-            /* expected width is exactly CCX_DAT_BODY; NaN/Inf/3-digit-exponent/huge-id values deviate.
-               Copy what we have (clamped), space-pad to keep rows aligned, count deviations for one warning. */
+            /* expected width is exactly CCX_DAT_BODY; only a non-physical value (NaN/Inf/|exp|>=100) deviates.
+               Clamp+pad here so the fixed-offset write stays in bounds, and count it -- any deviation makes the
+               whole block fail closed after the loop (a clamped line is wrong; never report it as success). */
             int m = (r < 0) ? 0 : (r < CCX_DAT_BODY ? r : CCX_DAT_BODY);
             if (r != CCX_DAT_BODY) malformed++;
             memcpy(p, tmp, (size_t)m);
