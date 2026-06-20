@@ -18,8 +18,9 @@
  * deliver the COMPLETE stress block -- record-time OOM, format-buffer OOM, or a write/close error -- it prints
  * a loud diagnostic and exit(202)s. A missing or partial stress block must never be reported to a downstream
  * pipeline as a successful run (exit 0): a partial block looks complete but is wrong, and an absent block with
- * exit 0 looks valid but is incomplete -- both are silent-wrong-output. Malformed-WIDTH lines (NaN/Inf/huge
- * values) are a different case: the block is still COMPLETE and row-aligned, so those are warned, not fatal.
+ * exit 0 looks valid but is incomplete -- both are silent-wrong-output. A line whose value does not fit the
+ * fixed e13.6 width (NaN/Inf/|exp|>=100 -- only on a non-physical solution) likewise fails closed, rather
+ * than emit the clamped (wrong) value that keeping rows aligned would require.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -132,10 +133,16 @@ void ccx_fastdat_flush_(void) {
                         "closed (exit 202)\n", werr ? "fwrite" : "fclose");
         ccx_fastdat_reset(); exit(202);
     }
-    fprintf(stderr, "[accel] fast .dat: wrote %.1f MB stress (%zu lines, parallel C)%s\n",
-            (double)g_n * CCX_DAT_LINE / 1e6, g_n, malformed ? " [WARN below]" : "");
-    if (malformed)
-        fprintf(stderr, "[accel] fast .dat: %ld line(s) had non-standard width (NaN/Inf/huge stress?) -> "
-                        "space-padded to stay row-aligned; check the solution\n", malformed);
+    if (malformed) {  /* a value did not fit the fixed e13.6 width (NaN/Inf/|exp|>=100 -- a non-physical
+                         solution): the line was clamped to stay row-aligned, so it is now WRONG. Fail closed
+                         rather than report a clamped value as success; rerun without CCX_ACCEL_OUT_DAT_FAST
+                         for CalculiX's standard writer. (Only reachable on a garbage solve.) */
+        fprintf(stderr, "[accel] fast .dat: %ld stress line(s) not representable in the fixed e13.6 width "
+                        "(NaN/Inf/huge stress?) -> failing closed (exit 202); rerun without "
+                        "CCX_ACCEL_OUT_DAT_FAST and check the solution\n", malformed);
+        ccx_fastdat_reset(); exit(202);
+    }
+    fprintf(stderr, "[accel] fast .dat: wrote %.1f MB stress (%zu lines, parallel C)\n",
+            (double)g_n * CCX_DAT_LINE / 1e6, g_n);
     ccx_fastdat_reset();
 }

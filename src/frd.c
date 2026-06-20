@@ -55,10 +55,14 @@ void frd(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,ITG *ne0,
      iselect=0  means both of the above */
 
 #ifdef CCX_ACCEL_ARROW
-  /* optional: dump nodal fields (coords, displacement, optional stress) as Arrow IPC. No-op unless set. */
+  /* optional: dump nodal fields (coords, displacement, optional stress) as Arrow IPC. No-op unless set.
+     Requested explicitly via env, so fail closed (like the fast .dat) if the write fails -- a downstream
+     pipeline must never treat a missing/partial Arrow file as a successful run. */
   { const char *e=getenv("CCX_ACCEL_OUT_ARROW");
     if(e&&*e){ const char *es=getenv("CCX_ACCEL_OUT_ARROW_STRESS");
-               ccx_arrow_write(e,(long)*nk,mi[1]+1,co,v,(es&&*es)?stn:0); } }
+               if(ccx_arrow_write(e,(long)*nk,mi[1]+1,co,v,(es&&*es)?stn:0)!=0){
+                 fprintf(stderr,"[accel] Arrow output '%s' failed -> failing closed (exit 202)\n",e);
+                 exit(202); } } }
 #endif
 
   FILE *f1;

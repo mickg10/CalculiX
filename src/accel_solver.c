@@ -377,23 +377,6 @@ static long          g_nk = 0;
 static int           g_mi1 = 0;
 void accel_set_coordmap_(double *co, ITG *nactdof, ITG *nk, ITG *mi) {
     g_co = co; g_nactdof = (const int *)nactdof; g_nk = (long)(*nk); g_mi1 = (int)mi[1];
-    /* optional offline dump of the coord/DOF map for analysis (CCX_ACCEL_DUMP2=<path>); continue, don't exit.
-       Format (little-endian): i8 nk, i8 mt, f8 co[3*nk], i4 nactdof[mt*nk] (1-based eqn | 0). */
-    const char *d2 = getenv("CCX_ACCEL_DUMP2");
-    if (d2 && *d2) {
-        FILE *f = fopen(d2, "wb");
-        if (!f) { fprintf(stderr, "[accel] CCX_ACCEL_DUMP2: cannot open %s\n", d2); return; }
-        long long nk_ = (long long)(*nk), mt_ = (long long)mi[1] + 1;
-        int *na = (int *)malloc((size_t)(mt_ * nk_) * sizeof(int));
-        if (!na) { fprintf(stderr, "[accel] CCX_ACCEL_DUMP2: OOM, map not written\n"); fclose(f); return; }
-        for (long long i = 0; i < mt_ * nk_; i++) na[i] = (int)nactdof[i];
-        int ok = (fwrite(&nk_, 8, 1, f) == 1) && (fwrite(&mt_, 8, 1, f) == 1)
-              && (fwrite(co, sizeof(double), (size_t)(3 * nk_), f) == (size_t)(3 * nk_))
-              && (fwrite(na, sizeof(int), (size_t)(mt_ * nk_), f) == (size_t)(mt_ * nk_));
-        free(na);
-        if (fclose(f) != 0 || !ok) fprintf(stderr, "[accel] CCX_ACCEL_DUMP2: write error to %s\n", d2);
-        else fprintf(stderr, "[accel] dumped coords+map nk=%lld mt=%lld -> %s\n", nk_, mt_, d2);
-    }
 }
 
 /* Returns 0 on success (solution written into b), nonzero on failure. */
@@ -752,6 +735,12 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
                 for (int i = 0; i < n; ++i) p[i] = z[i] + beta * p[i];
             }
             refine_iters = it;
+            /* TRUE residual for the gate: the CG recurrence residual drifts on near-singular A, so recompute
+               ||b-A*x|| directly (same as the defl-pcg path) -- the gate must never see an optimistic resid. */
+            SparseMultiply(Ad, (DenseVector_Double){ .count = n, .data = x },
+                               (DenseVector_Double){ .count = n, .data = Ap });
+            { double tr = 0.0; for (int i = 0; i < n; ++i){ double e = b[i]-Ap[i]; tr += e*e; }
+              final_resid = (bnorm > 0) ? sqrt(tr)/bnorm : sqrt(tr); }
         } else {
             const double tol = 1e-12;
             for (int it = 0; it < cfg.refine_iters; ++it) {
