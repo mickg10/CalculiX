@@ -221,24 +221,31 @@ static void cheb4(const Level&L,int deg,const double*rhs,double*x,WS&w){
             for(int i=0;i<n;i++) w.r[i]-=w.Ad[i]; } }
 }
 
-static std::vector<Level> LV; static std::vector<WS> WSP; static std::vector<double> Cfac; static int Cn=0;
-// Cycle defaults tuned for the bandwidth-bound regular-voxel solve (row236): the fine SpMV re-streams the
-// 2.4GB matrix from DRAM every apply, so minimizing SpMV COUNT wins. DEG=2 V-cycle (GAMMA=1) needs more PCG
-// iters than DEG=4 W-cycle but each iter is far cheaper -> ~20% faster e2e (measured). Env-overridable
-// (GMG_DEG/NPRE/NPOST/GAMMA); the acceptance gate falls back to a direct solve if a harder problem won't converge.
-static int DEG=2,NPRE=1,NPOST=1,GAMMA=1;
+// Solver state lives in a GmgCtx, one per ccx_gmg_solve_mem() call -> the solver is REENTRANT; nothing persists
+// across calls and the ctx frees itself on return. Cycle defaults are tuned for the bandwidth-bound regular-voxel
+// solve (row236): the fine SpMV re-streams the 2.4GB matrix from DRAM every apply, so minimizing SpMV COUNT wins.
+// DEG=2 V-cycle (GAMMA=1) needs more PCG iters than DEG=4 W-cycle but each iter is far cheaper -> ~20% faster e2e.
+// Env-overridable (GMG_DEG/NPRE/NPOST/GAMMA); the acceptance gate falls back to a direct solve if it won't converge.
+struct GmgCtx {
+    std::vector<Level> LV;
+    std::vector<WS> WSP;
+    std::vector<double> Cfac;            // dense Cholesky factor of the coarsest level (lower)
+    int Cn = 0;                          // coarsest size
+    int DEG = 2, NPRE = 1, NPOST = 1, GAMMA = 1;
+    int coarse_fail = 0;                 // set if the coarse dpotrs reports info != 0 -> reject the solve
+};
 
-static void vcycle(int lv,const double*rhs,double*x){
-    if(lv==(int)LV.size()-1){ for(int i=0;i<Cn;i++) x[i]=rhs[i]; int nrhs=1,info; char uplo='L';
-        dpotrs_(&uplo,&Cn,&nrhs,Cfac.data(),&Cn,x,&Cn,&info); return; }
-    Level&L=LV[lv]; WS&w=WSP[lv]; int n=L.A.nr;
-    for(int s=0;s<NPRE;s++) cheb4(L,DEG,rhs,x,w);
+static void vcycle(GmgCtx&g, int lv, const double*rhs, double*x){
+    if(lv==(int)g.LV.size()-1){ for(int i=0;i<g.Cn;i++) x[i]=rhs[i]; int nrhs=1,info=0; char uplo='L';
+        dpotrs_(&uplo,&g.Cn,&nrhs,g.Cfac.data(),&g.Cn,x,&g.Cn,&info); if(info!=0) g.coarse_fail=1; return; }
+    Level&L=g.LV[lv]; WS&w=g.WSP[lv]; int n=L.A.nr;
+    for(int s=0;s<g.NPRE;s++) cheb4(L,g.DEG,rhs,x,w);
     bspmv(L.B,x,w.Ad.data()); for(int i=0;i<n;i++) w.res[i]=rhs[i]-w.Ad[i];
     int ncoarse=L.P.nc; spmv(L.Pt,w.res.data(),w.rc.data());
     for(int i=0;i<ncoarse;i++) w.ec[i]=0;
-    for(int g=0;g<GAMMA;g++) vcycle(lv+1,w.rc.data(),w.ec.data());
+    for(int gi=0;gi<g.GAMMA;gi++) vcycle(g,lv+1,w.rc.data(),w.ec.data());
     spmv(L.P,w.ec.data(),w.Ad.data()); for(int i=0;i<n;i++) x[i]+=w.Ad[i];
-    for(int s=0;s<NPOST;s++) cheb4(L,DEG,rhs,x,w);
+    for(int s=0;s<g.NPOST;s++) cheb4(L,g.DEG,rhs,x,w);
 }
 } // namespace
 
@@ -249,6 +256,9 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
                                  int maxit, double tol, int verbose)
 {
     auto T0=clk::now();
+    GmgCtx ctx;   /* solve-local state (reentrant; frees on return). Same-named refs keep the body unchanged. */
+    auto&LV=ctx.LV; auto&WSP=ctx.WSP; auto&Cfac=ctx.Cfac; int&Cn=ctx.Cn;
+    int&DEG=ctx.DEG; int&NPRE=ctx.NPRE; int&NPOST=ctx.NPOST; int&GAMMA=ctx.GAMMA;
     const char*ev;
     if((ev=getenv("GMG_DEG"))   && atoi(ev)>0) DEG=atoi(ev);
     if((ev=getenv("GMG_NPRE"))  && atoi(ev)>0) NPRE=atoi(ev);
@@ -321,8 +331,7 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     std::vector<double> bp(n); for(int e=0;e<n;e++) bp[perm[e]]=b[e];
     if(verbose) fprintf(stderr,"[gmg] setup: nb=%d fineCRS nnz=%ld (%.2fs)\n",nb,A.nnz(),secs(T0,clk::now()));
 
-    // ---- hierarchy (Galerkin) ----
-    LV.clear(); WSP.clear(); Cfac.clear();
+    // ---- hierarchy (Galerkin) ---- (ctx is fresh: LV/WSP/Cfac already empty)
     { Level L; L.A=std::move(A); L.ijk=ijk0; LV.push_back(std::move(L)); }
     while((int)LV[LV.size()-1].A.nr>6000){
         size_t fi=LV.size()-1; int nbf=LV[fi].A.nr/3; std::vector<long> cijk; int nbc;
@@ -343,7 +352,7 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     { const CSR&Ac=LV.back().A; for(int i=0;i<Cn;i++) for(long p=Ac.ptr[i];p<Ac.ptr[i+1];p++) Cfac[(size_t)Ac.col[p]*Cn+i]=Ac.val[p]; }
     { char uplo='L'; int info; dpotrf_(&uplo,&Cn,Cfac.data(),&Cn,&info);
       if(info){ fprintf(stderr,"[gmg] coarse dpotrf failed info=%d (coarse not SPD) -> direct fallback\n",info);
-                LV.clear(); WSP.clear(); Cfac.clear(); Cfac.shrink_to_fit(); return 5; } }   // b untouched
+                return 5; } }   // b untouched (ctx frees on return)
     WSP.resize(LV.size());
     for(int lv=0;lv<(int)LV.size();lv++){ int nn=LV[lv].A.nr; WS&w=WSP[lv];
         w.r.resize(nn);w.z.resize(nn);w.d.resize(nn);w.Ad.resize(nn);w.res.resize(nn);
@@ -356,7 +365,7 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     std::vector<double> x(N,0.0),r(N),z(N),p(N),Ap(N);
     for(int i=0;i<N;i++) r[i]=bp[i];
     double res0=std::sqrt(ddot(r.data(),r.data(),N)); if(res0==0) res0=1;
-    for(int i=0;i<N;i++) z[i]=0; vcycle(0,r.data(),z.data());
+    for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
     for(int i=0;i<N;i++) p[i]=z[i]; double rz=ddot(r.data(),z.data(),N);
     auto ts=clk::now(); int iters=maxit; double rel=1;
     for(int it=0;it<maxit;it++){
@@ -368,7 +377,7 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
         for(int i=0;i<N;i++){ x[i]+=al*p[i]; r[i]-=al*Ap[i]; }
         double rr=std::sqrt(ddot(r.data(),r.data(),N)); rel=rr/res0;
         if(rel<tol){ iters=it+1; break; }
-        for(int i=0;i<N;i++) z[i]=0; vcycle(0,r.data(),z.data());
+        for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
         double rzn=ddot(r.data(),z.data(),N);
         if(!(rz!=0.0) || !std::isfinite(rzn)){ if(verbose) fprintf(stderr,"[gmg] PCG breakdown rz=%.3e rzn=%.3e\n",rz,rzn); break; }
         double bet=rzn/rz;
@@ -392,18 +401,16 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     // (NaN-safe: !(NaN < accept) == true -> reject -> fallback.) Not env-overridable on purpose.
     const double GMG_ACCEPT_MAX = 1e-2;
     double accept = tol*2.0; if(accept > GMG_ACCEPT_MAX) accept = GMG_ACCEPT_MAX;
-    if(!(true_rel < accept)){
-        fprintf(stderr,"[gmg] NOT ACCEPTED (true_rel=%.3e accept=%.1e tol=%.1e iters=%d) -> direct fallback\n",
-                true_rel,accept,tol,iters);
-        LV.clear(); WSP.clear(); Cfac.clear(); Cfac.shrink_to_fit();
-        return 4;   // b untouched
+    if(ctx.coarse_fail || !(true_rel < accept)){
+        fprintf(stderr,"[gmg] NOT ACCEPTED (true_rel=%.3e accept=%.1e tol=%.1e iters=%d coarse_fail=%d) -> direct fallback\n",
+                true_rel,accept,tol,iters,ctx.coarse_fail);
+        return 4;   // b untouched (ctx frees on return)
     }
     for(int ie=0;ie<n;ie++) b[ie]=x[perm[ie]];   // converged -> un-permute solution into b (equation order)
-    LV.clear(); WSP.clear(); Cfac.clear(); Cfac.shrink_to_fit();
     return 0;
   } catch(...) {   // bad_alloc/etc must not cross the extern "C" boundary (UB) -> clean direct fallback
     fprintf(stderr,"[gmg] exception (likely OOM) -> direct fallback\n");
-    LV.clear(); WSP.clear(); Cfac.clear(); Cfac.shrink_to_fit(); return 6;   // b untouched
+    return 6;   // b untouched (ctx frees on return)
   }
 }
 
