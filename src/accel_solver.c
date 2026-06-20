@@ -268,30 +268,23 @@ static void axpy_cols(const double *M, int n, int m, const double *d, double *v)
     for (int k = 0; k < m; ++k){ double dk=d[k]; if(dk!=0.0){ const double *Mk=M+(long)k*n; for(int i=0;i<n;i++) v[i]-=dk*Mk[i]; } }
 }
 
-/* Build 6 rigid-body modes (column-major: column k at W + k*n) from a CCX_ACCEL_DUMP2 coord/DOF-map
-   file. Returns malloc'd n*6 doubles (NULL on failure); sets *m_out = 6. */
-static double *load_rbm(const char *path, int n, int *m_out) {
-    FILE *g = fopen(path, "rb"); if (!g) return NULL;
-    int64_t nk64, mt64;
-    if (fread(&nk64,8,1,g)!=1 || fread(&mt64,8,1,g)!=1){ fclose(g); return NULL; }
-    long nk=(long)nk64; int mt=(int)mt64;
-    if (mt > 64) { fclose(g); return NULL; }
-    double *co = (double*)malloc((size_t)3*nk*sizeof(double));
-    int    *na = (int*)   malloc((size_t)mt*nk*sizeof(int));
-    if (!co || !na){ free(co); free(na); fclose(g); return NULL; }
-    if (fread(co,8,(size_t)3*nk,g)!=(size_t)3*nk || fread(na,4,(size_t)mt*nk,g)!=(size_t)mt*nk){
-        free(co); free(na); fclose(g); return NULL; }
-    fclose(g);
+/* Build 6 rigid-body modes (column-major: column k at W+k*n) from in-memory node coords `co` (3*nk doubles)
+   and the CCX nactdof map `na` (mt*nk, 1-based eqn|0). The 3 displacement DOFs are the mt-columns with the
+   most active equations (matches the GMG coord detection). Returns malloc'd n*6 (NULL on failure); *m_out=6.
+   Does NOT free co/na -- the caller owns them (the in-memory globals, or load_rbm's file buffers). */
+static double *build_rbm(const double *co, const int *na, long nk, int mt, int n, int *m_out) {
+    if (!co || !na || nk <= 0 || mt < 3 || mt > 64 || n <= 0) return NULL;
     long cnt[64]; for (int j=0;j<mt;j++) cnt[j]=0;
     for (long nd=0; nd<nk; ++nd) for (int j=0;j<mt;j++){ int e=na[mt*nd+j]; if(e>=1&&e<=n) cnt[j]++; }
     int disp[3]={-1,-1,-1};
     for (int s=0;s<3;s++){ long best=-1; int bj=-1;
         for (int j=0;j<mt;j++){ int used=(j==disp[0]||j==disp[1]||j==disp[2]); if(!used&&cnt[j]>best){best=cnt[j];bj=j;} }
         disp[s]=bj; }
+    if (disp[0]<0 || disp[1]<0 || disp[2]<0) return NULL;
     for (int a=0;a<3;a++) for (int b2=a+1;b2<3;b2++) if(disp[b2]<disp[a]){int t=disp[a];disp[a]=disp[b2];disp[b2]=t;}
     long *eqn=(long*)malloc((size_t)n*sizeof(long)); int *eqc=(int*)malloc((size_t)n*sizeof(int));
     double *W=(double*)calloc((size_t)6*n,sizeof(double));
-    if (!eqn||!eqc||!W){ free(co);free(na);free(eqn);free(eqc);free(W); return NULL; }
+    if (!eqn||!eqc||!W){ free(eqn);free(eqc);free(W); return NULL; }
     for (int i=0;i<n;i++){ eqn[i]=-1; eqc[i]=-1; }
     for (long nd=0; nd<nk; ++nd) for (int ci=0;ci<3;ci++){ int j=disp[ci]; int e=na[mt*nd+j];
         if(e>=1&&e<=n){ eqn[e-1]=nd; eqc[e-1]=ci; } }
@@ -305,8 +298,23 @@ static double *load_rbm(const char *path, int n, int *m_out) {
     }
     for (int k=0;k<6;k++){ double *Wk=W+(long)k*n; double s=0; for(int i=0;i<n;i++) s+=Wk[i]*Wk[i];
         s=sqrt(s); if(s>0) for(int i=0;i<n;i++) Wk[i]/=s; }
-    free(co); free(na); free(eqn); free(eqc);
+    free(eqn); free(eqc);
     *m_out = 6; return W;
+}
+/* file variant (CCX_ACCEL_RBM_MAP / CCX_ACCEL_DUMP2 format): read co/na, then build_rbm. */
+static double *load_rbm(const char *path, int n, int *m_out) {
+    FILE *g = fopen(path, "rb"); if (!g) return NULL;
+    int64_t nk64, mt64;
+    if (fread(&nk64,8,1,g)!=1 || fread(&mt64,8,1,g)!=1){ fclose(g); return NULL; }
+    long nk=(long)nk64; int mt=(int)mt64;
+    if (nk <= 0 || mt < 3 || mt > 64) { fclose(g); return NULL; }
+    double *co = (double*)malloc((size_t)3*nk*sizeof(double));
+    int    *na = (int*)   malloc((size_t)mt*nk*sizeof(int));
+    double *W = NULL;
+    if (co && na && fread(co,8,(size_t)3*nk,g)==(size_t)3*nk && fread(na,4,(size_t)mt*nk,g)==(size_t)mt*nk)
+        W = build_rbm(co, na, nk, mt, n, m_out);
+    free(co); free(na); fclose(g);
+    return W;
 }
 
 /* FNV-1a-style hash of the matrix STRUCTURE only (n, nnz, colStarts, rowIdx) — NOT values.
@@ -645,17 +653,21 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
         SparseMatrix_Double Ad = { .structure = structure, .data = vals };
 
         double *W = NULL, *AW = NULL, *xhat = NULL, *qb = NULL; int m = 0;
-        if (cfg.defl && cfg.rbmmap[0]) {
-            W = load_rbm(cfg.rbmmap, n, &m);
+        if (cfg.defl) {
+            /* rigid-body deflation modes: prefer the in-memory CCX coords (g_co/g_nactdof, same source the GMG
+               uses) so defl-pcg runs with NO external file; fall back to an rbmmap file if supplied. */
+            const char *src = "in-memory coords";
+            if (g_co && g_nactdof) W = build_rbm(g_co, g_nactdof, g_nk, g_mi1 + 1, n, &m);
+            else if (cfg.rbmmap[0]) { W = load_rbm(cfg.rbmmap, n, &m); src = cfg.rbmmap; }
             if (W) {
                 AW   = (double*)malloc((size_t)6*n*sizeof(double));
                 xhat = (double*)malloc((size_t)n*sizeof(double));
                 qb   = (double*)malloc((size_t)n*sizeof(double));
             }
             if (!W || !AW || !xhat || !qb) {
-                if (verbose) fprintf(stderr, "[accel] defl: RBM load/alloc failed (%s) -> plain float-pcg\n", cfg.rbmmap);
+                if (verbose) fprintf(stderr, "[accel] defl: RBM build failed (%s) -> plain float-pcg\n", src);
                 free(W); free(AW); free(xhat); free(qb); W = NULL;
-            }
+            } else if (verbose) fprintf(stderr, "[accel] defl: %d RBM modes from %s\n", m, src);
         }
 
         if (cfg.defl && W) {
