@@ -109,7 +109,11 @@ void ccx_fastdat_flush_(void) {
          - NaN/Inf: C prints "NAN"/"INF", gfortran prints "NaN"/"Inf" (width is fine, so the format-time width
            check would miss it -- catch it here).
          - a negative magnitude needing a 3-digit exponent ("-d.ddddddE+100" = 14 chars): overflows the 13-char
-           field, where gfortran writes 13 asterisks. (Positive 3-digit exponents fit in 13 and DO match.) */
+           field, where gfortran writes 13 asterisks. (Positive 3-digit exponents fit in 13 and DO match.)
+       This is a cheap O(n) magnitude test, deliberately NOT a per-line snprintf width check: the exact check
+       would ~double the stress-format cost and risk the round-trip budget. It is only inexact within rounding
+       distance of 1e-99/1e100 (physically impossible stresses), and errs ONLY toward failing closed -- it can
+       never let a wrong line through. */
     for (size_t k = 0; k < g_n; k++) {
         const double *s = g_s[k];
         for (int c = 0; c < 6; c++) {
