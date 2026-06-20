@@ -85,7 +85,7 @@ typedef struct {
     double pcg_tol;       /* PCG relative-residual stop tolerance */
     int  verbose;          /* print effective config + per-phase timing */
     char permdir[8];       /* usermetis perm direction: "iperm" (default) | "perm" */
-    char rbmmap[256];      /* coord/DOF-map file (CCX_ACCEL_DUMP2 format) for RBM deflation */
+    char rbmmap[256];      /* coord/DOF-map file (CCX_ACCEL_RBM_MAP) for RBM deflation */
     char permcache[256];   /* dir to cache/reuse METIS perm keyed on matrix STRUCTURE (env CCX_ACCEL_PERMCACHE) */
     char source[160];      /* provenance: where config came from */
 } accel_config_t;
@@ -290,7 +290,7 @@ static double *build_rbm(const double *co, const int *na, long nk, int mt, int n
     free(eqn); free(eqc);
     *m_out = 6; return W;
 }
-/* file variant (CCX_ACCEL_RBM_MAP / CCX_ACCEL_DUMP2 format): read co/na, then build_rbm. */
+/* file variant (CCX_ACCEL_RBM_MAP): read co/na, then build_rbm. */
 static double *load_rbm(const char *path, int n, int *m_out) {
     FILE *g = fopen(path, "rb"); if (!g) return NULL;
     int64_t nk64, mt64;
@@ -436,7 +436,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
     MEMLOG("after CSC build (+matrix)");
 
     /* factorization-free geometric multigrid path (regular voxel grid). Needs the coord/DOF-map
-       (CCX_ACCEL_DUMP2 / rbmmap). On success returns immediately; on failure falls through to direct. */
+       (the in-memory map from accel_set_coordmap_, or the CCX_ACCEL_RBM_MAP file). On success returns immediately; on failure falls through to direct. */
     if (cfg.gmg && sig != 0.0) {
         /* GMG's prolongation/Galerkin hierarchy assumes the SPD static stiffness K. A shifted/indefinite
            matrix K - sigma*M (modal/buckling) breaks that assumption -> never apply GMG; use direct. */

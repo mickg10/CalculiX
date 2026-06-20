@@ -674,7 +674,7 @@ void linstatic(double *co,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 #ifdef SPOOLES
 #ifdef CCX_ACCEL
       /* hand CalculiX's in-memory coord/DOF map to the Accelerate/GMG backend (solve=gmg|auto needs it to
-         reconstruct the voxel grid); also honours CCX_ACCEL_DUMP2=<path>. No-op for the stock direct path. */
+         reconstruct the voxel grid). No-op for the stock direct path. */
       accel_set_coordmap_(co,nactdof,nk,mi);
 #endif
       spooles(ad,au,adb,aub,&sigma,b,icol,irow,neq,nzs,&symmetryflag,

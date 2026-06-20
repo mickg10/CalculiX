@@ -1,7 +1,7 @@
 // gmg_solve.cpp — geometric multigrid solver for CCX, callable from accel_solver.c.
 // The target problem is a homogeneous regular Cartesian voxel-grid C3D8 model (3 DOF/node).
-// Validated in Python (scripts/gmg_proto.py) and C (_amg/gmg_test.cpp): support-closed trilinear P +
-// Galerkin A_c=P^T A P + block-Jacobi 4th-kind Chebyshev + PCG (W-cycle) => 15 iters, maxU exact.
+// Method: support-closed trilinear prolongation P + Galerkin coarse operator A_c = P^T A P + block-Jacobi
+// 4th-kind Chebyshev smoother + PCG (V/W-cycle preconditioner). The result is gated on the true residual.
 // Entry: ccx_gmg_solve(n, cs, ri, va, b, coordmap_path, ...). Returns 0 on success (solution into b).
 #include <cstdio>
 #include <cstdlib>
@@ -314,7 +314,9 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     if(regfrac<0.999){ if(verbose) fprintf(stderr,"[gmg] NOT a regular grid (regular %.3f%% < 99.9%%) -> fallback\n",100.0*regfrac); return 3; }
     // build_P keys coarse lattice nodes as (px*100000+py)*100000+pz; that is collision-free only while every
     // axis index < 100000 (i.e. < 10 m at 0.1 mm pitch). Beyond that, fall back rather than risk a hash clash.
-    if(nx>=100000||ny>=100000||nz>=100000){ if(verbose) fprintf(stderr,"[gmg] lattice %ldx%ldx%ld exceeds build_P hash bound (1e5/axis) -> fallback\n",nx,ny,nz); return 3; }
+    /* build_P packs coarse coords as (px*1e5+py)*1e5+pz; px can reach (nx-1 rounded even)+2 == nx+1, so the
+       per-axis index must stay < 1e5 -> require nx,ny,nz <= 99998. Fails closed (a real mesh is far smaller). */
+    if(nx>=99999||ny>=99999||nz>=99999){ if(verbose) fprintf(stderr,"[gmg] lattice %ldx%ldx%ld exceeds build_P key bound (<1e5/axis) -> fallback\n",nx,ny,nz); return 3; }
 
     // ---- build fine scalar full CRS (node-block order) from lower CSC ----
     std::vector<int> deg(n,0);
