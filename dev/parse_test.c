@@ -8,9 +8,8 @@
  *  - integer: Fortran read(field(1:10),'(i10)') ; success iff istat<=0. Compare error-flag + value.
  *  - real   : Fortran read(field(1:20),'(f20.0)'); compare error-flag + the double BIT-for-bit.
  *  - tokenizer: splitline(text)->(n,textpart[16][132]); compare n + all 16*132 bytes.
- * The i10/f20.0 column-width truncation and Fortran D-exponent floats are both covered. The only remaining
- * out-of-scope case (never emitted by valid decks) is a 10-digit integer VALUE that overflows 32-bit int,
- * where Fortran i10 flags an iostat error but strtol wraps -- an overflow difference, not a width one.
+ * Covered: the i10/f20.0 column-width truncation, Fortran D-exponent floats, and 10-digit integer values that
+ * overflow 32-bit int (both the i10 read and ccxftoi flag an iostat/range error).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -119,14 +118,14 @@ static void rand_flt_tok(char *o){
 
 int main(void) {
     /* ---- integer corpus ---- */
-    /* valid-deck integer fields: positive IDs <=10 digits (non-overflowing) + small negatives + blanks, plus
-     * a few >10-char tokens that lock in the i10 WIDTH CAP -- Fortran reads cols 1:10 and ccxftoi now matches.
-     * Still out of scope (never emitted by valid decks): a 10-digit VALUE that overflows 32-bit int, where the
-     * Fortran i10 read flags an iostat error but strtol wraps -- an overflow difference, not a width one. */
+    /* valid-deck integer fields: positive IDs <=10 digits + small negatives + blanks, plus >10-char tokens
+     * that lock in the i10 WIDTH CAP (Fortran reads cols 1:10, ccxftoi matches), plus 10-digit values that
+     * OVERFLOW 32-bit int -- the i10 read flags an iostat error and ccxftoi now does too (INT_MAX/ERANGE). */
     const char *ints[] = {"0","1","-1","7","42","100","999","1000","12345","123456","1234567",
         "7654321","2147483647","  5","5  "," 123 ","007","+5","000","999999999",
         "1000000000","-7","   ","",
         "12345678901","123456789012",             /* >10 chars: first 10 cols == 1234567890 (width cap) */
+        "2147483648","9999999999",                /* overflow 32-bit int -> error (matches i10 iostat) */
         "3.5","12x4","99z",                       /* trailing junk -> error (matches i10) */
         NULL};
     for (int i=0; ints[i]; i++) test_int(ints[i]);

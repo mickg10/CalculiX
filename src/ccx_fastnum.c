@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
+#include <limits.h>
 
 void ccxftoi_(const char *s, int *v, int *istat, long slen) {
     char b[16];
@@ -22,11 +24,13 @@ void ccxftoi_(const char *s, int *v, int *istat, long slen) {
     memcpy(b, s, (size_t)n); b[n] = '\0';
     char *p = b; while (*p == ' ') p++;
     if (*p == '\0') { *v = 0; *istat = 0; return; }  /* all-blank field -> 0, no error (matches Fortran i10) */
-    char *e; long x = strtol(p, &e, 10);
+    char *e; errno = 0; long x = strtol(p, &e, 10);
     if (e == p) { *v = 0; *istat = 1; return; }      /* nothing parsed -> error, like the Fortran read */
     while (*e == ' ') e++;
-    *istat = (*e == '\0') ? 0 : 1;                    /* trailing junk after the integer -> error, like i10 */
-    *v = (int)x;
+    /* error on trailing junk, or on a value that overflows a default (32-bit) integer -- the i10 Fortran read
+       flags both via iostat (a 10-digit field can exceed INT_MAX even after the width cap). */
+    if (*e != '\0' || errno == ERANGE || x < INT_MIN || x > INT_MAX) { *v = 0; *istat = 1; return; }
+    *istat = 0; *v = (int)x;
 }
 
 void ccxftof_(const char *s, double *v, int *istat, long slen) {
