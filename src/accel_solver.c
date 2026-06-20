@@ -11,8 +11,8 @@
  * col in [0,neq): diag ad[col] (minus sigma*adb[col] if sigma!=0), then icol[col]
  * sub-diagonal au[ipo] at rows irow[ipo]-1.
  *
- * ---- Configuration (precedence: built-in defaults < ccx_accel.conf < environment) ----
- * Config file:  $CCX_ACCEL_CONF (explicit path), else ./ccx_accel.conf if present.
+ * ---- Configuration (precedence: built-in defaults < config file < environment) ----
+ * Config file:  $CCX_ACCEL_CONF (explicit path only; no implicit ./ccx_accel.conf).
  *               Format: `key = value`, one per line, `#` comments. Keys = env names
  *               without the CCX_ACCEL_ prefix, lowercased:
  *                 accel        = on|off          (env CCX_ACCEL; CCX_USE_ACCEL=0 also disables)
@@ -35,14 +35,16 @@
 #include <metis.h>
 #endif
 
+/* This backend round-trips CCX's icol/irow/neq/nzs and reads nactdof as int (the default i4 build). An i8
+   build (-DLONGLONG makes ITG==long long in CalculiX.h) would silently misread those, so trip the build
+   directly on the macro rather than on sizeof(ITG) -- this file does not include CalculiX.h, so it never sees
+   the i8 redefinition and a sizeof() assert would be int==int and pass. The accel Makefile uses i4. */
+#ifdef LONGLONG
+#error "accel backend requires the default i4 CalculiX build (ITG==int); it is incompatible with -DLONGLONG (i8)."
+#endif
 #ifndef ITG
 #define ITG int
 #endif
-/* This backend reads CCX's nactdof as int* (accel_set_coordmap_) and round-trips icol/irow/neq/nzs
-   as int. It therefore requires the default i4 CalculiX build (ITG==int). An i8 build (-DLONGLONG)
-   linked against this backend would silently misread the coord/DOF map. The accel Makefile uses i4;
-   this is a compile-time tripwire if that ever changes. */
-_Static_assert(sizeof(ITG) == sizeof(int), "accel backend requires ITG==int (default i4 CalculiX build)");
 
 static double now_s(void) {
     struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -177,11 +179,11 @@ static accel_config_t accel_config_load(void) {
     c.source[0] = '\0';
     snprintf(c.source, sizeof c.source, "defaults ");
 
-    /* config file: explicit path, else ./ccx_accel.conf */
+    /* config file: explicit path only (CCX_ACCEL_CONF). No implicit ./ccx_accel.conf -- a stray file in the
+       working directory must never silently enable the backend (a bare run stays stock SPOOLES). */
     int file_loaded = 0;
     const char *cf = getenv("CCX_ACCEL_CONF");
     if (cf && *cf) cfg_load_file(&c, cf, &file_loaded);
-    else cfg_load_file(&c, "ccx_accel.conf", &file_loaded);
 
     /* environment overrides (highest precedence) */
     const char *e;
