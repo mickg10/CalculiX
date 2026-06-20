@@ -8,8 +8,5 @@ ccx_accel
 src/CalculiX
 src/CalculiX_MT
 src/CalculiX_MT_*
-# dev/ test+bench binaries
+# dev/ test binaries
 dev/parse_test
-dev/mf_verify_ref
-dev/mf_verify_accel
-dev/gmg_driver
