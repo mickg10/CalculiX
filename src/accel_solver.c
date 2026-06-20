@@ -354,7 +354,9 @@ static int *compute_metis_perm(int n, const long *colStarts, const int *rowIdx,
     int rc = METIS_NodeND(&nv, xadj, adjncy, NULL, options, perm, iperm);
     free(xadj); free(adjncy);
     if (rc != METIS_OK) { free(perm); free(iperm); return NULL; }
-    /* idx_t==int32; SparseOrderUser wants the elimination order (iperm) by default. */
+    /* We hand the idx_t array straight back as int* (SparseOrderUser wants the elimination order, iperm by
+       default). That cast is only valid for a 32-bit-idx_t METIS build -- enforce it at compile time. */
+    _Static_assert(sizeof(idx_t) == sizeof(int), "accel METIS path requires 32-bit idx_t (IDXTYPEWIDTH=32)");
     if (permdir && !strcmp(permdir, "perm")) { free(iperm); return (int*)perm; }
     free(perm); return (int*)iperm;
 }
@@ -423,20 +425,28 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
     double *vals      = (double*)malloc((size_t)nnz     * sizeof(double));
     if (!colStarts || !rowIdx || !vals) { free(colStarts); free(rowIdx); free(vals); return 2; }
 
+    /* Build full-diagonal lower-CSC, validating CCX's icol/irow against nnz=n+nzs as we go: a bad count or
+       out-of-range row would otherwise overrun rowIdx/vals or feed Accelerate a garbage index. On any
+       inconsistency decline (rc=1) so the exact stock SPOOLES solve runs. sigma==0 here (shifted -> early
+       return above), so the diagonal is just ad[col]. The checks are O(nnz) compares -- noise vs the solve. */
     long pos = 0, ipoint = 0;
-    for (int col = 0; col < n; ++col) {
+    int bad = 0;
+    for (int col = 0; col < n && !bad; ++col) {
         colStarts[col] = pos;
-        double dval = ad[col];
-        if (sig != 0.0 && adb) dval -= sig * adb[col];
-        rowIdx[pos] = col; vals[pos] = dval; pos++;
-        const int cnt = (int)icol[col];
-        for (int k = 0; k < cnt; ++k) {
+        const long cnt = (long)icol[col];
+        if (cnt < 0 || pos + 1 + cnt > nnz) { bad = 1; break; }   /* would overrun rowIdx/vals */
+        rowIdx[pos] = col; vals[pos] = ad[col]; pos++;            /* diagonal */
+        for (long k = 0; k < cnt; ++k) {
             const long ipo = ipoint + k;
-            rowIdx[pos] = (int)(irow[ipo] - 1);
-            vals[pos]   = au[ipo];
-            pos++;
+            const long r = (long)irow[ipo] - 1;
+            if (r < 0 || r >= n) { bad = 1; break; }              /* row index out of range */
+            rowIdx[pos] = (int)r; vals[pos] = au[ipo]; pos++;
         }
         ipoint += cnt;
+    }
+    if (bad || pos != nnz) {                                      /* contract: total entries == n + nzs */
+        if (verbose) fprintf(stderr, "[accel] malformed matrix (icol/irow vs nnz) -> stock SPOOLES\n");
+        free(colStarts); free(rowIdx); free(vals); return 1;
     }
     colStarts[n] = pos;
     double t_build = now_s() - t0;
@@ -511,8 +521,14 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
             FILE *cf = fopen(cpath, "rb");
             if (cf) {
                 int *p = (int*)malloc((size_t)n * sizeof(int));
-                if (p && fread(p, sizeof(int), (size_t)n, cf) == (size_t)n) { user_perm = p; from_cache = 1; }
-                else free(p);
+                /* validate: a corrupt/foreign cache file must not feed Accelerate a non-permutation.
+                   Require exactly n ints forming a permutation of [0,n); else discard and recompute. */
+                if (p && fread(p, sizeof(int), (size_t)n, cf) == (size_t)n) {
+                    char *seen = (char*)calloc((size_t)n, 1); int okperm = (seen != NULL);
+                    for (int i = 0; okperm && i < n; ++i) { int v = p[i]; if (v < 0 || v >= n || seen[v]) okperm = 0; else seen[v] = 1; }
+                    free(seen);
+                    if (okperm) { user_perm = p; from_cache = 1; } else free(p);
+                } else free(p);
                 fclose(cf);
             }
         }
