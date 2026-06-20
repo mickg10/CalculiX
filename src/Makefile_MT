@@ -15,6 +15,9 @@ UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S),Darwin)
   # ---- macOS (Apple Silicon): Homebrew gcc/gfortran body + clang accel objects ----
+  # The OpenMP objects must all share gfortran's libgomp (the H4 unification), so the toolchain is pinned to
+  # GNU here -- NOT ?= (make pre-defines CC=cc, which ?= would leave as clang -> clang gets -fopenmp -> fails).
+  # To use a different GNU version, change the suffix on these four lines (e.g. gcc-15/gfortran-15/g++-15).
   CC  = gcc-14
   FC  = gfortran-14
   CXX = g++-14            # GNU C++ for the OpenMP GMG object -> libgomp (same runtime as gfortran)
@@ -22,7 +25,7 @@ ifeq ($(UNAME_S),Darwin)
   ARPACK      ?= /opt/homebrew/opt/arpack
   SPOOLES_DIR ?= ../../SPOOLES.2.2
   SPOOLES_A   ?= $(SPOOLES_DIR)/spooles.a
-  ACCEL_ARCH  ?= -mcpu=apple-m3
+  ACCEL_ARCH  ?= -mcpu=native   # tune for the build host; override (e.g. -mcpu=apple-m1) for a portable binary
   ZSTD        ?= /opt/homebrew/opt/zstd
   ACCEL_OBJS  = accel_solver.o gmg_solve.o ccx_fastdat.o ccx_zreader.o ccx_fastnum.o
   # Fast C deck parser (nodes.f/elements.f internal reads -> strtol/strtod). On by default;

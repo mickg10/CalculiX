@@ -350,7 +350,6 @@ void mastruct(ITG *nk, ITG *kon, ITG *ipkon, char *lakon, ITG *ne,
   if(usecoo){ char*ev=getenv("CCX_MASTRUCT_COO"); if(ev&&atoi(ev)==0) usecoo=0; }
   if(usecoo){ for(i=0;i<*ne;i++){ if(ipkon[i]<0) continue; if((lakon[8*i]=='U')||(lakon[8*i]=='E')){usecoo=0;break;} } }
   insert_set_coo(usecoo);
-  if(getenv("CCX_MASTRUCT_DBG")) fprintf(stderr,"[mastruct] usecoo=%d nmpc=%" ITGFORMAT " ithermal=%" ITGFORMAT " nmethod=%" ITGFORMAT "\n",usecoo,*nmpc,*ithermal,*nmethod);
 
   for(i=0;i<4**nk;++i){
     ipointer[i]=0;
