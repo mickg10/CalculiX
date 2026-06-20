@@ -20,7 +20,7 @@
  *                 precision    = double|float     (env CCX_ACCEL_PRECISION)
  *                 refine_iters = N (float mode)   (env CCX_ACCEL_REFINE_ITERS)
  *                 verbose      = 0|1              (env CCX_ACCEL_VERBOSE)
- *                 permdir      = iperm|perm       (dev/debug; env CCX_ACCEL_PERMDIR)
+ *                 permdir      = iperm|perm       (perm-direction diagnostic; env CCX_ACCEL_PERMDIR)
  * Provenance: with verbose=1 the backend prints the effective config + its source.
  */
 #include <Accelerate/Accelerate.h>

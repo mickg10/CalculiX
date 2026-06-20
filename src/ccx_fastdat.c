@@ -102,18 +102,22 @@ void ccx_fastdat_flush_(void) {
         ccx_fastdat_reset(); exit(202);
     }
 
-    /* preflight: a non-representable value (NaN/Inf, or a magnitude needing a 3-digit exponent) cannot be
-       encoded in the fixed e13.6 width. Detect it BEFORE opening/appending, so the malformed path leaves no
-       partial or clamped .dat on disk -- fail closed and let the stock writer produce the block on a rerun.
-       (Conservative superset of the format-time width check; only a non-physical solution can trip it.) */
+    /* preflight: detect any value whose C "%13.6E" rendering would NOT match CalculiX's "1p,e13.6" gfortran
+       output, BEFORE opening/appending, so such a line never reaches disk (fail closed -> rerun with the stock
+       writer). Only a non-physical solution can trip this. The two divergent cases (everything else is byte-
+       identical, verified over 200k lines):
+         - NaN/Inf: C prints "NAN"/"INF", gfortran prints "NaN"/"Inf" (width is fine, so the format-time width
+           check would miss it -- catch it here).
+         - a negative magnitude needing a 3-digit exponent ("-d.ddddddE+100" = 14 chars): overflows the 13-char
+           field, where gfortran writes 13 asterisks. (Positive 3-digit exponents fit in 13 and DO match.) */
     for (size_t k = 0; k < g_n; k++) {
         const double *s = g_s[k];
         for (int c = 0; c < 6; c++) {
             double a = fabs(s[c]);
-            if (!isfinite(s[c]) || a >= 1e100 || (a != 0.0 && a < 1e-99)) {
-                fprintf(stderr, "[accel] fast .dat: stress value not representable in the fixed e13.6 width "
-                                "(NaN/Inf/huge stress?) -> failing closed (exit 202) before writing; rerun "
-                                "without CCX_ACCEL_OUT_DAT_FAST and check the solution\n");
+            if (!isfinite(s[c]) || (s[c] < 0.0 && (a >= 1e100 || (a != 0.0 && a < 1e-99)))) {
+                fprintf(stderr, "[accel] fast .dat: a stress value renders differently from gfortran's e13.6 "
+                                "(NaN/Inf or huge negative stress?) -> failing closed (exit 202) before writing; "
+                                "rerun without CCX_ACCEL_OUT_DAT_FAST and check the solution\n");
                 ccx_fastdat_reset(); exit(202);
             }
         }
