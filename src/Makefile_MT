@@ -28,6 +28,7 @@ ifeq ($(UNAME_S),Darwin)
   ACCEL_ARCH  ?= -mcpu=native   # tune for the build host; override (e.g. -mcpu=apple-m1) for a portable binary
   ZSTD        ?= /opt/homebrew/opt/zstd
   ACCEL_OBJS  = accel_solver.o gmg_solve.o ccx_fastdat.o ccx_zreader.o ccx_fastnum.o
+  GMG_DEF     = -DACCELERATE_NEW_LAPACK -flax-vector-conversions   # GMG coarse solve uses Apple Accelerate LAPACK
   # Fast C deck parser (nodes.f/elements.f internal reads -> strtol/strtod). On by default;
   # build with FAST_PARSE_DEF= to A/B the stock Fortran reads.
   FAST_PARSE_DEF ?= -DCCX_FAST_PARSE
@@ -48,19 +49,38 @@ ifeq ($(UNAME_S),Darwin)
          -lstdc++ \
          -lz -L$(ZSTD)/lib -lzstd -lm
 else
-  # ---- Linux (stock upstream Makefile_MT, unchanged) ----
-  CC = cc
-  FC = gfortran
-  CFLAGS = -Wall -O2 -fopenmp -I ../../SPOOLES.2.2 -DARCH="Linux" -DSPOOLES -DARPACK -DMATRIXSTORAGE -DUSE_MT=1 -fopenmp
-  FFLAGS = -Wall -O2 -fopenmp -cpp -fopenmp
-  DIR = ../../SPOOLES.2.2
+  # ---- Linux (x86-64): portable accel backend. No Apple Accelerate, so the direct/float/defl modes decline to
+  #      stock SPOOLES; CCX_ACCEL_SOLVE=gmg|auto runs the portable geometric-multigrid solver (coarse solve via
+  #      OpenBLAS LAPACK), plus the portable fast .dat writer / fast parser / zstd reader / Arrow output. One
+  #      GNU toolchain -> one libgomp (pinned, like macOS). System OpenBLAS + ARPACK + zstd + zlib. ----
+  CC  = gcc
+  FC  = gfortran
+  CXX = g++
+  CLANG       = $(CC)              # no separate clang on Linux; the no-OpenMP accel objects are plain gcc
+  SPOOLES_DIR ?= ../SPOOLES.2.2
+  SPOOLES_A   ?= $(SPOOLES_DIR)/spooles.a
+  ACCEL_ARCH  ?= -march=native
+  # system zstd/zlib headers live in /usr/include (no trailing-space before a comment: it would corrupt -I$(ZSTD))
+  ZSTD        ?= /usr
+  ACCEL_OBJS  = accel_solver.o gmg_solve.o ccx_fastdat.o ccx_zreader.o ccx_fastnum.o
+  GMG_DEF     = -DCCX_GMG_NOACCEL  # GMG coarse solve uses the portable LAPACK ABI (OpenBLAS), not Accelerate
+  FAST_PARSE_DEF ?= -DCCX_FAST_PARSE
+  ARROW ?= 0
+  ifeq ($(ARROW),1)
+    ARROW_DEF  = -DCCX_ACCEL_ARROW
+    ARROW_OBJS = ccx_arrowout.o
+  endif
+  CFLAGS = -Wall -O2 -fopenmp -I$(SPOOLES_DIR) -DARCH="Linux" -DSPOOLES -DARPACK -DMATRIXSTORAGE \
+           -DUSE_MT=1 -DCCX_ACCEL $(ARROW_DEF)
+  FFLAGS = -Wall -O2 -fopenmp -cpp -DCCX_ACCEL $(FAST_PARSE_DEF)
   LIBS = \
-         $(DIR)/MT/src/spoolesMT.a \
-         $(DIR)/spooles.a \
-         ../../LAPACK/lapack-3.12.1/liblapack.a \
-         ../../LAPACK/lapack-3.12.1/librefblas.a \
-         ../../ARPACK/libarpack_INTEL.a \
-         -lpthread -lm
+         $(ACCEL_OBJS) $(ARROW_OBJS) \
+         $(SPOOLES_DIR)/MT/src/spoolesMT.a \
+         $(SPOOLES_A) \
+         -larpack \
+         -lopenblas \
+         -lstdc++ \
+         -lz -lzstd -lpthread -lm
 endif
 
 .c.o :
@@ -88,8 +108,7 @@ accel_solver.o: accel_solver.c accel.h
 # GMG solver: GNU C++ so its OpenMP (incl. the P-core OmpThreadCap) shares libgomp with the Fortran body.
 # -flax-vector-conversions lets g++ accept Apple's vecLib NEON headers pulled in by <Accelerate/Accelerate.h>.
 gmg_solve.o: gmg_solve.cpp
-	$(CXX) -std=c++17 -O3 $(ACCEL_ARCH) -DNDEBUG -DACCELERATE_NEW_LAPACK \
-	    -flax-vector-conversions -fopenmp -c gmg_solve.cpp -o $@
+	$(CXX) -std=c++17 -O3 $(ACCEL_ARCH) -DNDEBUG $(GMG_DEF) -fopenmp -c gmg_solve.cpp -o $@
 # Parallel .dat writer: GNU C so its OpenMP shares libgomp too (no clang/libomp object in the process).
 ccx_fastdat.o: ccx_fastdat.c
 	$(CC) -O2 -fopenmp -c ccx_fastdat.c -o $@

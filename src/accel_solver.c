@@ -29,7 +29,10 @@
  *                 permdir      = iperm|perm       (perm-direction diagnostic; env CCX_ACCEL_PERMDIR)
  * Provenance: with verbose=1 the backend prints the effective config + its source.
  */
-#include <Accelerate/Accelerate.h>
+#ifdef __APPLE__
+#include <Accelerate/Accelerate.h>   /* Sparse direct/float/defl solvers -- Apple-only. On other platforms the
+                                        portable GMG path is used and direct/float/defl decline to stock SPOOLES. */
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -65,6 +68,7 @@ static double now_s(void) {
     return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
 }
 
+#ifdef __APPLE__
 #include <mach/mach.h>
 /* current resident set size (bytes); 0 on failure. */
 static size_t rss_bytes(void) {
@@ -82,6 +86,11 @@ static size_t phys_footprint_bytes(void) {
         return (size_t)vmi.phys_footprint;
     return 0;
 }
+#else
+/* non-Apple: mach task_info is unavailable; the MEMLOG figures are diagnostic only. */
+static size_t rss_bytes(void) { return 0; }
+static size_t phys_footprint_bytes(void) { return 0; }
+#endif
 #define MEMLOG(tag) do { if (verbose) fprintf(stderr, \
     "[accel.mem] %-22s rss=%.2f GB  footprint=%.2f GB\n", (tag), \
     rss_bytes()/1e9, phys_footprint_bytes()/1e9); } while(0)
@@ -242,6 +251,7 @@ static accel_config_t accel_config_load(void) {
     return c;
 }
 
+#ifdef __APPLE__
 /* map ordering name -> Accelerate SparseOrder_t (usermetis handled separately) */
 static SparseOrder_t order_from_name(const char *o) {
     if (!strcmp(o, "default")) return SparseOrderDefault;
@@ -250,6 +260,7 @@ static SparseOrder_t order_from_name(const char *o) {
     if (!strcmp(o, "mtmetis")) return SparseOrderMTMetis;
     return SparseOrderMetis;   /* "metis", "usermetis"(fallback), unknown */
 }
+#endif
 
 /* y -= A*x for a symmetric matrix stored as lower triangle (diag+subdiag) in CSC. */
 static void symm_lower_spmv_sub(int n, const long *colStarts, const int *rowIdx,
@@ -530,6 +541,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
         }
     }
 
+#ifdef __APPLE__   /* ---- direct/float/defl via Apple Accelerate Sparse (macOS only) ---- */
     SparseAttributes_t attr = (SparseAttributes_t){0};
     attr.kind = SparseSymmetric; attr.triangle = SparseLowerTriangle; attr.transpose = false;
     SparseMatrixStructure structure = {
@@ -881,4 +893,11 @@ done:
             fprintf(stderr, "[accel] FAILED rc=%d -> SPOOLES fallback\n", rc);
     }
     return rc;
+#else  /* !__APPLE__ : no Accelerate Sparse -> only the portable GMG path (above) runs; everything else
+          declines to the exact stock SPOOLES solve. */
+    free(colStarts); free(rowIdx); free(vals);
+    if (verbose) fprintf(stderr, "[accel] non-Apple build: direct/float/defl unavailable "
+                                 "(use CCX_ACCEL_SOLVE=gmg) -> stock SPOOLES\n");
+    return 1;
+#endif  /* __APPLE__ */
 }
