@@ -60,7 +60,10 @@ void frd(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,ITG *ne0,
      pipeline must never treat a missing/partial Arrow file as a successful run. */
   { const char *e=getenv("CCX_ACCEL_OUT_ARROW");
     if(e&&*e){ const char *es=getenv("CCX_ACCEL_OUT_ARROW_STRESS");
-               if(ccx_arrow_write(e,(long)*nk,mi[1]+1,co,v,(es&&*es)?stn:0,inum)!=0){
+               /* match frd's node selection: output[3]=='a' is the "all nodes" mode (ioutall) -> pass inum=NULL
+                  so every node is written; otherwise filter inum[i]==0 exactly as frd does. */
+               const int *sel = (strcmp1(&output[3],"a")==0) ? (const int *)0 : inum;
+               if(ccx_arrow_write(e,(long)*nk,mi[1]+1,co,v,(es&&*es)?stn:0,sel)!=0){
                  fprintf(stderr,"[accel] Arrow output '%s' failed -> failing closed (exit 202)\n",e);
                  exit(202); } } }
 #endif

@@ -235,6 +235,9 @@ static accel_config_t accel_config_load(void) {
     if (env_used) snprintf(c.source + strlen(c.source), sizeof c.source - strlen(c.source), "env");
     /* explicit CCX_ACCEL=off|0 always wins, regardless of any CCX_ACCEL_SOLVE mode selected above */
     cfg_resolve(&c);   /* apply the high-level solve mode last (wins over precision/pcg; invalid -> stock) */
+    /* explicit DISABLE overrides win even over a valid solve mode -- re-applied AFTER cfg_resolve (which sets
+       enabled=1 for a valid mode), so CCX_ACCEL=off/0 and the deprecated CCX_USE_ACCEL=0 always force stock. */
+    if ((e = getenv("CCX_USE_ACCEL")) && !strcmp(e, "0")) c.enabled = 0;
     if ((e = getenv("CCX_ACCEL")) && (!strcmp(e, "off") || !strcmp(e, "0"))) c.enabled = 0;
     return c;
 }
@@ -489,8 +492,10 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
        but sigma!=0 has already returned to stock SPOOLES above, so sig==0 here.) */
     if (cfg.gmg) {
         double tg = now_s();
-        int gtol_iters = getenv("CCX_ACCEL_GMG_MAXIT") ? atoi(getenv("CCX_ACCEL_GMG_MAXIT")) : 80;
-        if (gtol_iters <= 0) gtol_iters = 80;     /* malformed/zero env -> default, not a 0-iter no-op */
+        long gmaxit = getenv("CCX_ACCEL_GMG_MAXIT") ? strtol(getenv("CCX_ACCEL_GMG_MAXIT"), NULL, 10) : 80;
+        if (gmaxit <= 0) gmaxit = 80;             /* malformed/zero env -> default, not a 0-iter no-op */
+        if (gmaxit > 100000) gmaxit = 100000;     /* cap: a typo/huge value must not blow the runtime budget */
+        int gtol_iters = (int)gmaxit;
         /* GMG stop tol: default 1e-4 (disp ~1e-10, stress ~1e-9); decoupled from cfg.pcg_tol (=float-pcg's
            exact 1e-10). Override with CCX_ACCEL_GMG_TOL (or GMG_TOL, handled inside gmg_solve). */
         double gtol = getenv("CCX_ACCEL_GMG_TOL") ? atof(getenv("CCX_ACCEL_GMG_TOL")) : 1e-4;
@@ -627,9 +632,9 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
           for (int i = 0; i < n; ++i) rr[i] = b[i];
           symm_lower_spmv_sub(n, colStarts, rowIdx, vals, xb, rr);   /* rr = b - A*xb */
           double rn = 0.0, bn = 0.0;
-          for (int i = 0; i < n; ++i) { rn += rr[i]*rr[i]; bn += b[i]*b[i]; }
+          for (int i = 0; i < n; ++i) { rn += rr[i]*rr[i]; bn += b[i]*b[i]; }   /* safe_rel below guards bn=Inf */
           free(rr);
-          final_resid = (bn > 0.0) ? sqrt(rn / bn) : sqrt(rn);
+          final_resid = safe_rel(sqrt(rn), sqrt(bn));
           const double ACCEPT_MAX = 1e-2;                           /* acceptable-residual ceiling */
           if (!(final_resid < ACCEPT_MAX)) {                        /* NaN-safe */
               if (verbose) fprintf(stderr,
@@ -843,7 +848,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
             symm_lower_spmv_sub(n, colStarts, rowIdx, vals, xb, rr);
             double rn = 0.0, bn = 0.0; for (int i = 0; i < n; ++i) { rn += rr[i]*rr[i]; bn += b[i]*b[i]; }
             free(rr);
-            final_resid = (bn > 0.0) ? sqrt(rn / bn) : sqrt(rn);
+            final_resid = safe_rel(sqrt(rn), sqrt(bn));
             if (!(final_resid < 1e-2)) {          /* double redo itself untrustworthy -> stock SPOOLES */
                 if (verbose) fprintf(stderr, "[accel] double fallback resid %.3e -> stock SPOOLES\n", final_resid);
                 free(xb); SparseCleanup(F); rc = 1; goto done;

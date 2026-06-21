@@ -84,7 +84,7 @@ ccx_zfile *ccx_zopen(const char *path) {
         z->gz = gzdopen(fd, "rb");
         if (!z->gz) { close(fd); free(z); return NULL; }
     } else if (mode == CZ_ZST) {
-        fseek(fp, 0, SEEK_SET);
+        if (fseek(fp, 0, SEEK_SET) != 0) { fclose(fp); free(z); return NULL; }  /* non-seekable: can't rewind sniff */
         z->fp = fp;
         z->ds = ZSTD_createDStream();
         z->in_cap  = ZSTD_DStreamInSize();
@@ -97,7 +97,7 @@ ccx_zfile *ccx_zopen(const char *path) {
         }
         ZSTD_initDStream(z->ds);
     } else {
-        fseek(fp, 0, SEEK_SET);
+        if (fseek(fp, 0, SEEK_SET) != 0) { fclose(fp); free(z); return NULL; }  /* plain: must rewind past sniff */
         z->fp = fp;
     }
     return z;

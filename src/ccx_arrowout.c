@@ -30,6 +30,8 @@
    multiple of 8 so "position = FB_CAP - len" is N-aligned exactly when len is. */
 #define FB_CAP 65536
 typedef struct { uint8_t b[FB_CAP]; uint32_t len; int minalign; } fb_t;
+/* Transient vtable-builder state. NOT reentrant: ccx_arrow_write() is called only from frd(), which CalculiX
+   invokes serially (one results dump at a time) -- there is no concurrent/nested Arrow write. */
 static uint32_t fb_slot[32]; static int fb_nslots; static uint32_t fb_tstart;
 
 static void     fb_init(fb_t *f) { f->len = 0; f->minalign = 1; }
@@ -138,6 +140,7 @@ static void put_pad(FILE *f, long n) { static const char z[8] = {0}; while (n > 
 int ccx_arrow_write(const char *path, long nk, int mt,
                     const double *co, const double *v, const double *stn, const int *inum) {
     if (!path || !*path || nk <= 0 || !v) return 1;
+    if (nk > INT32_MAX) return 4;   /* node column is int32; unreachable in the i4 build (node ids <= INT32_MAX) */
     /* CalculiX indexes by user node number and nk is the HIGHEST number, so non-contiguous decks have gap
        indices. frd.c skips them via inum[i]==0; mirror that so the Arrow output has one row per REAL node
        (not fabricated rows with garbage field values). inum==NULL -> dense 1..nk (write every node). */

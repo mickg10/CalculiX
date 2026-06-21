@@ -313,6 +313,11 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
         double hmin=1e300; for(int i=1;i<nb;i++){ double d=v[i]-v[i-1]; if(d>1e-7 && d<hmin) hmin=d; }
         h[a]=(hmin<1e300)?hmin:1.0;   // degenerate single layer -> pitch 1
     }
+    /* Guard the cell-count span before ANY llround: even with a finite extent a tiny pitch h can make
+       (co-mn)/h overflow to Inf (-> llround implementation-defined). Reject if non-finite/huge. (The strict
+       <1e5/axis key bound is still enforced below; 1e8 here only keeps llround well-defined.) */
+    for(int a=0;a<3;a++){ double span=(mx[a]-mn[a])/h[a];
+        if(!std::isfinite(span) || span<0.0 || span>1e8){ if(verbose) fprintf(stderr,"[gmg] lattice span non-finite/too large -> direct fallback\n"); return 3; } }
     long offlat=0; std::vector<long> ijk0(3*nb);
     for(int bb=0;bb<nb;bb++){ long nd=blk_node[bb]; int bad=0;
         for(int a=0;a<3;a++){ double r=(co[3*nd+a]-mn[a])/h[a]; long ri=llround(r); ijk0[3*bb+a]=ri;
