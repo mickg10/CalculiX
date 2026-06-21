@@ -52,6 +52,14 @@
 #define ITG int
 #endif
 
+/* Relative residual for the acceptance gates, guarded against non-finite norms: if ||b|| overflowed to Inf
+   (huge RHS) the naive rnorm/bnorm would be 0 and pass the gate regardless of the solution. Any non-finite
+   norm, or bnorm<=0, returns +Inf so the gate REJECTS -> exact stock SPOOLES fallback. */
+static double safe_rel(double rnorm, double bnorm) {
+    if (!isfinite(rnorm) || !isfinite(bnorm) || bnorm <= 0.0) return INFINITY;
+    return rnorm / bnorm;
+}
+
 static double now_s(void) {
     struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
@@ -88,6 +96,8 @@ typedef struct {
     int  gmg;              /* factorization-free geometric multigrid (regular voxel grid; needs rbmmap coordmap) */
     int  gmg_auto;         /* auto mode: try GMG, fall back to direct if not a regular grid (expected, not an error) */
     int  refine_iters;     /* max iterative-refinement / PCG steps (float mode) */
+    int  solve_mode;       /* high-level mode from `solve`: -2 unset, -1 invalid, 0 direct,1 float,2 float-pcg,
+                              3 defl-pcg,4 gmg,5 auto. Resolved LAST (wins over precision/pcg); invalid -> stock. */
     double pcg_tol;       /* PCG relative-residual stop tolerance */
     int  verbose;          /* print effective config + per-phase timing */
     char permdir[8];       /* usermetis perm direction: "iperm" (default) | "perm" */
@@ -120,18 +130,17 @@ static void cfg_set(accel_config_t *c, const char *key, const char *val) {
     else if (!strcmp(key, "precision"))
         c->use_float = (!strcmp(val, "float"));
     else if (!strcmp(key, "solve")) {
-        /* high-level mode selector. direct|double -> exact double Cholesky;
-           float -> float factor + Richardson; float-pcg -> float factor as
-           preconditioner for double CG (mixed->high precision). Selecting any
-           recognized mode opts in to the accel backend (sets enabled). */
-        if (!strcmp(val, "direct") || !strcmp(val, "double")) { c->enabled = 1; c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 0; }
-        else if (!strcmp(val, "float")) { c->enabled = 1; c->use_float = 1; c->pcg = 0; c->defl = 0; c->gmg = 0; }
-        else if (!strcmp(val, "float-pcg") || !strcmp(val, "pcg")) { c->enabled = 1; c->use_float = 1; c->pcg = 1; c->defl = 0; c->gmg = 0; }
-        else if (!strcmp(val, "defl-pcg") || !strcmp(val, "defl")) { c->enabled = 1; c->use_float = 1; c->pcg = 1; c->defl = 1; c->gmg = 0; }
-        else if (!strcmp(val, "gmg")) { c->enabled = 1; c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 1; c->gmg_auto = 0; }
-        else if (!strcmp(val, "auto")) { c->enabled = 1; c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 1; c->gmg_auto = 1; }
-        else fprintf(stderr, "[accel] unknown solve mode '%s' -> ignored (run stays on the stock SPOOLES path); "
-                             "valid: direct|double|float|float-pcg|defl-pcg|gmg|auto\n", val);  /* loud, fail-safe */
+        /* high-level mode selector -- recorded here, RESOLVED LAST in cfg_resolve() so it wins over any
+           precision/pcg keys regardless of order, and an INVALID mode forces stock (never a silent default). */
+        if (!strcmp(val, "direct") || !strcmp(val, "double")) c->solve_mode = 0;
+        else if (!strcmp(val, "float"))                       c->solve_mode = 1;
+        else if (!strcmp(val, "float-pcg") || !strcmp(val, "pcg"))  c->solve_mode = 2;
+        else if (!strcmp(val, "defl-pcg") || !strcmp(val, "defl"))  c->solve_mode = 3;
+        else if (!strcmp(val, "gmg"))                         c->solve_mode = 4;
+        else if (!strcmp(val, "auto"))                        c->solve_mode = 5;
+        else { c->solve_mode = -1;
+               fprintf(stderr, "[accel] unknown solve mode '%s' -> stock SPOOLES; valid: "
+                               "direct|double|float|float-pcg|defl-pcg|gmg|auto\n", val); }
     }
     else if (!strcmp(key, "pcg"))
         c->pcg = atoi(val) != 0;
@@ -167,6 +176,22 @@ static void cfg_load_file(accel_config_t *c, const char *path, int *loaded) {
              "file:%s ", path);
 }
 
+/* Resolve the high-level `solve` mode LAST so it wins over any precision/pcg keys (regardless of file/env
+   order), and so an invalid mode fails closed to stock instead of silently running the default direct accel. */
+static void cfg_resolve(accel_config_t *c) {
+    if (c->solve_mode == -1) { c->enabled = 0; return; }   /* invalid mode -> stock (warning already printed) */
+    if (c->solve_mode < 0) return;                          /* unset -> keep precision/pcg-derived flags */
+    c->enabled = 1; c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 0; c->gmg_auto = 0;
+    switch (c->solve_mode) {
+        case 1: c->use_float = 1; break;                                 /* float (Richardson)     */
+        case 2: c->use_float = 1; c->pcg = 1; break;                     /* float-pcg              */
+        case 3: c->use_float = 1; c->pcg = 1; c->defl = 1; break;        /* defl-pcg               */
+        case 4: c->gmg = 1; break;                                       /* gmg                    */
+        case 5: c->gmg = 1; c->gmg_auto = 1; break;                      /* auto                   */
+        default: break;                                                  /* 0 = direct (all flags 0) */
+    }
+}
+
 static accel_config_t accel_config_load(void) {
     accel_config_t c;
     c.enabled = 0;   /* OPT-IN: a bare run (no CCX_ACCEL* env) falls back to stock SPOOLES -> zero default change.
@@ -178,6 +203,7 @@ static accel_config_t accel_config_load(void) {
     c.gmg = 0;
     c.gmg_auto = 0;
     c.refine_iters = 6;
+    c.solve_mode = -2;   /* unset: precision/pcg keys decide; an explicit `solve` overrides them in cfg_resolve */
     c.pcg_tol = 1e-10;
     c.verbose = 0;
     c.rbmmap[0] = '\0';
@@ -208,6 +234,7 @@ static accel_config_t accel_config_load(void) {
     if (getenv("CCX_ACCEL_VERBOSE"))         { c.verbose = 1; env_used = 1; }
     if (env_used) snprintf(c.source + strlen(c.source), sizeof c.source - strlen(c.source), "env");
     /* explicit CCX_ACCEL=off|0 always wins, regardless of any CCX_ACCEL_SOLVE mode selected above */
+    cfg_resolve(&c);   /* apply the high-level solve mode last (wins over precision/pcg; invalid -> stock) */
     if ((e = getenv("CCX_ACCEL")) && (!strcmp(e, "off") || !strcmp(e, "0"))) c.enabled = 0;
     return c;
 }
@@ -684,7 +711,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
             SparseSolve(F, (DenseVector_Float){ .count=n, .data=tmp });
             for (int i = 0; i < n; ++i) { z[i] = (double)tmp[i]; p[i] = z[i]; }
             double rz = ddot(n, r, z);
-            final_resid = (bnorm > 0) ? sqrt(ddot(n,r,r))/bnorm : sqrt(ddot(n,r,r));
+            final_resid = safe_rel(sqrt(ddot(n,r,r)), bnorm);
             int it = 0;
             for (; it < maxit && final_resid > tol; ++it) {
                 SparseMultiply(Ad, (DenseVector_Double){ .count=n, .data=p },
@@ -694,7 +721,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
                 if (!(pAp > 0.0)) break;
                 double alpha = rz / pAp;
                 for (int i = 0; i < n; ++i) { xhat[i] += alpha*p[i]; r[i] -= alpha*Ap[i]; }
-                final_resid = (bnorm > 0) ? sqrt(ddot(n,r,r))/bnorm : sqrt(ddot(n,r,r));
+                final_resid = safe_rel(sqrt(ddot(n,r,r)), bnorm);
                 if (final_resid <= tol) { ++it; break; }
                 for (int i = 0; i < n; ++i) tmp[i] = (float)r[i];
                 SparseSolve(F, (DenseVector_Float){ .count=n, .data=tmp });
@@ -711,7 +738,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
             SparseMultiply(Ad, (DenseVector_Double){ .count=n, .data=x },
                                (DenseVector_Double){ .count=n, .data=Ap });
             double tr = 0.0; for (int i = 0; i < n; ++i){ double e = b[i]-Ap[i]; tr += e*e; }
-            final_resid = (bnorm > 0) ? sqrt(tr)/bnorm : sqrt(tr);
+            final_resid = safe_rel(sqrt(tr), bnorm);
             if (verbose) fprintf(stderr, "[accel] defl-pcg: m=%d setup=%.2fs iters=%d resid=%.2e\n",
                                  m, t_setup, refine_iters, final_resid);
             free(W); free(AW); free(xhat); free(qb);
@@ -735,7 +762,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
             SparseSolve(F, (DenseVector_Float){ .count = n, .data = tmp });
             for (int i = 0; i < n; ++i) { z[i] = (double)tmp[i]; p[i] = z[i]; }
             double rz = ddot(n, r, z);
-            final_resid = (bnorm > 0) ? sqrt(ddot(n, r, r)) / bnorm : sqrt(ddot(n, r, r));
+            final_resid = safe_rel(sqrt(ddot(n, r, r)), bnorm);
             int it = 0;
             for (; it < maxit && final_resid > tol; ++it) {
                 SparseMultiply(Ad, (DenseVector_Double){ .count = n, .data = p },
@@ -744,7 +771,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
                 if (!(pAp > 0.0)) break;            /* breakdown -> stop, gate will catch */
                 double alpha = rz / pAp;
                 for (int i = 0; i < n; ++i) { x[i] += alpha * p[i]; r[i] -= alpha * Ap[i]; }
-                final_resid = (bnorm > 0) ? sqrt(ddot(n, r, r)) / bnorm : sqrt(ddot(n, r, r));
+                final_resid = safe_rel(sqrt(ddot(n, r, r)), bnorm);
                 if (final_resid <= tol) { ++it; break; }
                 for (int i = 0; i < n; ++i) tmp[i] = (float)r[i];
                 SparseSolve(F, (DenseVector_Float){ .count = n, .data = tmp });
@@ -759,14 +786,14 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
             SparseMultiply(Ad, (DenseVector_Double){ .count = n, .data = x },
                                (DenseVector_Double){ .count = n, .data = Ap });
             { double tr = 0.0; for (int i = 0; i < n; ++i){ double e = b[i]-Ap[i]; tr += e*e; }
-              final_resid = (bnorm > 0) ? sqrt(tr)/bnorm : sqrt(tr); }
+              final_resid = safe_rel(sqrt(tr), bnorm); }
         } else {
             const double tol = 1e-12;
             for (int it = 0; it < cfg.refine_iters; ++it) {
                 for (int i = 0; i < n; ++i) r[i] = b[i];
                 symm_lower_spmv_sub(n, colStarts, rowIdx, vals, x, r);
                 double rnorm = 0.0; for (int i = 0; i < n; ++i) rnorm += r[i] * r[i]; rnorm = sqrt(rnorm);
-                final_resid = (bnorm > 0) ? rnorm / bnorm : rnorm;
+                final_resid = safe_rel(rnorm, bnorm);
                 if (final_resid <= tol) break;
                 for (int i = 0; i < n; ++i) tmp[i] = (float)r[i];
                 SparseSolve(F, (DenseVector_Float){ .count = n, .data = tmp });
@@ -780,7 +807,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
             for (int i = 0; i < n; ++i) r[i] = b[i];
             symm_lower_spmv_sub(n, colStarts, rowIdx, vals, x, r);
             { double rn = 0.0; for (int i = 0; i < n; ++i) rn += r[i]*r[i];
-              final_resid = (bnorm > 0) ? sqrt(rn)/bnorm : sqrt(rn); }
+              final_resid = safe_rel(sqrt(rn), bnorm); }
         }
         t_solve = now_s() - t2;
         /* residual gate: if float refinement did not converge (ill-conditioned matrix), the float answer is

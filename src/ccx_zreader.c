@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <zlib.h>
 #include <zstd.h>
@@ -45,6 +46,10 @@ ccx_zfile *ccx_zopen(const char *path) {
     }
     unsigned char m[4] = {0,0,0,0};
     size_t nm = fread(m, 1, 4, fp);
+    if (nm < 4 && ferror(fp)) {                  /* read error during the magic sniff (vs a tiny valid file) */
+        fprintf(stderr, "[accel] ccx_zreader: FATAL read error opening %s -> aborting (exit 203)\n", used);
+        fclose(fp); exit(203);
+    }
     cz_mode mode = CZ_PLAIN;
     if (nm >= 2 && m[0] == 0x1f && m[1] == 0x8b) mode = CZ_GZ;
     else if (nm >= 4 && m[0] == 0x28 && m[1] == 0xb5 && m[2] == 0x2f && m[3] == 0xfd) mode = CZ_ZST;
@@ -55,8 +60,8 @@ ccx_zfile *ccx_zopen(const char *path) {
     if (mode == CZ_PLAIN) {
         size_t ul = strlen(used);
         const char *bad = NULL;
-        if (ul >= 3 && !strcmp(used + ul - 3, ".gz"))  bad = "gzip";
-        else if (ul >= 4 && !strcmp(used + ul - 4, ".zst")) bad = "zstd";
+        if (ul >= 3 && !strcasecmp(used + ul - 3, ".gz"))  bad = "gzip";       /* case-insensitive: .gz/.GZ */
+        else if (ul >= 4 && !strcasecmp(used + ul - 4, ".zst")) bad = "zstd";  /* .zst/.ZST */
         if (bad) { fprintf(stderr, "[accel] ccx_zreader: FATAL %s is named like a %s file but lacks its magic "
                                    "(corrupt/mislabeled) -> aborting (exit 203)\n", used, bad);
                    fclose(fp); exit(203); }
@@ -72,7 +77,10 @@ ccx_zfile *ccx_zopen(const char *path) {
            DIFFERENT file. dup the fd, hand it to zlib, rewind past the 4 sniffed magic bytes. */
         int fd = dup(fileno(fp)); fclose(fp);
         if (fd < 0) { free(z); return NULL; }
-        lseek(fd, 0, SEEK_SET);
+        if (lseek(fd, 0, SEEK_SET) != 0) {       /* non-seekable (pipe/FIFO): can't rewind past the 4 sniffed
+                                                    bytes, so gzip would decode from the wrong offset -> bail */
+            close(fd); free(z); return NULL;
+        }
         z->gz = gzdopen(fd, "rb");
         if (!z->gz) { close(fd); free(z); return NULL; }
     } else if (mode == CZ_ZST) {

@@ -148,6 +148,9 @@ int ccx_arrow_write(const char *path, long nk, int mt,
     names[ncol] = "node"; is_int[ncol] = 1; ncol++;
     if (co)  { static const char *c3[3] = { "x", "y", "z" };    for (int j = 0; j < 3; j++) { names[ncol] = c3[j]; is_int[ncol] = 0; ncol++; } }
     { static const char *u3[3] = { "ux", "uy", "uz" };          for (int j = 0; j < 3; j++) { names[ncol] = u3[j]; is_int[ncol] = 0; ncol++; } }
+    /* stress columns are CalculiX's internal stn storage order [xx,yy,zz,xy,xz,yz] -- the SAME order the .dat
+       writer uses (byte-validated), NOT the .frd icomptensor reordering. Each column is named, so consumers
+       select by name (sxz == stn[4], syz == stn[5]); order is not load-bearing. */
     if (stn) { static const char *s6[6] = { "sxx","syy","szz","sxy","sxz","syz" }; for (int j = 0; j < 6; j++) { names[ncol] = s6[j]; is_int[ncol] = 0; ncol++; } }
 
     /* body layout: 2 buffers per column (validity len 0, then data); each data buffer 8-padded */

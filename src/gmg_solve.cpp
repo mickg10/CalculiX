@@ -260,12 +260,14 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     GmgCtx ctx;   /* solve-local state (reentrant; frees on return). Same-named refs keep the body unchanged. */
     auto&LV=ctx.LV; auto&WSP=ctx.WSP; auto&Cfac=ctx.Cfac; int&Cn=ctx.Cn;
     int&DEG=ctx.DEG; int&NPRE=ctx.NPRE; int&NPOST=ctx.NPOST; int&GAMMA=ctx.GAMMA;
-    const char*ev;
-    if((ev=getenv("GMG_DEG"))   && atoi(ev)>0) DEG=atoi(ev);
-    if((ev=getenv("GMG_NPRE"))  && atoi(ev)>0) NPRE=atoi(ev);
-    if((ev=getenv("GMG_NPOST")) && atoi(ev)>0) NPOST=atoi(ev);
-    if((ev=getenv("GMG_GAMMA")) && atoi(ev)>0) GAMMA=atoi(ev);
-    if((ev=getenv("GMG_MAXIT")) && atoi(ev)>0) maxit=atoi(ev);
+    /* env knobs, clamped to sane upper bounds: a typo'd/huge value (or atoi UB) must not explode runtime --
+       e.g. a large W-cycle GAMMA is exponential per V-cycle -- and must not break the round-trip budget. */
+    const char*ev; long lv;
+    if((ev=getenv("GMG_DEG"))   && (lv=strtol(ev,NULL,10))>0) DEG  =(int)(lv<8   ?lv:8);
+    if((ev=getenv("GMG_NPRE"))  && (lv=strtol(ev,NULL,10))>0) NPRE =(int)(lv<8   ?lv:8);
+    if((ev=getenv("GMG_NPOST")) && (lv=strtol(ev,NULL,10))>0) NPOST=(int)(lv<8   ?lv:8);
+    if((ev=getenv("GMG_GAMMA")) && (lv=strtol(ev,NULL,10))>0) GAMMA=(int)(lv<4   ?lv:4);
+    if((ev=getenv("GMG_MAXIT")) && (lv=strtol(ev,NULL,10))>0) maxit=(int)(lv<100000?lv:100000);
     if((ev=getenv("GMG_TOL"))   && atof(ev)>0) tol=atof(ev);
     if(mt<3 || mt>64 || nk<=0 || maxit<=0 || !(tol>0)) return 1;   // invalid inputs -> direct fallback
     int gmg_amb =
@@ -275,7 +277,7 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
         1;
 #endif
     int gmg_cap = gmg_perf_core_default(gmg_amb);
-    if((ev=getenv("GMG_THREADS")) && atoi(ev)>0) gmg_cap=atoi(ev);
+    if((ev=getenv("GMG_THREADS")) && (lv=strtol(ev,NULL,10))>0) gmg_cap=(int)(lv<gmg_amb?lv:gmg_amb); /* cap at ambient -> no oversubscribe */
     OmpThreadCap _gmg_omp_cap(gmg_cap);
     if(verbose) fprintf(stderr,"[gmg] solve threads cap=%d (ambient=%d)\n", gmg_cap, gmg_amb);
   try {
@@ -301,6 +303,9 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     for(int bb=0;bb<nb;bb++){ long nd=blk_node[bb]; for(int a=0;a<3;a++){ double q=co[3*nd+a];
         if(!std::isfinite(q)){ if(verbose) fprintf(stderr,"[gmg] non-finite node coordinate -> direct fallback\n"); return 3; }
         if(q<mn[a])mn[a]=q; if(q>mx[a])mx[a]=q; } }
+    /* Coords are finite, but the EXTENT mx-mn can still overflow to Inf (e.g. +/-1e308), which would feed Inf
+       into (co-mn)/h and make the subsequent llround() implementation-defined. Reject up front. */
+    for(int a=0;a<3;a++) if(!std::isfinite(mx[a]-mn[a])){ if(verbose) fprintf(stderr,"[gmg] non-finite coordinate extent -> direct fallback\n"); return 3; }
     double h[3];
     for(int a=0;a<3;a++){
         std::vector<double> v(nb); for(int bb=0;bb<nb;bb++) v[bb]=co[3*blk_node[bb]+a];
@@ -381,6 +386,7 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     std::vector<double> x(N,0.0),r(N),z(N),p(N),Ap(N);
     for(int i=0;i<N;i++) r[i]=bp[i];
     double res0=std::sqrt(ddot(r.data(),r.data(),N)); if(res0==0) res0=1;
+    if(!std::isfinite(res0)){ if(verbose) fprintf(stderr,"[gmg] non-finite ||b|| (overflow) -> direct fallback\n"); return 4; }
     for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
     for(int i=0;i<N;i++) p[i]=z[i]; double rz=ddot(r.data(),z.data(),N);
     auto ts=clk::now(); int iters=maxit; double rel=1;
