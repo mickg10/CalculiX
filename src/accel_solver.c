@@ -16,9 +16,15 @@
  *               Format: `key = value`, one per line, `#` comments. Keys = env names
  *               without the CCX_ACCEL_ prefix, lowercased:
  *                 accel        = on|off          (env CCX_ACCEL; CCX_USE_ACCEL=0 also disables)
+ *                 solve        = direct|double|float|float-pcg|defl-pcg|gmg|auto  (env CCX_ACCEL_SOLVE;
+ *                                the high-level mode selector -- also opts the backend in)
  *                 order        = usermetis|metis|amd|colamd|default|mtmetis  (env CCX_ACCEL_ORDER)
  *                 precision    = double|float     (env CCX_ACCEL_PRECISION)
+ *                 pcg          = 0|1              (float mode: double PCG vs Richardson; env CCX_ACCEL_PCG)
+ *                 pcg_tol      = R                (PCG rel-residual stop; env CCX_ACCEL_PCG_TOL)
  *                 refine_iters = N (float mode)   (env CCX_ACCEL_REFINE_ITERS)
+ *                 rbmmap       = path             (defl-pcg/GMG coord-DOF-map file; env CCX_ACCEL_RBM_MAP)
+ *                 permcache    = dir              (cache/reuse METIS perm by matrix structure; env CCX_ACCEL_PERMCACHE)
  *                 verbose      = 0|1              (env CCX_ACCEL_VERBOSE)
  *                 permdir      = iperm|perm       (perm-direction diagnostic; env CCX_ACCEL_PERMDIR)
  * Provenance: with verbose=1 the backend prints the effective config + its source.
@@ -375,8 +381,15 @@ static const double *g_co = NULL;
 static const int    *g_nactdof = NULL;
 static long          g_nk = 0;
 static int           g_mi1 = 0;
+/* Freshness token: accel_set_coordmap_ is called by the linear-static path immediately before its solve, but
+   accel_spooles runs for EVERY spooles() call. Without scoping, a solve reached from another path would consume
+   a STALE map (from a prior, differently-sized system) and the GMG/RBM code would index g_nactdof's equation
+   numbers out of range. So the map is valid for exactly the NEXT accel_spooles call: set here, consumed+cleared
+   at the top of accel_spooles. A later call with no fresh map falls back to the file map or the direct solve. */
+static int           g_coordmap_set = 0;
 void accel_set_coordmap_(double *co, ITG *nactdof, ITG *nk, ITG *mi) {
     g_co = co; g_nactdof = (const int *)nactdof; g_nk = (long)(*nk); g_mi1 = (int)mi[1];
+    g_coordmap_set = 1;
 }
 
 /* Returns 0 on success (solution written into b), nonzero on failure. */
@@ -386,6 +399,10 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
     accel_config_t cfg = accel_config_load();
     if (!cfg.enabled) return 1;                 /* disabled -> SPOOLES */
     const int verbose = cfg.verbose;
+    /* consume the in-memory coordmap freshness token: it is valid only for THIS call (the one right after
+       accel_set_coordmap_), so a later spooles() from another path cannot reuse a stale, wrong-sized map. */
+    const int have_coordmap = g_coordmap_set && g_co && g_nactdof;
+    g_coordmap_set = 0;
     MEMLOG("entry (CCX baseline)");
 
     const int  n   = (int)(*neq);
@@ -437,20 +454,16 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
 
     /* factorization-free geometric multigrid path (regular voxel grid). Needs the coord/DOF-map
        (the in-memory map from accel_set_coordmap_, or the CCX_ACCEL_RBM_MAP file). On success returns immediately; on failure falls through to direct. */
-    if (cfg.gmg && sig != 0.0) {
-        /* GMG's prolongation/Galerkin hierarchy assumes the SPD static stiffness K. A shifted/indefinite
-           matrix K - sigma*M (modal/buckling) breaks that assumption -> never apply GMG; use direct. */
-        if (verbose) fprintf(stderr,
-            "[accel] solve=%s: sigma=%.3e (shifted/indefinite matrix) -> GMG not applicable, using direct factor\n",
-            cfg.gmg_auto ? "auto" : "gmg", sig);
-    } else if (cfg.gmg) {
+    /* (A shifted/indefinite matrix K - sigma*M from modal/buckling would break GMG's SPD-hierarchy assumption,
+       but sigma!=0 has already returned to stock SPOOLES above, so sig==0 here.) */
+    if (cfg.gmg) {
         double tg = now_s();
         int gtol_iters = getenv("CCX_ACCEL_GMG_MAXIT") ? atoi(getenv("CCX_ACCEL_GMG_MAXIT")) : 80;
         /* GMG stop tol: default 1e-4 (disp ~1e-10, stress ~1e-9); decoupled from cfg.pcg_tol (=float-pcg's
            exact 1e-10). Override with CCX_ACCEL_GMG_TOL (or GMG_TOL, handled inside gmg_solve). */
         double gtol = getenv("CCX_ACCEL_GMG_TOL") ? atof(getenv("CCX_ACCEL_GMG_TOL")) : 1e-4;
         int grc = -99;
-        if (g_co && g_nactdof) {                 /* preferred: in-memory coordmap from CCX (no file) */
+        if (have_coordmap) {                     /* preferred: in-memory coordmap from CCX (no file) */
             grc = ccx_gmg_solve_mem(n, colStarts, rowIdx, vals, b, g_co, g_nactdof, g_nk, g_mi1 + 1,
                                     gtol_iters, gtol, verbose);
         } else if (cfg.rbmmap[0]) {              /* fallback: coord/DOF-map file (CCX_ACCEL_RBM_MAP) */
@@ -624,7 +637,7 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
             /* rigid-body deflation modes: prefer the in-memory CCX coords (g_co/g_nactdof, same source the GMG
                uses) so defl-pcg runs with NO external file; fall back to an rbmmap file if supplied. */
             const char *src = "in-memory coords";
-            if (g_co && g_nactdof) W = build_rbm(g_co, g_nactdof, g_nk, g_mi1 + 1, n, &m);
+            if (have_coordmap) W = build_rbm(g_co, g_nactdof, g_nk, g_mi1 + 1, n, &m);
             else if (cfg.rbmmap[0]) { W = load_rbm(cfg.rbmmap, n, &m); src = cfg.rbmmap; }
             if (W) {
                 AW   = (double*)malloc((size_t)6*n*sizeof(double));

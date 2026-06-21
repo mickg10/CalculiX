@@ -1,10 +1,12 @@
 /* accel.h — prototypes for the optional Apple Accelerate / geometric-multigrid backend.
  *
  * This backend is compiled in only when CalculiX is built with -DCCX_ACCEL (see Makefile_MT, Darwin branch).
- * Every hook in the upstream sources (spooles.c, linstatic.c, frd.c, printout.f, printoutint.f) is wrapped in
- * #ifdef CCX_ACCEL / #ifdef CCX_ACCEL_ARROW, so a default build is byte-for-byte unaffected. At run time every
- * feature is additionally env-gated and defaults to off, falling back to the stock CalculiX path. Include this
- * AFTER CalculiX.h (it relies on ITG).
+ * Every solver/I-O hook in the upstream sources (spooles.c, linstatic.c, frd.c, readinput.c, printout.f,
+ * printoutint.f) is wrapped in #ifdef CCX_ACCEL / #ifdef CCX_ACCEL_ARROW, so a build WITHOUT -DCCX_ACCEL is
+ * byte-for-byte unaffected. (The cache-friendly COO structure build in mastruct.c/insert.c is compiled in
+ * unconditionally but is itself runtime-gated by CCX_MASTRUCT_COO and produces a byte-identical structure.)
+ * At run time every accel feature is additionally env-gated and defaults to off, falling back to the stock
+ * CalculiX path. Include this AFTER CalculiX.h (it relies on ITG).
  */
 #ifndef CCX_ACCEL_H
 #define CCX_ACCEL_H
@@ -21,7 +23,7 @@ void accel_set_coordmap_(double *co, ITG *nactdof, ITG *nk, ITG *mi);
 /* Write nodal fields (coords, displacement, optional stress) as an Arrow IPC file. Self-contained pure-C
    writer (ccx_arrowout.c, no external Arrow dependency); only referenced under CCX_ACCEL_ARROW. 0 on success. */
 int  ccx_arrow_write(const char *path, long nk, int mt,
-                     const double *co, const double *v, const double *stn);
+                     const double *co, const double *v, const double *stn, const int *inum);
 
 /* Transparent streaming reader for plain / gzip (.gz) / zstd (.zst) input decks (readinput.c). ccx_zopen
    also tries <path>.gz then <path>.zst when <path> is absent; ccx_zgets matches fgets semantics. */

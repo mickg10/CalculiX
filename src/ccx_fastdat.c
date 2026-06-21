@@ -52,7 +52,7 @@ int ccx_fastdat_active_(void) {
 
 /* record one stress line: nelem (deck #), j (int. point), s -> &stx(1,j,nelel) (6 contiguous doubles). */
 void ccx_fastdat_s_(const int *nelem, const int *j, const double *s) {
-    if (g_oom) return;                              /* already degraded -> drop; flush warns + writes nothing */
+    if (g_oom) return;                              /* already degraded -> drop the record; flush() then fails closed (exit 202) */
     if (g_n >= g_cap) {
         size_t ncap = g_cap ? g_cap * 2 : ((size_t)1 << 22);
         /* realloc into temps so the live buffers are not leaked if one of the three fails */
@@ -64,8 +64,8 @@ void ccx_fastdat_s_(const int *nelem, const int *j, const double *s) {
         if (ns) g_s     = ns;
         if (!ne || !nj || !ns) {                    /* OOM: stop recording, flag for flush, do NOT exit */
             g_oom = 1;
-            fprintf(stderr, "[accel] fast .dat: out of memory while recording (~%zu lines) -> stress block "
-                            "will NOT be written; rerun without CCX_ACCEL_OUT_DAT_FAST\n", g_n);
+            fprintf(stderr, "[accel] fast .dat: out of memory while recording (~%zu lines) -> the run will "
+                            "fail closed (exit 202) at flush; rerun without CCX_ACCEL_OUT_DAT_FAST\n", g_n);
             return;
         }
         g_cap = ncap;

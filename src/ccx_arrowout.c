@@ -35,13 +35,22 @@ static uint32_t fb_slot[32]; static int fb_nslots; static uint32_t fb_tstart;
 static void     fb_init(fb_t *f) { f->len = 0; f->minalign = 1; }
 static uint8_t *fb_data(fb_t *f) { return f->b + FB_CAP - f->len; }
 
+/* Bounds tripwire for the back-to-front buffer. Unreachable for the fixed Arrow schema (<=16 cols is a few
+   hundred bytes vs 64 KiB), but if the schema ever grows past FB_CAP, "FB_CAP - len" would underflow and the
+   memcpy would corrupt adjacent static memory -- a silent, hard-to-trace bug. Abort loudly instead. */
+static void fb_need(const fb_t *f, uint32_t n) {
+    if ((uint32_t)f->len + n > FB_CAP) { fprintf(stderr, "[accel] arrow: FlatBuffers metadata exceeds %d bytes "
+                                                          "(schema too large) -> abort\n", FB_CAP); abort(); }
+}
+
 static void fb_prep(fb_t *f, int size, int additional) {   /* pad so (len+additional) % size == 0 */
     if (size > f->minalign) f->minalign = size;
     int pad = (int)((size - ((f->len + additional) % size)) % size);
+    fb_need(f, (uint32_t)pad);
     while (pad-- > 0) { f->len++; f->b[FB_CAP - f->len] = 0; }
 }
-static void fb_raw(fb_t *f, const void *p, uint32_t n) { f->len += n; memcpy(f->b + FB_CAP - f->len, p, n); }
-static void fb_u8 (fb_t *f, uint8_t v)  { f->len += 1; f->b[FB_CAP - f->len] = v; }
+static void fb_raw(fb_t *f, const void *p, uint32_t n) { fb_need(f, n); f->len += n; memcpy(f->b + FB_CAP - f->len, p, n); }
+static void fb_u8 (fb_t *f, uint8_t v)  { fb_need(f, 1); f->len += 1; f->b[FB_CAP - f->len] = v; }
 static void fb_u16(fb_t *f, uint16_t v) { fb_prep(f, 2, 0); fb_raw(f, &v, 2); }
 static void fb_u32(fb_t *f, uint32_t v) { fb_prep(f, 4, 0); fb_raw(f, &v, 4); }
 static void fb_i64(fb_t *f, int64_t v)  { fb_prep(f, 8, 0); fb_raw(f, &v, 8); }
@@ -68,7 +77,8 @@ static uint32_t fb_vec_struct(fb_t *f, const void *data, int count, int structsi
     return f->len;
 }
 static void fb_start(fb_t *f) { for (int i = 0; i < 32; i++) fb_slot[i] = 0; fb_nslots = 0; fb_tstart = f->len; }
-static void fb_bump(int slot) { if (slot + 1 > fb_nslots) fb_nslots = slot + 1; }   /* track vtable width */
+static void fb_bump(int slot) { if (slot < 0 || slot >= 32) abort();   /* fb_slot[32] bound (unreachable: schema <16 slots) */
+                                if (slot + 1 > fb_nslots) fb_nslots = slot + 1; }   /* track vtable width */
 static void fb_add_u8 (fb_t *f, int slot, uint8_t v)  { fb_u8(f, v);  fb_slot[slot] = f->len; fb_bump(slot); }
 static void fb_add_u16(fb_t *f, int slot, uint16_t v) { fb_u16(f, v); fb_slot[slot] = f->len; fb_bump(slot); }
 static void fb_add_u32(fb_t *f, int slot, uint32_t v) { fb_u32(f, v); fb_slot[slot] = f->len; fb_bump(slot); }
@@ -76,7 +86,7 @@ static void fb_add_i64(fb_t *f, int slot, int64_t v)  { fb_i64(f, v); fb_slot[sl
 static void fb_add_off(fb_t *f, int slot, uint32_t target) { if (!target) return; fb_uoffset(f, target); fb_slot[slot] = f->len; fb_bump(slot); }
 
 static uint32_t fb_end(fb_t *f) {
-    fb_prep(f, 4, 0); f->len += 4;            /* reserve the soffset (lowest-addr word of the table) */
+    fb_prep(f, 4, 0); fb_need(f, 4); f->len += 4;   /* reserve the soffset (lowest-addr word of the table) */
     uint32_t table_tail = f->len;
     int n = fb_nslots;
     for (int s = n - 1; s >= 0; s--)          /* vtable field offsets, high slot -> low (back-to-front) */
@@ -126,8 +136,13 @@ static void put_u32(FILE *f, uint32_t v) { fwrite(&v, 4, 1, f); }
 static void put_pad(FILE *f, long n) { static const char z[8] = {0}; while (n > 0) { long k = n < 8 ? n : 8; fwrite(z, 1, k, f); n -= k; } }
 
 int ccx_arrow_write(const char *path, long nk, int mt,
-                    const double *co, const double *v, const double *stn) {
+                    const double *co, const double *v, const double *stn, const int *inum) {
     if (!path || !*path || nk <= 0 || !v) return 1;
+    /* CalculiX indexes by user node number and nk is the HIGHEST number, so non-contiguous decks have gap
+       indices. frd.c skips them via inum[i]==0; mirror that so the Arrow output has one row per REAL node
+       (not fabricated rows with garbage field values). inum==NULL -> dense 1..nk (write every node). */
+    long nrow = nk;
+    if (inum) { nrow = 0; for (long i = 0; i < nk; i++) if (inum[i] != 0) nrow++; }
     /* assemble the column list */
     const char *names[16]; int is_int[16]; int ncol = 0;
     names[ncol] = "node"; is_int[ncol] = 1; ncol++;
@@ -138,7 +153,7 @@ int ccx_arrow_write(const char *path, long nk, int mt,
     /* body layout: 2 buffers per column (validity len 0, then data); each data buffer 8-padded */
     int64_t boff[32], blen[32]; int64_t cur = 0;
     for (int ci = 0; ci < ncol; ci++) {
-        int64_t bytes = (int64_t)nk * (is_int[ci] ? 4 : 8);
+        int64_t bytes = (int64_t)nrow * (is_int[ci] ? 4 : 8);
         boff[2*ci] = cur; blen[2*ci] = 0;            /* validity */
         boff[2*ci+1] = cur; blen[2*ci+1] = bytes;    /* data */
         cur += (bytes + 7) & ~(int64_t)7;
@@ -158,12 +173,12 @@ int ccx_arrow_write(const char *path, long nk, int mt,
 
     /* ---- RecordBatch message flatbuffer ---- */
     static fb_t fbr; fb_init(&fbr);
-    { int64_t nodes[32]; for (int ci = 0; ci < ncol; ci++) { nodes[2*ci] = nk; nodes[2*ci+1] = 0; } /* FieldNode{length,null_count} */
+    { int64_t nodes[32]; for (int ci = 0; ci < ncol; ci++) { nodes[2*ci] = nrow; nodes[2*ci+1] = 0; } /* FieldNode{length,null_count} */
       int64_t bufs[64];  for (int k = 0; k < nbuf; k++) { bufs[2*k] = boff[k]; bufs[2*k+1] = blen[k]; } /* Buffer{offset,length} */
       uint32_t nodes_vec = fb_vec_struct(&fbr, nodes, ncol, 16);
       uint32_t bufs_vec  = fb_vec_struct(&fbr, bufs,  nbuf, 16);
       fb_start(&fbr);
-      fb_add_i64(&fbr, 0, nk);           /* RecordBatch.length */
+      fb_add_i64(&fbr, 0, nrow);         /* RecordBatch.length */
       fb_add_off(&fbr, 1, nodes_vec);    /* nodes */
       fb_add_off(&fbr, 2, bufs_vec);     /* buffers */
       uint32_t rb = fb_end(&fbr);
@@ -192,7 +207,7 @@ int ccx_arrow_write(const char *path, long nk, int mt,
     /* body: data buffers in order, each padded to 8 (validity buffers are length 0) */
     for (int ci = 0; ci < ncol; ci++) {
         int64_t bytes = blen[2*ci+1];
-        if (is_int[ci]) for (long i = 0; i < nk; i++) { int32_t nd = (int32_t)(i + 1); fwrite(&nd, 4, 1, f); }
+        if (is_int[ci]) for (long i = 0; i < nk; i++) { if (inum && inum[i] == 0) continue; int32_t nd = (int32_t)(i + 1); fwrite(&nd, 4, 1, f); }
         else {
             const double *src = NULL; long stride = 0, base = 0;
             if (ci >= 1 && ci <= 3 && co) { src = co; stride = 3; base = ci - 1; }                 /* x,y,z */
@@ -200,9 +215,9 @@ int ccx_arrow_write(const char *path, long nk, int mt,
                    if (u < 3) { src = v; stride = mt; base = 1 + u; }                              /* ux,uy,uz */
                    else { /* stress */ }
             }
-            if (src) for (long i = 0; i < nk; i++) fwrite(&src[stride*i + base], 8, 1, f);
-            else if (stn) { int sj = ci - (co ? 4 : 1) - 3; for (long i = 0; i < nk; i++) fwrite(&stn[6*i + sj], 8, 1, f); }
-            else { double zero = 0.0; for (long i = 0; i < nk; i++) fwrite(&zero, 8, 1, f); }
+            if (src) for (long i = 0; i < nk; i++) { if (inum && inum[i] == 0) continue; fwrite(&src[stride*i + base], 8, 1, f); }
+            else if (stn) { int sj = ci - (co ? 4 : 1) - 3; for (long i = 0; i < nk; i++) { if (inum && inum[i] == 0) continue; fwrite(&stn[6*i + sj], 8, 1, f); } }
+            else { double zero = 0.0; for (long i = 0; i < nk; i++) { if (inum && inum[i] == 0) continue; fwrite(&zero, 8, 1, f); } }
         }
         put_pad(f, (long)(((bytes + 7) & ~(int64_t)7) - bytes));
     }

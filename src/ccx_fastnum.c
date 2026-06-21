@@ -17,6 +17,14 @@
 #include <errno.h>
 #include <limits.h>
 
+/* These parsers write a 4-byte int into CalculiX's Fortran integer/ITG slots (node/element ids, kon). That is
+   only valid for the default i4 build; an i8 build (-DLONGLONG / -fdefault-integer-8) has 8-byte integers, so
+   the write would corrupt them and the INT_MAX overflow check would reject legitimately large ids. Trip the
+   build, mirroring the accel backend guard. The fast parser is only reached under -DCCX_FAST_PARSE. */
+#ifdef LONGLONG
+#error "the fast deck parser requires the default i4 CalculiX build (ITG==int); incompatible with -DLONGLONG (i8)."
+#endif
+
 void ccxftoi_(const char *s, int *v, int *istat, long slen) {
     char b[16];
     long n = (slen < 10) ? slen : 10;   /* i10: the Fortran read consumes only the first 10 columns */
