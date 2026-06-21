@@ -100,9 +100,14 @@ c     &           ne,cflag,co,vold,iforce,mi,ielprop,prop)
       enddo
 !     
       do ii=1,nprint
-!     
+#ifdef CCX_ACCEL
+!     fast .dat guard: note each card so the writer can fail closed if the buffered S block
+!     would be appended out of order (S coexisting with any other/later element-print output)
+        if(ccx_fastdat_active().ne.0) call ccx_fastdat_note_card()
+#endif
+!
 !     nodal values
-!     
+!
         if((prlab(ii)(1:4).eq.'U   ').or.(prlab(ii)(1:4).eq.'NT  ').or.
      &      (prlab(ii)(1:4).eq.'RF  ').or.(prlab(ii)(1:4).eq.'RFL ').or. 
      &      (prlab(ii)(1:4).eq.'PS  ').or.(prlab(ii)(1:4).eq.'PN  ').or.

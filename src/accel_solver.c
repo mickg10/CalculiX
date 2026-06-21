@@ -754,6 +754,14 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
                 for (int i = 0; i < n; ++i) x[i] += (double)tmp[i];
                 refine_iters = it + 1;
             }
+            /* TRUE residual of the FINAL x for the gate: the loop measures the residual at the TOP of each
+               iteration, BEFORE that iteration's correction, so the last value is one step behind the x written
+               to b -- and with refine_iters==0 the loop never runs (x stays the zero vector). Recompute against
+               the actual x, exactly like the PCG paths, so the gate can never accept a stale/zero residual. */
+            for (int i = 0; i < n; ++i) r[i] = b[i];
+            symm_lower_spmv_sub(n, colStarts, rowIdx, vals, x, r);
+            { double rn = 0.0; for (int i = 0; i < n; ++i) rn += r[i]*r[i];
+              final_resid = (bnorm > 0) ? sqrt(rn)/bnorm : sqrt(rn); }
         }
         t_solve = now_s() - t2;
         /* residual gate: if float refinement did not converge (ill-conditioned matrix), the float answer is

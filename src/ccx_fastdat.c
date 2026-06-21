@@ -40,6 +40,7 @@ static size_t         g_n = 0, g_cap = 0;
 static int            g_active = -1;
 static int            g_oom = 0;        /* sticky: a record-time alloc failed -> emit nothing, not a partial block */
 static int            g_oriented = 0;   /* sticky: an ORIENTED 'S' line was written via Fortran while active */
+static int            g_reorder  = 0;   /* sticky: a new print card began after S data was already buffered */
 
 int ccx_fastdat_active_(void) {
     if (g_active < 0) {
@@ -77,9 +78,16 @@ void ccx_fastdat_s_(const int *nelem, const int *j, const double *s) {
    -> the flush fails closed. */
 void ccx_fastdat_mark_oriented_(void) { g_oriented = 1; }
 
+/* Fortran calls this at the start of EVERY print card (the `do ii=1,nprint` loop in printout.f). The fast path
+   buffers the unoriented 'S' stress block and appends it once at EOF, which is only correct when that block is
+   the LAST element-print output. If a card begins while S data is already buffered, this card's header/data go
+   inline AFTER the buffered S -> on flush the appended S data lands out of order (S+E decks, two S sets, S then
+   a nodal print, ...). Record it; the flush fails closed. (g_n==0 at the first S card, so S-only stays valid.) */
+void ccx_fastdat_note_card_(void) { if (g_n > 0) g_reorder = 1; }
+
 static void ccx_fastdat_reset(void) {
     free(g_nelem); free(g_j); free((void *)g_s);
-    g_nelem = NULL; g_j = NULL; g_s = NULL; g_n = 0; g_cap = 0; g_oom = 0; g_oriented = 0;
+    g_nelem = NULL; g_j = NULL; g_s = NULL; g_n = 0; g_cap = 0; g_oom = 0; g_oriented = 0; g_reorder = 0;
 }
 
 /* parallel-format every recorded line at its exact offset (bounded chunks), append to the .dat; reset. */
@@ -93,23 +101,27 @@ void ccx_fastdat_flush_(void) {
     }
     if (g_n == 0) { ccx_fastdat_reset(); return; }
 
-    if (g_oriented) {  /* both non-oriented (buffered here) and oriented (written inline by Fortran) 'S' lines
-                          exist in this *EL PRINT -> appending the buffer now would reorder them. Fail closed;
-                          rerun without CCX_ACCEL_OUT_DAT_FAST (the stock writer keeps deck order). */
-        fprintf(stderr, "[accel] fast .dat: deck mixes oriented and non-oriented stress output -> the fast "
-                        "writer would reorder it; failing closed (exit 202). Rerun without "
-                        "CCX_ACCEL_OUT_DAT_FAST.\n");
+    if (g_oriented || g_reorder) {  /* appending the buffered S block at EOF would put it out of order: either
+                          oriented + non-oriented stress coexist in one section (g_oriented), or another print
+                          card was written inline after S was buffered (g_reorder: S+E, two S sets, S then a
+                          nodal print, ...). Fail closed; rerun without CCX_ACCEL_OUT_DAT_FAST (the stock writer
+                          keeps deck order). */
+        fprintf(stderr, "[accel] fast .dat: this print job would be reordered by the fast writer (%s) -> "
+                        "failing closed (exit 202). Rerun without CCX_ACCEL_OUT_DAT_FAST.\n",
+                        g_oriented ? "oriented + non-oriented stress in one section"
+                                   : "the S stress block is not the last element-print output");
         ccx_fastdat_reset(); exit(202);
     }
 
     /* preflight: detect any value whose C "%13.6E" rendering would NOT match CalculiX's "1p,e13.6" gfortran
        output, BEFORE opening/appending, so such a line never reaches disk (fail closed -> rerun with the stock
-       writer). Only a non-physical solution can trip this. The two divergent cases (everything else is byte-
+       writer). Only a non-physical solution can trip this. The divergent cases (everything else is byte-
        identical, verified over 200k lines):
-         - NaN/Inf: C prints "NAN"/"INF", gfortran prints "NaN"/"Inf" (width is fine, so the format-time width
-           check would miss it -- catch it here).
-         - a negative magnitude needing a 3-digit exponent ("-d.ddddddE+100" = 14 chars): overflows the 13-char
-           field, where gfortran writes 13 asterisks. (Positive 3-digit exponents fit in 13 and DO match.)
+         - NaN/Inf: C prints "NAN"/"INF", gfortran prints "NaN"/"Inf".
+         - a magnitude needing a 3-digit exponent (|exp|>=100, i.e. |v|>=1e100 or 0<|v|<1e-99): gfortran's
+           e13.6 DROPS the 'E' to fit 13 cols ("1.234567+100"), while C "%13.6E" keeps it ("1.234567E+100").
+           So BOTH signs diverge -- positive renders 13 wide but with different bytes, negative ("-...E+100")
+           is 14 wide and overflows the field. The sign therefore does NOT matter; this check is sign-agnostic.
        This is a cheap O(n) magnitude test, deliberately NOT a per-line snprintf width check: the exact check
        would ~double the stress-format cost and risk the round-trip budget. It is only inexact within rounding
        distance of 1e-99/1e100 (physically impossible stresses), and errs ONLY toward failing closed -- it can
@@ -118,10 +130,10 @@ void ccx_fastdat_flush_(void) {
         const double *s = g_s[k];
         for (int c = 0; c < 6; c++) {
             double a = fabs(s[c]);
-            if (!isfinite(s[c]) || (s[c] < 0.0 && (a >= 1e100 || (a != 0.0 && a < 1e-99)))) {
+            if (!isfinite(s[c]) || a >= 1e100 || (a != 0.0 && a < 1e-99)) {
                 fprintf(stderr, "[accel] fast .dat: a stress value renders differently from gfortran's e13.6 "
-                                "(NaN/Inf or huge negative stress?) -> failing closed (exit 202) before writing; "
-                                "rerun without CCX_ACCEL_OUT_DAT_FAST and check the solution\n");
+                                "(NaN/Inf or |stress|>=1e100 / <1e-99?) -> failing closed (exit 202) before "
+                                "writing; rerun without CCX_ACCEL_OUT_DAT_FAST and check the solution\n");
                 ccx_fastdat_reset(); exit(202);
             }
         }
