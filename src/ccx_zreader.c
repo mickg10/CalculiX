@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <zlib.h>
 #include <zstd.h>
 
@@ -66,9 +67,14 @@ ccx_zfile *ccx_zopen(const char *path) {
     z->mode = mode;
 
     if (mode == CZ_GZ) {
-        fclose(fp);                          /* hand the file to zlib by name */
-        z->gz = gzopen(used, "rb");
-        if (!z->gz) { free(z); return NULL; }
+        /* decode the ALREADY-OPEN fd (gzdopen) rather than re-opening `used` by name: a long path truncated
+           into the fixed buffer, or a file swapped between fopen and reopen (TOCTOU), could otherwise decode a
+           DIFFERENT file. dup the fd, hand it to zlib, rewind past the 4 sniffed magic bytes. */
+        int fd = dup(fileno(fp)); fclose(fp);
+        if (fd < 0) { free(z); return NULL; }
+        lseek(fd, 0, SEEK_SET);
+        z->gz = gzdopen(fd, "rb");
+        if (!z->gz) { close(fd); free(z); return NULL; }
     } else if (mode == CZ_ZST) {
         fseek(fp, 0, SEEK_SET);
         z->fp = fp;
@@ -120,7 +126,14 @@ char *ccx_zgets(char *buf, int n, ccx_zfile *z) {
         if (z->in_pos >= z->in_size && !z->eof) {           /* refill compressed input */
             z->in_size = fread(z->inbuf, 1, z->in_cap, z->fp);
             z->in_pos = 0;
-            if (z->in_size == 0) z->eof = 1;
+            if (z->in_size == 0) {
+                if (ferror(z->fp)) {                        /* read ERROR (not true EOF) -> input truncated */
+                    fprintf(stderr, "[accel] ccx_zreader: FATAL read error on compressed input -> deck "
+                                    "incomplete; aborting (exit 203)\n");
+                    exit(203);
+                }
+                z->eof = 1;
+            }
         }
         if (z->in_pos >= z->in_size && z->eof) {            /* compressed input exhausted */
             if (z->zret != 0) {                              /* decoder still mid-frame -> stream TRUNCATED */

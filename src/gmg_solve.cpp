@@ -322,6 +322,15 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
        each axis index must stay < 1e5 to be collision-free -> require nx,ny,nz <= 99998 (< 10 m at 0.1 mm
        pitch). Beyond that, fall back rather than risk a hash clash. (A real mesh is orders of magnitude smaller.) */
     if(nx>=99999||ny>=99999||nz>=99999){ if(verbose) fprintf(stderr,"[gmg] lattice %ldx%ldx%ld exceeds build_P key bound (<1e5/axis) -> fallback\n",nx,ny,nz); return 3; }
+    /* injective node->voxel check: a real voxel grid maps distinct nodes to distinct lattice cells. If two nodes
+       round to the SAME (i,j,k) -- e.g. a sub-pitch lattice whose gaps fell below the detector and collapsed to
+       h=1 (all nodes -> one cell) -- the grid is degenerate; fall back rather than build a nonsense hierarchy.
+       (Coords are bounded <1e5 by the guard above, so the packed key cannot collide spuriously.) */
+    { std::vector<long> keys((size_t)nb);
+      for(int bb=0;bb<nb;bb++) keys[bb]=(ijk0[3*bb]*100000L+ijk0[3*bb+1])*100000L+ijk0[3*bb+2];
+      std::sort(keys.begin(),keys.end());
+      for(int bb=1;bb<nb;bb++) if(keys[bb]==keys[bb-1]){
+          if(verbose) fprintf(stderr,"[gmg] duplicate lattice node (sub-pitch/degenerate grid) -> direct fallback\n"); return 3; } }
 
     // ---- build fine scalar full CRS (node-block order) from lower CSC ----
     std::vector<int> deg(n,0);
@@ -427,7 +436,8 @@ extern "C" int ccx_gmg_solve(int n, const long* cs, const int* ri, const double*
 {
     FILE*g=fopen(coordmap,"rb"); if(!g){ if(verbose)fprintf(stderr,"[gmg] cannot open coordmap %s\n",coordmap); return 1; }
     int64_t nk64,mt64; if(fread(&nk64,8,1,g)!=1||fread(&mt64,8,1,g)!=1){fclose(g);return 1;}
-    long nk=(long)nk64; int mt=(int)mt64; if(mt<3||mt>64||nk<=0){fclose(g);return 1;}   // validate before alloc
+    long nk=(long)nk64; int mt=(int)mt64;
+    if(mt<3||mt>64||nk<=0||nk>1000000000L){fclose(g);return 1;}   // validate+bound (untrusted file) before alloc, so (size_t)3*nk/mt*nk can't wrap
     int rc=1;
     try {                                            // bad_alloc from the co/na vectors must not cross extern "C"
         std::vector<double> co((size_t)3*nk); std::vector<int> na((size_t)mt*nk);

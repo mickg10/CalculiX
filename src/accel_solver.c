@@ -303,7 +303,10 @@ static double *load_rbm(const char *path, int n, int *m_out) {
     int64_t nk64, mt64;
     if (fread(&nk64,8,1,g)!=1 || fread(&mt64,8,1,g)!=1){ fclose(g); return NULL; }
     long nk=(long)nk64; int mt=(int)mt64;
-    if (nk <= 0 || mt < 3 || mt > 64) { fclose(g); return NULL; }
+    /* nk/mt come from a (possibly untrusted/corrupt) file. Bound nk so (size_t)3*nk*8 and mt*nk*4 cannot wrap
+       size_t -> a wrapped tiny alloc would pass the fread size check (same wrapped count) and then build_rbm
+       would loop to the real huge nk and walk OOB. 1e9 nodes is already far beyond any real mesh. */
+    if (nk <= 0 || nk > 1000000000L || mt < 3 || mt > 64) { fclose(g); return NULL; }
     double *co = (double*)malloc((size_t)3*nk*sizeof(double));
     int    *na = (int*)   malloc((size_t)mt*nk*sizeof(int));
     double *W = NULL;
@@ -460,9 +463,11 @@ int accel_spooles(double *ad, double *au, double *adb, double *sigma,
     if (cfg.gmg) {
         double tg = now_s();
         int gtol_iters = getenv("CCX_ACCEL_GMG_MAXIT") ? atoi(getenv("CCX_ACCEL_GMG_MAXIT")) : 80;
+        if (gtol_iters <= 0) gtol_iters = 80;     /* malformed/zero env -> default, not a 0-iter no-op */
         /* GMG stop tol: default 1e-4 (disp ~1e-10, stress ~1e-9); decoupled from cfg.pcg_tol (=float-pcg's
            exact 1e-10). Override with CCX_ACCEL_GMG_TOL (or GMG_TOL, handled inside gmg_solve). */
         double gtol = getenv("CCX_ACCEL_GMG_TOL") ? atof(getenv("CCX_ACCEL_GMG_TOL")) : 1e-4;
+        if (!(gtol > 0)) gtol = 1e-4;             /* malformed/<=0 env -> default, not an unreachable 0 tol */
         int grc = -99;
         if (have_coordmap) {                     /* preferred: in-memory coordmap from CCX (no file) */
             grc = ccx_gmg_solve_mem(n, colStarts, rowIdx, vals, b, g_co, g_nactdof, g_nk, g_mi1 + 1,
