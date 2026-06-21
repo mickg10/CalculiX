@@ -130,7 +130,10 @@ void ccx_fastdat_flush_(void) {
         const double *s = g_s[k];
         for (int c = 0; c < 6; c++) {
             double a = fabs(s[c]);
-            if (!isfinite(s[c]) || a >= 1e100 || (a != 0.0 && a < 1e-99)) {
+            /* 9.9999995e99 (not 1e100) is the round-half-up boundary: a value in [9.9999995e99,1e100) rounds
+               to "1.000000E+100" -- a 3-digit exponent -- so it must be caught too. (The small side <1e-99
+               already over-covers its boundary.) */
+            if (!isfinite(s[c]) || a >= 9.9999995e99 || (a != 0.0 && a < 1e-99)) {
                 fprintf(stderr, "[accel] fast .dat: a stress value renders differently from gfortran's e13.6 "
                                 "(NaN/Inf or |stress|>=1e100 / <1e-99?) -> failing closed (exit 202) before "
                                 "writing; rerun without CCX_ACCEL_OUT_DAT_FAST and check the solution\n");

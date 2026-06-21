@@ -48,6 +48,10 @@ void ccxftof_(const char *s, double *v, int *istat, long slen) {
     memcpy(b, s, (size_t)n); b[n] = '\0';
     char *p = b; while (*p == ' ') p++;
     if (*p == '\0') { *v = 0.0; *istat = 0; return; }  /* all-blank field -> 0.0, no error (matches Fortran f20.0) */
+    /* reject C hexadecimal floats ("0x1p8"): strtod accepts them but Fortran f20.0 errors (verified ios=5010).
+       (Fortran ACCEPTS overflow->Inf and inf/nan with ios=0, exactly as strtod does, so those are NOT rejected.) */
+    { const char *q = p; if (*q == '+' || *q == '-') q++;
+      if (q[0] == '0' && (q[1] == 'x' || q[1] == 'X')) { *v = 0.0; *istat = 1; return; } }
     for (char *q = p; *q; q++) if (*q == 'D' || *q == 'd') *q = 'e';  /* Fortran D-exponent -> C e-exponent */
     { char *q = p; if (*q == '+' || *q == '-') q++;    /* Fortran bare-sign exponent "1.5+3"==1500 -> "1.5e+3" */
       while ((*q >= '0' && *q <= '9') || *q == '.') q++;

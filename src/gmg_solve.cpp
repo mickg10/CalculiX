@@ -294,8 +294,13 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     for(int e=0;e<n;e++){long nd=eqnode[e];int c=eqcomp[e]; perm[e]=3*cnode[nd]+c; blk_node[cnode[nd]]=nd;}
 
     // ---- AUTO grid detection: per-axis pitch + regularity gate (no hardcoded pitch) ----
+    // Reject non-finite coordinates up front: a NaN/Inf (e.g. from a degenerate input) would break std::sort's
+    // ordering and make llround() implementation-defined, and NaN compares false so the regularity gate could
+    // pass on garbage. Fall back to the direct solve instead.
     double mn[3]={1e300,1e300,1e300}, mx[3]={-1e300,-1e300,-1e300};
-    for(int bb=0;bb<nb;bb++){ long nd=blk_node[bb]; for(int a=0;a<3;a++){ double q=co[3*nd+a]; if(q<mn[a])mn[a]=q; if(q>mx[a])mx[a]=q; } }
+    for(int bb=0;bb<nb;bb++){ long nd=blk_node[bb]; for(int a=0;a<3;a++){ double q=co[3*nd+a];
+        if(!std::isfinite(q)){ if(verbose) fprintf(stderr,"[gmg] non-finite node coordinate -> direct fallback\n"); return 3; }
+        if(q<mn[a])mn[a]=q; if(q>mx[a])mx[a]=q; } }
     double h[3];
     for(int a=0;a<3;a++){
         std::vector<double> v(nb); for(int bb=0;bb<nb;bb++) v[bb]=co[3*blk_node[bb]+a];

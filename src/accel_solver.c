@@ -130,7 +130,8 @@ static void cfg_set(accel_config_t *c, const char *key, const char *val) {
         else if (!strcmp(val, "defl-pcg") || !strcmp(val, "defl")) { c->enabled = 1; c->use_float = 1; c->pcg = 1; c->defl = 1; c->gmg = 0; }
         else if (!strcmp(val, "gmg")) { c->enabled = 1; c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 1; c->gmg_auto = 0; }
         else if (!strcmp(val, "auto")) { c->enabled = 1; c->use_float = 0; c->pcg = 0; c->defl = 0; c->gmg = 1; c->gmg_auto = 1; }
-        /* unrecognized value: leave enabled as-is (does not opt in) */
+        else fprintf(stderr, "[accel] unknown solve mode '%s' -> ignored (run stays on the stock SPOOLES path); "
+                             "valid: direct|double|float|float-pcg|defl-pcg|gmg|auto\n", val);  /* loud, fail-safe */
     }
     else if (!strcmp(key, "pcg"))
         c->pcg = atoi(val) != 0;

@@ -136,6 +136,7 @@ int main(void) {
         "1.5D3","-2.5d-2","1.0D-3","6.022D23",     /* Fortran D-exponent -> must match f20.0 */
         "1.5+3","-2.5-3",".5+3","2+5",             /* Fortran bare-sign exponent -> must match f20.0 */
         "123456789.123456789012345","1.23456789012345678901234",  /* >20 chars: first 20 cols only (width cap) */
+        "0x1p8","-0x10","0X1.8p3",                 /* C hex floats -> error (Fortran f20.0 rejects, ios=5010) */
         "1.5X","1.5.3",                            /* trailing junk -> error (matches f20.0) */
         NULL};
     for (int i=0; flts[i]; i++) test_flt(flts[i]);

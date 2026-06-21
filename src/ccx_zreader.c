@@ -48,6 +48,19 @@ ccx_zfile *ccx_zopen(const char *path) {
     if (nm >= 2 && m[0] == 0x1f && m[1] == 0x8b) mode = CZ_GZ;
     else if (nm >= 4 && m[0] == 0x28 && m[1] == 0xb5 && m[2] == 0x2f && m[3] == 0xfd) mode = CZ_ZST;
 
+    /* Codec is chosen by content (magic), so an extension-less compressed deck still auto-detects. But a file
+       whose NAME ends in .gz/.zst yet lacks the matching magic is corrupt/mislabeled -- fail closed instead of
+       silently parsing its bytes as a plain deck (a partial/wrong deck must never look complete). */
+    if (mode == CZ_PLAIN) {
+        size_t ul = strlen(used);
+        const char *bad = NULL;
+        if (ul >= 3 && !strcmp(used + ul - 3, ".gz"))  bad = "gzip";
+        else if (ul >= 4 && !strcmp(used + ul - 4, ".zst")) bad = "zstd";
+        if (bad) { fprintf(stderr, "[accel] ccx_zreader: FATAL %s is named like a %s file but lacks its magic "
+                                   "(corrupt/mislabeled) -> aborting (exit 203)\n", used, bad);
+                   fclose(fp); exit(203); }
+    }
+
     ccx_zfile *z = (ccx_zfile *)calloc(1, sizeof *z);
     if (!z) { fclose(fp); return NULL; }
     z->mode = mode;
