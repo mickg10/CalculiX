@@ -13,7 +13,7 @@ void kernel_main() {
         for (int j = 0; j < 8; ++j) sp[f * 128 + j] = scaler;
     cb_push_back(cb_sc, 1);
     constexpr auto args = TensorAccessorArgs<2>();
-    const auto A = TensorAccessor(args, src, 32u * 32u * 4u);   // fp32 tile page = 4096 B
+    const auto A = TensorAccessor(args, src, 32u * 32u * 2u);   // bf16 tile page = 2048 B (input probe)
     for (uint32_t i = 0; i < nt; ++i) {
         cb_reserve_back(cb_in, 1);
         noc_async_read_page(i, A, get_write_ptr(cb_in));

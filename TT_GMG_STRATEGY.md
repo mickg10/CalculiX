@@ -277,3 +277,18 @@ the transposed-reduce path gives fp32 accumulate but bf16 products — may still
 The fp32-PRODUCTS requirement may have NO clean primitive on this HW (matmul rounds products, eltwise can't fp32-accum,
 reduce may need bf16 input). If so, the fix needs a fundamentally different formulation (e.g. residual-scaling / 
 double-single split at the GMG level) — a genuine open research question, not just an engineering build.
+
+## reduce_fp32: bf16 input ALSO hangs — blind bisection exhausted — 2026-07-01
+Fed bf16 input tiles (page size 2048) + fp32 accumulate: STILL hangs (EXIT=124). So the hang is NOT input format,
+NOT the scaler (direct L1 fill), NOT the JIT (compiles). It is the reduce_tile compute pattern or kernel/CB setup,
+opaque (silent hang, no error/DPRINT). 4 blind attempts exhausted. NEXT STEPS (not blind guessing):
+  1. DPRINT-instrument reduce_compute (TT_METAL_DPRINT_CORES) to see exactly where it stalls (reduce_init? first
+     reduce_tile? pack?). Requires enabling DPRINT server.
+  2. Copy a KNOWN-GOOD reduce compute+reader verbatim from ttnn reduce_op (reduce_hw_neg.cpp / reader_unary_reduce_*)
+     into a programming example, get it running, THEN swap in enforce_fp32_accumulation=true and fp32 I/O.
+  3. STRATEGIC ALTERNATIVE (if fp32 products truly have no clean primitive): reformulate at the GMG level so no
+     single SpMV needs full-fp32 products — e.g. double-single (hi/lo) residual on the HOST fp64 PCG carrying the
+     correction, with the TT SpMV only providing the bf16x3-accumulate part it CAN do. This sidesteps the HW gap.
+STATE: harness compiles+registered (tt_gmg/reduce_fp32). Real operator restored. Gates G1/G2/G5 pass; G3/G4/e2e
+blocked on the fp32 fine-SpMV, which now has a genuine open-question risk (product precision on this HW). Multi-day/
+possibly research-level. Cron watchdog 3e93f635 continues.

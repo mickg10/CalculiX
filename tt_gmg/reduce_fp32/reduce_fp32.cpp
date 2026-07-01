@@ -54,15 +54,18 @@ int main() {
             for (uint32_t cc = 0; cc < W; ++cc)
                 tiled[(size_t)ti * H * W + rr * W + cc] = prod[rr * C + ti * W + cc];
 
+    std::vector<bfloat16> tiledb(tiled.size());
+    for (size_t i = 0; i < tiled.size(); ++i) tiledb[i] = bfloat16(tiled[i]);   // DIAGNOSTIC: bf16 input probe
+
     auto dev = distributed::MeshDevice::create(distributed::MeshDeviceConfig(distributed::MeshShape(1, 1)));
     Program program = CreateProgram();
     auto& cq = dev->mesh_command_queue();
-    auto in = MakeBuf(dev, NT, 4), out = MakeBuf(dev, 1, 4);
-    distributed::EnqueueWriteMeshBuffer(cq, in, tiled, true);
+    auto in = MakeBuf(dev, NT, 2), out = MakeBuf(dev, 1, 4);                    // in = bf16, out = fp32
+    distributed::EnqueueWriteMeshBuffer(cq, in, tiledb, true);
     std::vector<float> zc(H * W, 0.f); distributed::EnqueueWriteMeshBuffer(cq, out, zc, true);
 
     CoreRange one({0, 0}, {0, 0}); CoreRangeSet cores(one);
-    MakeCB(program, cores, tt::CBIndex::c_0, 4, tt::DataFormat::Float32);   // input products
+    MakeCB(program, cores, tt::CBIndex::c_0, 4, tt::DataFormat::Float16_b);   // input products (bf16 probe)
     MakeCB(program, cores, tt::CBIndex::c_2, 1, tt::DataFormat::Float16_b); // scaler
     MakeCB(program, cores, tt::CBIndex::c_16, 1, tt::DataFormat::Float32);  // output
 
