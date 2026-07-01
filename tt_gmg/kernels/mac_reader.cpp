@@ -1,6 +1,5 @@
-// mac_reader.cpp — build the bf16x3 cross-term stream. Per k, emit 6 (a_term,b_term) tile-pairs into
-// cb_a (c_0) and cb_b (c_1):  a-side = ah,ah,am,ah,am,al ; b-side = bh,bm,bh,bl,bm,bh
-// (cross-terms with level-sum <= 2: ah*bh, ah*bm, am*bh, ah*bl, am*bm, al*bh). Buffers: A0=ah A1=am A2=al A3=bh A4=bm A5=bl.
+// mac_reader.cpp — deliver the 3 unique a-terms [ah,am,al] into cb_a and 3 unique b-terms [bh,bm,bl] into cb_b
+// per k (each unique tile read ONCE -> no repeated same-page NoC reads). Buffers: A0=ah A1=am A2=al A3=bh A4=bm A5=bl.
 #include "api/dataflow/dataflow_api.h"
 #include <cstdint>
 
@@ -22,19 +21,12 @@ void kernel_main() {
     for (uint32_t t = 0; t < n_out; ++t) {
         const uint32_t base = (start_out_id + t) * K;
         for (uint32_t k = 0; k < K; ++k) {
-            cb_reserve_back(cb_a, 6); cb_reserve_back(cb_b, 6);
-            const uint32_t pa = get_write_ptr(cb_a), pb = get_write_ptr(cb_b);
-            const uint32_t p = base + k;
-            // a-side: ah,ah,am,ah,am,al
-            noc_async_read_page(p, Aah, pa + 0*TB); noc_async_read_page(p, Aah, pa + 1*TB);
-            noc_async_read_page(p, Aam, pa + 2*TB); noc_async_read_page(p, Aah, pa + 3*TB);
-            noc_async_read_page(p, Aam, pa + 4*TB); noc_async_read_page(p, Aal, pa + 5*TB);
-            // b-side: bh,bm,bh,bl,bm,bh
-            noc_async_read_page(p, Abh, pb + 0*TB); noc_async_read_page(p, Abm, pb + 1*TB);
-            noc_async_read_page(p, Abh, pb + 2*TB); noc_async_read_page(p, Abl, pb + 3*TB);
-            noc_async_read_page(p, Abm, pb + 4*TB); noc_async_read_page(p, Abh, pb + 5*TB);
+            cb_reserve_back(cb_a, 3); cb_reserve_back(cb_b, 3);
+            const uint32_t pa = get_write_ptr(cb_a), pb = get_write_ptr(cb_b), p = base + k;
+            noc_async_read_page(p, Aah, pa + 0*TB); noc_async_read_page(p, Aam, pa + 1*TB); noc_async_read_page(p, Aal, pa + 2*TB);
+            noc_async_read_page(p, Abh, pb + 0*TB); noc_async_read_page(p, Abm, pb + 1*TB); noc_async_read_page(p, Abl, pb + 2*TB);
             noc_async_read_barrier();
-            cb_push_back(cb_a, 6); cb_push_back(cb_b, 6);
+            cb_push_back(cb_a, 3); cb_push_back(cb_b, 3);
         }
     }
 }

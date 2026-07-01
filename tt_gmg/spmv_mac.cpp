@@ -86,8 +86,8 @@ int main() {
     auto grid = dev->compute_with_storage_grid_size();
     auto all = CoreRange({0, 0}, {grid.x - 1, grid.y - 1});
     CoreRangeSet all_set(all);
-    MakeCB(program, all_set, tt::CBIndex::c_0, 6);   // cb_a: 6 interleaved cross-term a-tiles per k (depth==6 -> clean wrap)
-    MakeCB(program, all_set, tt::CBIndex::c_1, 6);   // cb_b: 6 interleaved cross-term b-tiles per k
+    MakeCB(program, all_set, tt::CBIndex::c_0, 3);   // cb_a: [ah,am,al] per k (unique tiles, read once)
+    MakeCB(program, all_set, tt::CBIndex::c_1, 3);   // cb_b: [bh,bm,bl] per k
     MakeCB(program, all_set, tt::CBIndex::c_16, 8, tt::DataFormat::Float32);
 
     auto [ncores, cores, g1, g2, n1, n2] = tt::tt_metal::split_work_to_cores(grid, n_local, true);   // per-chip work
@@ -103,7 +103,7 @@ int main() {
     auto writer = CreateKernel(program, "tt_metal/programming_examples/spmv_mac/kernels/mac_writer.cpp", cores,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default, .compile_args = w_ct});
     auto compute = CreateKernel(program, "tt_metal/programming_examples/spmv_mac/kernels/mac_compute.cpp", cores,
-        ComputeConfig{.fp32_dest_acc_en = true, .math_approx_mode = false, .compile_args = {}});
+        ComputeConfig{.math_fidelity = MathFidelity::HiFi4, .fp32_dest_acc_en = true, .math_approx_mode = false, .compile_args = {}});
 
     uint32_t start = 0;
     for (auto [grp, npc] : {std::make_pair(g1, n1), std::make_pair(g2, n2)}) {
