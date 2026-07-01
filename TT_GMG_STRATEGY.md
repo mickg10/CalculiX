@@ -221,3 +221,16 @@ layout + on-device gather, wire into tt_fine_spmv, converge to maxU 95.81, measu
 SESSION SUMMARY: built+ran full TT-GMG (diverged), root-caused (near-singular cancellation needs fp32 products+
 accumulate), disproved the matmul-diagonal "fix" (random-vector only), ruled out ALL ttnn ops, located+confirmed the
 custom reduce_tile<fp32> fix. G1/G2/G5 pass; G3/G4/end-to-end need the above build. Zero unknowns remain.
+
+## Two fix paths; harness architecture note — 2026-07-01
+Read the working 8-chip spmv_mac harness: it accumulates the DIA MAC ELEMENTWISE across k-tiles (out[t]+=a_k[t](.)b_k[t]),
+so reduce_tile (reduce-WITHIN-tile columns) does NOT drop in; the confirmed reduce_tile<fp32> fix needs the transposed
+[element,(term,k)] layout (multi-day: new reader/host/gather).
+SIMPLER CANDIDATE worth trying FIRST (fits the existing harness, minimal change): packer_l1_acc = fp32 accumulation
+of PACKED tiles in L1. Path: eltwise mul(a_term,b_term)->fp32 dst (exact 16-bit product), pack into ONE reserved c_16
+tile with packer_l1_acc=true (accumulates in L1 fp32) across all 6*K products, push once. If packer_l1_acc truly
+fp32-accumulates the packed products, this gives fp32 products+accumulate WITHOUT the transposed rework.
+CAVEAT: matmul-diagonal already used packer_l1_acc=True and stayed 11-bit (but that was the MATMUL rounding products;
+eltwise keeps 16-bit products, so the L1-acc precision is the only question). TEST on a cancellation operator first
+(construct row236_real_op.bin variant with per-element Sum coeff*b ~ small; must hit ~fp32 not bf16).
+Remaining either way = multi-day: build the fp32 SpMV, converge to maxU 95.81, add on-device gather, measure gates.
