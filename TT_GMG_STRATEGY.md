@@ -250,3 +250,14 @@ a supported pattern (matmul l1_acc packs BLOCKS across K-blocks, not N packs int
 elementwise-across-k DIA MAC is a dead end without deeper restructure. => The transposed reduce_tile<SUM,REDUCE_ROW,
 enforce_fp32_accumulation=true> path (docs-confirmed, needs [element,(term,k)] layout + reader + gather rework) is
 the remaining viable fix. Multi-day. Hourly cron watchdog 3e93f635 (:37 local) will keep re-engaging the goal.
+
+## Transposed reduce_tile<fp32> build STARTED (greenlit) — 2026-07-01
+Built tt_gmg/reduce_fp32/ (host + reader/compute/writer kernels + CMakeLists), registered in programming_examples,
+COMPILES + LINKS on the box (metal_example_reduce_fp32). Verifies reduce_tile<SUM,REDUCE_ROW,enforce_fp32_accumulation
+=true> on a constructed cancellation case (32 rows x 512 cols, ratio ~7e-6). First device run: compute kernel JIT
+error fixed (compute kernels here use void kernel_main(), NOT namespace NAMESPACE{void MAIN}). Second run: HANGS at
+runtime (EXIT=124) — silent hang, likely the inlined reduce-scaler generation (noc replication) or reduce-accumulate
+CB sync. Needs multi-cycle bisection. NEXT: fix the scaler (use wh_generate_reduce_scaler include instead of inline,
+or verify the 4-face noc pattern) / confirm reduce_tile accumulate-into-dst semantics; once it prints ~2.6e-4 (not ~9),
+the fp32 primitive is PROVEN and the transposed-layout SpMV + gather + convergence + measurement follow (multi-day).
+Files committed to the fork under tt_gmg/reduce_fp32/. Hourly cron watchdog 3e93f635 continues re-engaging.
