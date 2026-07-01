@@ -483,3 +483,12 @@ Timeout; ARC Status: Timeout (1/1 init); Ethernet: 6/16". The on-chip ARC microc
 (which resets THROUGH ARC) cannot recover it; a soft reboot may not either. Recovery needs a full cold power-cycle
 of tt-quietbox (physical or BMC/IPMI) -- user action. Dump + DIA + libgmg all staged on the box, and the CPU-proxy
 rc=0 result is committed; the real-TT measurement is one `gmg_tt.py` run away once the chips re-initialize.
+
+## Card-level resets exhausted; ARC firmware hung -> needs COLD power-cycle (BMC/AC) — 2026-07-01
+User authorized "reset the cards". Performed ALL card-level resets: tt_smi -r (warm), PCIe FLR (/sys/.../reset),
+PCIe remove+rescan (/sys/.../remove + /sys/bus/pci/rescan). After remove+rescan all 4 Wormholes re-appear on the bus
+(lspci 1e52: ok) and tt_smi -r partially completes, but ttnn.open_device STILL segfaults and tt_smi -s cannot read
+chip status -> the on-chip ARC microcontroller is hung at firmware level. ARC reloads firmware from SPI only at
+POWER-UP, so no software/PCIe reset (nor a warm reboot, which keeps the cards powered) can recover it. Definitive fix:
+cold power-cycle (BMC/IPMI `chassis power cycle` or physical AC off/on). Everything else remains staged + committed;
+real-TT run is one gmg_tt.py away once ARC re-initializes.
