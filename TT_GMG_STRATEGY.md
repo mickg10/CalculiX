@@ -112,3 +112,16 @@ were masked by peak-normalized metrics on smooth/sparse vectors. Only `matmul_ti
 (diagonal-trick: C[m,m]=sum_k a_k[m]*b_k[m] via A[m,k]@B[k,n]; or block-3x3 stencil matmul) -> true fp32 accumulate.
 This is the remaining blocker for G3-precision -> G4 -> end-to-end. Everything else (driver, hook, dump-solve,
 CPU convergence, 8-chip sharding, gather) is built and committed.
+
+## FIX PROVEN ON HARDWARE — matmul-diagonal fp32 accumulate — 2026-07-01
+The eltwise mul path cannot fp32-accumulate (clear_fp32_dst_acc hardcoded). Reframed the DIA reduction as a
+matmul: for 32 output elements, A[m,k]=coeff_k[m], B[k,n]=b_k[n]; matmul A@B accumulates over k in fp32;
+diag(C)[m] = sum_k coeff_k[m]*b_k[m] = out[m]. Validated on the 8-chip box via ttnn.matmul
+(HiFi4, fp32_dest_acc_en, packer_l1_acc) on the dense-random-v operator (tt_gmg/diag_proof.py, diag_proof3.py):
+  - bf16x1 matmul-diagonal: rel_err 2.55e-3  (== host fp32 bf16x1 2.3e-3; eltwise bf16x1 was 0.38)
+  - bf16x3 matmul-diagonal (6 cross-term matmuls summed): rel_err 4.69e-4  (eltwise TT was 1.5; ~3000x better)
+=> the matmul engine gives the fp32 K-accumulate the smoother needs; the fix is PROVEN, not hypothesized.
+Remaining: implement the matmul-diagonal (or reduce_ROW) in the Metalium fine-SpMV for the full operator
+(mask+reduce diagonal extraction, bf16x3, 8-chip), wire into ccx_gmg_solve_from_dump, converge, time (G3/G4/e2e).
+Note: 4.69e-4 (not host 2.6e-7) is likely matmul-input/packer bf16 rounding; tune (fp32 inputs / more terms)
+if the smoother needs tighter, but 4.69e-4 may already converge (outer fp64 PCG + residual gate corrects).
