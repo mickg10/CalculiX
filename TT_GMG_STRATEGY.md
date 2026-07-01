@@ -403,3 +403,19 @@ uncertain mode count, threatens the timing gates) -> an open research problem, l
 FINAL: G1/G2/G5 pass; G3/G4/cold/warm/stretch/correctness are blocked by a proven fundamental precision limit, not an
 engineering gap. All findings, the correct deflated PCG, the validated abserr proxy, and the research directions are
 committed here. The pure-TT G3 path as specified is not achievable on this hardware within the timing constraints.
+
+## BREAKTHROUGH: computed-eigenvector deflation makes the bf16 SpMV CONVERGE — 2026-07-01
+Deflating with COMPUTED near-null eigenvectors (inverse iteration via vcycle~A^-1, GMG_DEFL_EIG=1) instead of
+polynomials WORKS where everything else failed:
+  eig-deflation k=24 + abserr=4.69e-4:  rel 1189 -> 549 -> 100 -> 16 -> 6.2 -> ... -> plateaus at 5.33e-4
+vs polynomial/no deflation which STALLED at 466+. So the divergence IS near-null-driven, and row236's near-null space
+is geometry-dependent (needs COMPUTED eigenvectors; polynomials to k=105 could not capture it). This is the key
+positive result: the bf16/TT fine SpMV CAN be made to converge via a computed-eigenvector deflated PCG.
+REMAINING (now well-scoped, not open-ended): (1) the abserr proxy plateaus at ~5.3e-4 = the bf16-product precision
+floor, short of the 1e-6 tol -> either the abserr proxy is PESSIMISTIC on the well-conditioned complement (the REAL
+TT matmul-diagonal may do better there -> test the real TT + eig-deflation), or add a HYBRID fp64 finish (switch the
+last few smoother SpMVs to CPU/exact once the TT preconditioner reaches ~5e-4 -> cheap, closes to 1e-6). (2) speed:
+~150 iters to floor + the eigenvector setup cost (k*eigit vcycles) threaten G4<=1s / cold<=5s -> tune k, eigit, and
+amortize the eigenbasis (warm). Code: src/gmg_solve.cpp GMG_DEFL_EIG/GMG_DEFL_K/GMG_DEFL_EIGIT.
+This reclassifies G3 from "fundamentally blocked" to "convergence SOLVED via eig-deflation; reaching 1e-6 + timing are
+the remaining engineering". Gates still G1/G2/G5 pass, G3/G4/e2e not yet MEASURED end-to-end on real TT.

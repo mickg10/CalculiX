@@ -91,6 +91,9 @@ static int g_defl_rbm = 0;         // >0: deflate 6 rigid-body modes from the fi
 static int g_defl_corr = 0;        // >0: add the exact fp64 RBM coarse-correction to the PCG preconditioner
 static double g_defl_reg = 0.0;    // E-regularization (relative): DE[a,a] += reg*maxdiag before Cholesky
 static int g_defl_deg = 1;         // polynomial deflation degree (1=RBMs; higher enlarges the near-null subspace)
+static int g_defl_eig = 0;         // >0: deflate with COMPUTED near-null eigenvectors (inverse iteration via vcycle)
+static int g_defl_k   = 24;        // number of computed eigenvectors
+static int g_defl_eigit = 5;       // inverse-iteration sweeps
                                       // multi-pass = Ozaki/error-free-transform: split each value into hi/lo bf16 terms,
                                       // do extra bf16 products, accumulate fp32 -> recover precision from fast bf16 passes.
 static inline double bf16round(double d){
@@ -617,6 +620,9 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     g_defl_corr = (getenv("GMG_DEFL_CORR") && atoi(getenv("GMG_DEFL_CORR"))>0) ? 1 : 0;
     g_defl_reg = getenv("GMG_DEFL_REG") ? atof(getenv("GMG_DEFL_REG")) : 0.0;
     { int dd; g_defl_deg = (getenv("GMG_DEFL_DEG") && (dd=atoi(getenv("GMG_DEFL_DEG")))>=1) ? dd : 1; }
+    g_defl_eig = (getenv("GMG_DEFL_EIG") && atoi(getenv("GMG_DEFL_EIG"))>0) ? 1 : 0;
+    { int kk; if(getenv("GMG_DEFL_K") && (kk=atoi(getenv("GMG_DEFL_K")))>0) g_defl_k=kk;
+      if(getenv("GMG_DEFL_EIGIT") && (kk=atoi(getenv("GMG_DEFL_EIGIT")))>0) g_defl_eigit=kk; }
     if((g_emu_abserr>0.0||g_defl_rbm) && verbose) fprintf(stderr,"[tt-gmg] abserr=%.3e defl_rbm=%d (TT failure-mode probe)\n",g_emu_abserr,g_defl_rbm);
     if(g_emu_bf16 && verbose) fprintf(stderr,"[tt-gmg] CPU EMU smoother ON mode=%d (2=bf16x2 3=bf16x3 32=fp32)\n",g_emu_mode);
     if(g_emu_mbits && verbose) fprintf(stderr,"[tt-gmg] fine-SpMV output rounded to %d mantissa bits (2^-%d ~ %.1e rel)\n",g_emu_mbits,g_emu_mbits,std::ldexp(1.0,-g_emu_mbits));
@@ -647,7 +653,21 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     // A-orthogonal complement via the projected operator PA = A - AZ E^-1 (AZ)^T, so the (bf16/TT) smoother only ever
     // sees complement residuals -> no extreme cancellation -> bf16x3 is accurate there. E = Z^T A Z (6x6, Cholesky).
     std::vector<std::vector<double>> DZ, DAZ; std::vector<double> DE; bool defl=(g_defl_corr!=0); int K6=0;
-    if(defl){ build_defl(LV[0],g_defl_deg); DZ=g_Z; K6=(int)DZ.size();
+    if(defl){
+        if(g_defl_eig){   // COMPUTED near-null eigenvectors via inverse iteration (vcycle ~ A^-1), exact smoother
+            int k=g_defl_k; double save_ae=g_emu_abserr; g_emu_abserr=0.0;
+            g_Z.assign(k,std::vector<double>(N));
+            uint64_t s=0x243F6A8885A308D3ULL;
+            for(int a=0;a<k;a++) for(int i=0;i<N;i++){ s^=s<<13;s^=s>>7;s^=s<<17; g_Z[a][i]=((double)((s>>11)&2047)/1024.0-1.0); }
+            std::vector<double> yy(N);
+            for(int it2=0; it2<g_defl_eigit; it2++){
+                for(int a=0;a<k;a++){ for(int i=0;i<N;i++) yy[i]=0; vcycle(ctx,0,g_Z[a].data(),yy.data()); g_Z[a]=yy; }
+                for(int a=0;a<k;a++){ for(int b=0;b<a;b++){ double d=ddot(g_Z[a].data(),g_Z[b].data(),N); for(int i=0;i<N;i++) g_Z[a][i]-=d*g_Z[b][i]; }
+                    double nr=std::sqrt(ddot(g_Z[a].data(),g_Z[a].data(),N)); if(nr>1e-30) for(int i=0;i<N;i++) g_Z[a][i]/=nr; } }
+            g_emu_abserr=save_ae;
+            if(verbose) fprintf(stderr,"[tt-gmg] computed %d near-null eigenvectors (%d inverse-iter sweeps)\n",k,g_defl_eigit);
+        } else build_defl(LV[0],g_defl_deg);
+        DZ=g_Z; K6=(int)DZ.size();
         if(K6<1){ defl=false; }
         else { DAZ.assign(K6,std::vector<double>(N)); DE.assign((size_t)K6*K6,0.0);
         for(int a=0;a<K6;a++) bspmv(A0,DZ[a].data(),DAZ[a].data());
