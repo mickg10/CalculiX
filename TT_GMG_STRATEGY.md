@@ -292,3 +292,22 @@ opaque (silent hang, no error/DPRINT). 4 blind attempts exhausted. NEXT STEPS (n
 STATE: harness compiles+registered (tt_gmg/reduce_fp32). Real operator restored. Gates G1/G2/G5 pass; G3/G4/e2e
 blocked on the fp32 fine-SpMV, which now has a genuine open-question risk (product precision on this HW). Multi-day/
 possibly research-level. Cron watchdog 3e93f635 continues.
+
+## DEFINITIVE: no clean TT primitive gives fp32-product precision — reclassifies G3 as research-level — 2026-07-01
+Fixed the reduce hang: compute_kernel_hw_startup() was missing (required before reduce_init). Kernel now runs (EXIT=0).
+BUT reduce_tile<SUM,REDUCE_ROW,enforce_fp32_accumulation=true> gives GARBAGE on the cancellation case with BOTH:
+  bf16 input:  max_abs_err 2.05e4  (8-bit products lose cancellation)
+  fp32 input:  max_abs_err 2.05e4  (reduce unpack/math is bf16 regardless of fp32 CB + enforce flag; fp32 accumulator
+               does not rescue bf16-truncated inputs). Need 2.6e-4; got 2.05e4 -> ~1e8x too coarse.
+FULL TALLY of fp32-product-precision primitives on Wormhole b0 v0.73.1, all FAILED on the near-singular cancellation:
+  matmul-diagonal: 11-bit products (rel 36x on smoother vectors)  |  ttnn.sum: bf16 accumulate (fp32 cfg no help)
+  eltwise LLK clear=false: bf16 accumulate  |  packer_l1_acc: hangs / unsupported 486-pack  |  reduce_tile: bf16 math
+CONCLUSION: there is no clean Metalium primitive that delivers exact-16-bit products + fp32 accumulate for extreme
+cancellation (|Ax|<<|x|). Closing G3 with the current SpMV formulation is blocked by a HARDWARE precision reality,
+not an engineering gap => RESEARCH-LEVEL reformulation required. Candidate directions:
+  (A) Change the SMOOTHER so it never needs a near-null SpMV in low precision (e.g. run the fine smoother's
+      A-application in fp32 on the HOST/CPU and use TT only for the compute-heavy coarse/dense levels), i.e. a
+      HYBRID CPU-fine / TT-coarse GMG — likely the pragmatic path to the timing gates.
+  (B) Double-single (hi/lo) SpMV assembled from multiple bf16x3 TT passes with host fp64 compensation.
+  (C) A different preconditioner whose fine operator is well-conditioned (no near-null cancellation in the smoother).
+This is the honest state: G1/G2/G5 pass; G3/G4/e2e require an algorithmic reformulation, not just the multi-day kernel.

@@ -6,6 +6,7 @@
 void kernel_main() {
     const uint32_t nt = get_arg_val<uint32_t>(0);
     constexpr auto cb_in = tt::CBIndex::c_0, cb_sc = tt::CBIndex::c_2, cb_out = tt::CBIndex::c_16;
+    compute_kernel_hw_startup(cb_in, cb_sc, cb_out);   // REQUIRED: init the compute HW before reduce_init
     reduce_init<PoolType::SUM, ReduceDim::REDUCE_ROW, true>(cb_in, cb_sc, cb_out);
     cb_wait_front(cb_sc, 1);
     tile_regs_acquire();
