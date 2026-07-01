@@ -50,7 +50,7 @@ optimization loop needs.
 |----|-------|-------:|-------|
 | G1 | setup (host: hierarchy + BCSR + bf16×3 terms) | ≤ 3.0 s | **cacheable** across loop solves → ~0 warm |
 | G2 | matrix upload host → 8 chips (one-time) | ≤ 0.3 s | **PASSED: 0.116 s (679 MB bf16 → 8 chips); bf16×3 ~1.8 GB would be ~0.3 s (borderline)** |
-| G3 | one fine SpMV (8 chips, bf16×3) | ≤ 3 ms | **PASSED: 1.642 ms real 8-chip (1×8 mesh, sharded), 828 GB/s, correct (rel_err 2e-3)** |
+| G3 | one fine SpMV (8 chips, bf16×3) | ≤ 3 ms | **CORRECT on REAL row236 operator: bf16×3, 8-chip, rel_err 6.4e-7 (fp32-exact), fp32 output. 8.46 ms unoptimized (6 cross-terms, redundant reads); 1.64 ms for the bf16×1 sub-kernel. Optimize reads/resident-x for ≤3 ms.** |
 | G4 | PCG solve (228 SpMVs + host fp64 PCG + PCIe residual) | ≤ 1.0 s | 38 iters; PCIe residual ≤ 0.15 s |
 | G5 | output / un-permute | ≤ 0.2 s | **PASSED: 0.013 s (solution read 8 chips → host)** |
 | **TOTAL (cold)** | | **≤ 5.0 s** | `maxU = golden`, `true_rel < 3e-3` |

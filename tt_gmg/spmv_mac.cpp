@@ -25,9 +25,10 @@ using namespace tt;
 using namespace tt::tt_metal;
 
 static std::shared_ptr<distributed::MeshBuffer> MakeBuf(
-    const std::shared_ptr<distributed::MeshDevice>& dev, uint32_t global_tiles, uint32_t nshards) {
+    const std::shared_ptr<distributed::MeshDevice>& dev, uint32_t global_tiles, uint32_t nshards,
+    uint32_t ebytes = sizeof(bfloat16)) {
     constexpr uint32_t H = tt::constants::TILE_HEIGHT, W = tt::constants::TILE_WIDTH;
-    constexpr uint32_t ts = sizeof(bfloat16) * H * W;
+    uint32_t ts = ebytes * H * W;
     uint32_t shard_tiles = global_tiles / nshards;      // 1xN mesh -> shard the width contiguously
     distributed::DeviceLocalBufferConfig lc{.page_size = ts, .buffer_type = BufferType::DRAM};
     distributed::ShardedBufferConfig bc{
@@ -37,9 +38,11 @@ static std::shared_ptr<distributed::MeshBuffer> MakeBuf(
         .shard_orientation = ShardOrientation::ROW_MAJOR};
     return distributed::MeshBuffer::create(bc, lc, dev.get());
 }
-static void MakeCB(Program& p, const CoreRangeSet& cores, tt::CBIndex cb, uint32_t n_tiles) {
-    constexpr uint32_t ts = sizeof(bfloat16) * tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT;
-    CircularBufferConfig cfg = CircularBufferConfig(n_tiles * ts, {{cb, tt::DataFormat::Float16_b}}).set_page_size(cb, ts);
+static void MakeCB(Program& p, const CoreRangeSet& cores, tt::CBIndex cb, uint32_t n_tiles,
+                   tt::DataFormat fmt = tt::DataFormat::Float16_b) {
+    uint32_t eb = (fmt == tt::DataFormat::Float32) ? 4u : 2u;
+    uint32_t ts = eb * tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT;
+    CircularBufferConfig cfg = CircularBufferConfig(n_tiles * ts, {{cb, fmt}}).set_page_size(cb, ts);
     CreateCircularBuffer(p, cores, cfg);
 }
 
@@ -69,7 +72,7 @@ int main() {
     const uint32_t n_local = n_out / NCHIP;       // output tiles per chip
     auto ah = MakeBuf(dev, n_out * K, NCHIP), am = MakeBuf(dev, n_out * K, NCHIP), al = MakeBuf(dev, n_out * K, NCHIP);
     auto bh = MakeBuf(dev, n_out * K, NCHIP), bm = MakeBuf(dev, n_out * K, NCHIP), bl = MakeBuf(dev, n_out * K, NCHIP);
-    auto c = MakeBuf(dev, n_out, NCHIP);
+    auto c = MakeBuf(dev, n_out, NCHIP, 4);   // fp32 output (full bf16x3 accuracy, no bf16 truncation)
 
     auto tu0 = std::chrono::high_resolution_clock::now();
     distributed::EnqueueWriteMeshBuffer(cq, ah, ahd, true); distributed::EnqueueWriteMeshBuffer(cq, am, amd, true);
@@ -77,7 +80,7 @@ int main() {
     distributed::EnqueueWriteMeshBuffer(cq, bm, bmd, true); distributed::EnqueueWriteMeshBuffer(cq, bl, bld, true);
     double g2_ms = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - tu0).count();
     printf("DBG G2 matrix upload (6 x %zu MB -> 8 chips) = %.1f ms\n", (size_t)ahd.size() * 2 / 1000000, g2_ms);
-    std::vector<bfloat16> zc(nY, bfloat16(0.f));
+    std::vector<float> zc(nY, 0.f);
     distributed::EnqueueWriteMeshBuffer(cq, c, zc, true);
 
     auto grid = dev->compute_with_storage_grid_size();
@@ -85,7 +88,7 @@ int main() {
     CoreRangeSet all_set(all);
     MakeCB(program, all_set, tt::CBIndex::c_0, 6);   // cb_a: 6 interleaved cross-term a-tiles per k (depth==6 -> clean wrap)
     MakeCB(program, all_set, tt::CBIndex::c_1, 6);   // cb_b: 6 interleaved cross-term b-tiles per k
-    MakeCB(program, all_set, tt::CBIndex::c_16, 8);
+    MakeCB(program, all_set, tt::CBIndex::c_16, 8, tt::DataFormat::Float32);
 
     auto [ncores, cores, g1, g2, n1, n2] = tt::tt_metal::split_work_to_cores(grid, n_local, true);   // per-chip work
 
@@ -124,7 +127,7 @@ int main() {
     Finish(cq);
     double ms = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - t0).count() / reps;
 
-    std::vector<bfloat16> cd;
+    std::vector<float> cd;
     auto to0 = std::chrono::high_resolution_clock::now();
     distributed::EnqueueReadMeshBuffer(cq, cd, c, true);     // G5: output read/un-permute (solution vector back to host)
     double g5_ms = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - to0).count();
