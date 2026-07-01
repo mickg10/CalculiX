@@ -66,9 +66,9 @@ static int tt_fine_spmv(const double* x, double* y){
     static std::vector<bfloat16> bh,bm,bl; if(bh.empty()){bh.resize(nA);bm.resize(nA);bl.resize(nA);}
     gather_split(x,bh,bm,bl);
     auto&cq=g_dev->mesh_command_queue();
-    dist::EnqueueWriteMeshBuffer(cq,g_bh,bh,false); dist::EnqueueWriteMeshBuffer(cq,g_bm,bm,false);
+    dist::EnqueueWriteMeshBuffer(cq,g_bh,bh,true); dist::EnqueueWriteMeshBuffer(cq,g_bm,bm,true);
     dist::EnqueueWriteMeshBuffer(cq,g_bl,bl,true);
-    dist::EnqueueMeshWorkload(cq,*g_wl,false);
+    dist::EnqueueMeshWorkload(cq,*g_wl,true);            // BLOCKING: PCG needs a deterministic fixed operator
     std::vector<float> cd; dist::EnqueueReadMeshBuffer(cq,cd,g_c,true);
     for(long i=0;i<g_n;i++) y[i]=cd[i];
     g_napply++; g_apply_s += std::chrono::duration<double>(std::chrono::high_resolution_clock::now()-t0).count();
@@ -118,8 +118,20 @@ int main(int argc,char**argv){
     printf("[tt-gmg] setup (mesh + resident coeff + nbr)...\n"); fflush(stdout);
     auto ts=std::chrono::high_resolution_clock::now();
     setup("/tmp/row236_real_op.bin","/tmp/row236_nbr.bin");
-    printf("[tt-gmg] setup done %.2fs; solving row236 with TT fine-SpMV...\n",
+    printf("[tt-gmg] setup done %.2fs\n",
            std::chrono::duration<double>(std::chrono::high_resolution_clock::now()-ts).count()); fflush(stdout);
+    // --- self-check: tt_fine_spmv(v) vs CPU B*v on a DENSE RANDOM v (a single-vector check is insufficient:
+    //     tt could equal B+E with E*bp~0 but E*v!=0). Load B (BCSR) from the dump and compare. ---
+    { FILE* f=fopen(dump,"rb"); int64_t hh[5]; (void)!fread(hh,8,5,f); long nb=hh[0],nblk=hh[1]; int n=3*nb;
+      std::vector<long> ptr(nb+1); std::vector<int> col(nblk); std::vector<double> val((size_t)nblk*9);
+      (void)!fread(ptr.data(),8,nb+1,f); (void)!fread(col.data(),4,nblk,f); (void)!fread(val.data(),8,(size_t)nblk*9,f); fclose(f);
+      std::vector<double> v(n),yc(n),yt(n); uint64_t s=99; for(int i=0;i<n;i++){ s^=s<<13;s^=s>>7;s^=s<<17; v[i]=(double)((s>>11)&1023)/1024.0-0.5; }
+      for(long I=0;I<nb;I++){ double y0=0,y1=0,y2=0; for(long b=ptr[I];b<ptr[I+1];b++){ const double*m=&val[(size_t)b*9]; const double*x=&v[3*col[b]];
+          y0+=m[0]*x[0]+m[1]*x[1]+m[2]*x[2]; y1+=m[3]*x[0]+m[4]*x[1]+m[5]*x[2]; y2+=m[6]*x[0]+m[7]*x[1]+m[8]*x[2]; } yc[3*I]=y0;yc[3*I+1]=y1;yc[3*I+2]=y2; }
+      tt_fine_spmv(v.data(),yt.data());
+      double mx=0,sc=0; long bi=0; for(int i=0;i<n;i++){ double e=std::fabs(yt[i]-yc[i]); if(e>mx){mx=e;bi=i;} sc=std::max(sc,std::fabs(yc[i])); }
+      printf("[tt-gmg] SELF-CHECK tt_fine_spmv(rand) vs CPU B*rand: rel=%.3e  worst i=%ld tt=%.4e cpu=%.4e\n",mx/(sc+1e-30),bi,yt[bi],yc[bi]); fflush(stdout); }
+    printf("[tt-gmg] solving row236 with TT fine-SpMV...\n"); fflush(stdout);
     int maxit = argc>2 ? atoi(argv[2]) : 500;
     double maxu=0; int rc=ccx_gmg_solve_from_dump(dump,maxit,1e-6,1,nullptr,&maxu);
     printf("[tt-gmg] rc=%d maxU=%.7f  TT applies=%ld total=%.2fs avg=%.1fms/apply\n",
