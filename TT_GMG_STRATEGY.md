@@ -242,3 +242,11 @@ controlled only by the kernel's pack_reconfig_l1_acc() calls. Run on a cancellat
 LOADS then HANGS (200s timeout, no error) -> kernel bug in the pack-accumulate pattern (reserving cb_out once but
 packing 486x into it likely violates CB/packer expectations). Debuggable but multi-cycle. Confirms: the fp32-accumulate
 SpMV fix (packer_l1_acc debugged OR transposed reduce_tile<enforce_fp32_accumulation>) is multi-day work either way.
+
+## packer_l1_acc: 2nd attempt also hangs — 2026-07-01
+Moved pack_reconfig_l1_acc before tile_regs_acquire (from between commit/wait): STILL hangs (EXIT=124, loads op
+then no compute output). Conclusion: packing 486x (6 terms x 81 k) into ONE reserved cb_out tile via l1_acc is not
+a supported pattern (matmul l1_acc packs BLOCKS across K-blocks, not N packs into one slot). packer_l1_acc for the
+elementwise-across-k DIA MAC is a dead end without deeper restructure. => The transposed reduce_tile<SUM,REDUCE_ROW,
+enforce_fp32_accumulation=true> path (docs-confirmed, needs [element,(term,k)] layout + reader + gather rework) is
+the remaining viable fix. Multi-day. Hourly cron watchdog 3e93f635 (:37 local) will keep re-engaging the goal.
