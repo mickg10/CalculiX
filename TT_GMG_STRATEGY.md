@@ -492,3 +492,13 @@ chip status -> the on-chip ARC microcontroller is hung at firmware level. ARC re
 POWER-UP, so no software/PCIe reset (nor a warm reboot, which keeps the cards powered) can recover it. Definitive fix:
 cold power-cycle (BMC/IPMI `chassis power cycle` or physical AC off/on). Everything else remains staged + committed;
 real-TT run is one gmg_tt.py away once ARC re-initializes.
+
+## Hard reset insufficient; driver says "Device is unresponsive, cannot reset" -> ONLY cold power-cycle left — 2026-07-01
+User asked for a RESET not a power-cycle (disconnect risk). Issued `ipmitool chassis power reset` (hard PERST#).
+Box came back clean (driver loaded, 4 Wormholes on bus, /dev/tenstorrent/0-3), BUT dmesg at boot:
+  "tenstorrent 0000:01:00.0: Timed out waiting for FW telemetry"  and  "Device is unresponsive, cannot reset".
+ttnn.open_device now HANGS (was segfault). Also tried PCIe FLR, remove+rescan, kmd rmmod/modprobe -> no recovery.
+Conclusion: the ARC firmware is hung so hard it doesn't even respond to a platform reset; the ONLY remaining recovery
+is a true COLD power-cycle (VDD off/on: `ipmitool chassis power cycle` [auto off->on] or physical/BMC power). A warm
+reset/reboot keeps the ASIC powered so the ARC stays hung. Real-TT measurement remains blocked on this; all algorithm
+work (rc=0 on faithful proxy) + staging remains committed.
