@@ -560,6 +560,11 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     if((ev=getenv("GMG_NPRE")) &&(lvv=strtol(ev,NULL,10))>0) ctx.NPRE =(int)(lvv<8?lvv:8);
     if((ev=getenv("GMG_NPOST"))&&(lvv=strtol(ev,NULL,10))>0) ctx.NPOST=(int)(lvv<8?lvv:8);
     if((ev=getenv("GMG_GAMMA"))&&(lvv=strtol(ev,NULL,10))>0) ctx.GAMMA=(int)(lvv<4?lvv:4);
+    // emu bracket: exercise the compensated-precision smoother on CPU to find the convergence threshold
+    g_emu_bf16 = (getenv("GMG_EMU_BF16") && atoi(getenv("GMG_EMU_BF16"))>0) ? 1 : 0;
+    g_emu_bf16_maxlv = 1000; g_emu_mode = 1;
+    if((ev=getenv("GMG_EMU_MODE")) && (lvv=strtol(ev,NULL,10))>0) g_emu_mode=(int)lvv;
+    if(g_emu_bf16 && verbose) fprintf(stderr,"[tt-gmg] CPU EMU smoother ON mode=%d (2=bf16x2 3=bf16x3 32=fp32)\n",g_emu_mode);
     { Level L; L.A=std::move(A); L.ijk=ijk; LV.push_back(std::move(L)); }
     while((int)LV[LV.size()-1].A.nr>6000){
         size_t fi=LV.size()-1; int nbf=LV[fi].A.nr/3; std::vector<long> cijk; int nbc;

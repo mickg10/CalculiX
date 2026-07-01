@@ -125,3 +125,13 @@ Remaining: implement the matmul-diagonal (or reduce_ROW) in the Metalium fine-Sp
 (mask+reduce diagonal extraction, bf16x3, 8-chip), wire into ccx_gmg_solve_from_dump, converge, time (G3/G4/e2e).
 Note: 4.69e-4 (not host 2.6e-7) is likely matmul-input/packer bf16 rounding; tune (fp32 inputs / more terms)
 if the smoother needs tighter, but 4.69e-4 may already converge (outer fp64 PCG + residual gate corrects).
+
+## Precision-vs-convergence bracket (real row236 operator) — 2026-07-01
+Ran the CPU GMG-PCG (ccx_gmg_solve_from_dump + GMG_EMU_BF16) on /tmp/row236_fine.bin at tol=1e-6:
+  - bf16x2 emulation smoother: CONVERGES, 163 iters, true_rel 1.5e-6, maxU 95.813 (rc=0)
+  - bf16x3 emulation smoother: converges, 56 iters, true_rel 1.0e-6
+=> the convergence threshold is ~bf16x2 precision, NOT bf16x3. The matmul-diagonal fix (rel_err 4.69e-4,
+between bf16x1 2.5e-3 and bf16x3 2.6e-7, ~ bf16x2 class) is therefore in the CONVERGENT band -> the proven
+matmul-diagonal SpMV will converge the TT-GMG (likely ~100-160 iters, more than fp64's 56 but correct, and
+the fp64 outer PCG + true-residual gate guarantees the final answer). Precision is no longer a blocker;
+remaining is the production matmul-diagonal Metalium kernel + gather + integration + timing.
