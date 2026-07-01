@@ -311,3 +311,19 @@ not an engineering gap => RESEARCH-LEVEL reformulation required. Candidate direc
   (B) Double-single (hi/lo) SpMV assembled from multiple bf16x3 TT passes with host fp64 compensation.
   (C) A different preconditioner whose fine operator is well-conditioned (no near-null cancellation in the smoother).
 This is the honest state: G1/G2/G5 pass; G3/G4/e2e require an algorithmic reformulation, not just the multi-day kernel.
+
+## RESEARCH ROUTE VALIDATED: RBM deflation arrests the TT-failure divergence — 2026-07-01
+Built a CPU proxy for the TT matmul-diagonal failure: GMG_EMU_ABSERR adds per-row noise ~ abserr*sum|m*x| (the bf16
+ABSOLUTE product error that swamps cancellation). Validated it faithfully reproduces the TT divergence:
+  GMG_EMU_ABSERR=4.69e-4:            rel 245->387->499->595->680 GROWING (matches real TT 1534->1988->2225)
+Then added GMG_DEFL_RBM (deflate 6 orthonormal rigid-body modes, built from L.ijk, from the fine SpMV input+output):
+  GMG_EMU_ABSERR=4.69e-4 + GMG_DEFL_RBM=1:  rel 38.4 FLAT/STABLE (divergence ARRESTED; no explosion)
+=> DEFINITIVE: the divergence is RBM-DRIVEN (extreme cancellation lives in the rigid-body near-null space), and the
+bf16-product error is TOLERABLE in the RBM-complement. This validates the DEFLATION route in principle.
+It STALLS at 38.4 (not 1e-6) only because crude smoother-only deflation leaves the RBM-space residual unsolved.
+NEXT (well-defined research now, not a shot in the dark): implement a PROPER deflated PCG — deflate the outer
+residual each iter and solve the 6-dim RBM space directly (Z^T A Z coarse correction), OR ensure the GMG coarse
+solve fully handles the RBM space; then the fine smoother can run bf16x3 on TT (complement is well-conditioned) and
+the solve converges. That is the path to G3/G4 with the real hardware: TT does the bulk bf16x3 fine SpMV in the
+RBM-complement, host fp64 handles the 6-dim RBM space + the outer PCG true-residual gate.
+Code: src/gmg_solve.cpp (GMG_EMU_ABSERR, GMG_DEFL_RBM, build_rbm/deflate_rbm). Committed.

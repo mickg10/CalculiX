@@ -85,6 +85,9 @@ static inline double round_mbits(double x, int mb){
     int e; double m = std::frexp(x, &e); double s = std::ldexp(1.0, mb);
     return std::ldexp(std::round(m*s)/s, e);
 }
+static double g_emu_abserr = 0.0;  // >0: add per-row noise ~ abserr*sum|m*x| to fine SpMV (emulates the bf16-PRODUCT
+                                   // absolute error that swamps cancellation — the real TT matmul-diagonal failure)
+static int g_defl_rbm = 0;         // >0: deflate 6 rigid-body modes from the fine SpMV input+output (research probe)
                                       // multi-pass = Ozaki/error-free-transform: split each value into hi/lo bf16 terms,
                                       // do extra bf16 products, accumulate fp32 -> recover precision from fast bf16 passes.
 static inline double bf16round(double d){
@@ -263,12 +266,43 @@ static double lmax(const BCSR&B,const std::vector<double>&Dinv){
 struct Level { CSR A,P,Pt; BCSR B; std::vector<double> Dinv; double rho; std::vector<long> ijk; };
 struct WS { std::vector<double> r,z,d,Ad,res,rc,ec; };
 
+// RBM deflation basis (6 orthonormal rigid-body modes) built lazily from the fine-level lattice coords (L.ijk).
+static std::vector<std::vector<double>> g_Z;
+static void build_rbm(const Level&L){
+    int nb=L.B.nb, n=3*nb; if((int)L.ijk.size()<(size_t)3*nb) return;
+    g_Z.assign(6,std::vector<double>(n,0.0));
+    for(int i=0;i<nb;i++){ double X=(double)L.ijk[3*i],Y=(double)L.ijk[3*i+1],Z=(double)L.ijk[3*i+2];
+        g_Z[0][3*i]=1; g_Z[1][3*i+1]=1; g_Z[2][3*i+2]=1;               // translations
+        g_Z[3][3*i+1]=-Z; g_Z[3][3*i+2]=Y;                             // rot x
+        g_Z[4][3*i]=Z;    g_Z[4][3*i+2]=-X;                            // rot y
+        g_Z[5][3*i]=-Y;   g_Z[5][3*i+1]=X; }                           // rot z
+    for(int a=0;a<6;a++){ for(int b=0;b<a;b++){ double d=0; for(int i=0;i<n;i++) d+=g_Z[a][i]*g_Z[b][i];
+                              for(int i=0;i<n;i++) g_Z[a][i]-=d*g_Z[b][i]; }
+        double nr=0; for(int i=0;i<n;i++) nr+=g_Z[a][i]*g_Z[a][i]; nr=std::sqrt(nr);
+        if(nr>1e-12) for(int i=0;i<n;i++) g_Z[a][i]/=nr; }
+}
+static void deflate_rbm(int n,double*v){ for(auto&z:g_Z){ double d=0; for(int i=0;i<n;i++) d+=z[i]*v[i];
+                                                          for(int i=0;i<n;i++) v[i]-=d*z[i]; } }
 // Fine-smoother SpMV dispatch: TT 8-chip bf16x3 (lv==0, if hooked & size matches) > bf16 emulation > exact double.
 // The hook falling back on any nonzero return keeps the solve correct even if a TT apply fails mid-run.
 static inline void smoo_spmv(const Level&L,const double*x,double*y,int lv,bool emu){
     if(g_tt_fine_spmv && lv==0 && (long)L.B.nb*3==g_tt_fine_n){ if(g_tt_fine_spmv(x,y)==0) return; }
+    std::vector<double> xd;
+    if(g_defl_rbm && lv==0){ if(g_Z.empty()) build_rbm(L); int n=3*L.B.nb; xd.assign(x,x+n); deflate_rbm(n,xd.data()); x=xd.data(); }
     if(emu) bspmv_emu(L.B,x,y); else bspmv(L.B,x,y);
     if(g_emu_mbits>0 && lv==0){ int n=L.B.nb*3; for(int i=0;i<n;i++) y[i]=round_mbits(y[i],g_emu_mbits); }  // probe fine-SpMV precision
+    if(g_emu_abserr>0.0 && lv==0){   // emulate bf16-PRODUCT absolute error: noise ~ abserr * sum|m*x| per row
+        const BCSR&B=L.B; static uint64_t s=0x9E3779B97F4A7C15ULL;
+        for(int I=0;I<B.nb;I++){ double t0=0,t1=0,t2=0;
+            for(long b=B.ptr[I];b<B.ptr[I+1];b++){ const double*m=&B.val[(size_t)b*9]; const double*xx=&x[3*B.col[b]];
+                double a0=std::fabs(xx[0]),a1=std::fabs(xx[1]),a2=std::fabs(xx[2]);
+                t0+=std::fabs(m[0])*a0+std::fabs(m[1])*a1+std::fabs(m[2])*a2;
+                t1+=std::fabs(m[3])*a0+std::fabs(m[4])*a1+std::fabs(m[5])*a2;
+                t2+=std::fabs(m[6])*a0+std::fabs(m[7])*a1+std::fabs(m[8])*a2; }
+            auto rnd=[&](){ s^=s<<13; s^=s>>7; s^=s<<17; return ((double)((s>>11)&0xFFFFF)/524288.0-1.0); };
+            y[3*I]+=g_emu_abserr*t0*rnd(); y[3*I+1]+=g_emu_abserr*t1*rnd(); y[3*I+2]+=g_emu_abserr*t2*rnd(); }
+    }
+    if(g_defl_rbm && lv==0){ deflate_rbm(3*L.B.nb, y); }   // keep smoother in the RBM-complement (well-conditioned)
 }
 
 /* 4th-kind Chebyshev block-Jacobi smoother. NOTE: float (mixed) SpMV was tried and REJECTED — it degrades
@@ -572,6 +606,9 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     g_emu_bf16_maxlv = 1000; g_emu_mode = 1;
     if((ev=getenv("GMG_EMU_MODE")) && (lvv=strtol(ev,NULL,10))>0) g_emu_mode=(int)lvv;
     g_emu_mbits = (getenv("GMG_EMU_MBITS") && (lvv=strtol(getenv("GMG_EMU_MBITS"),NULL,10))>0) ? (int)lvv : 0;
+    g_emu_abserr = getenv("GMG_EMU_ABSERR") ? atof(getenv("GMG_EMU_ABSERR")) : 0.0;
+    g_defl_rbm = (getenv("GMG_DEFL_RBM") && atoi(getenv("GMG_DEFL_RBM"))>0) ? 1 : 0;
+    if((g_emu_abserr>0.0||g_defl_rbm) && verbose) fprintf(stderr,"[tt-gmg] abserr=%.3e defl_rbm=%d (TT failure-mode probe)\n",g_emu_abserr,g_defl_rbm);
     if(g_emu_bf16 && verbose) fprintf(stderr,"[tt-gmg] CPU EMU smoother ON mode=%d (2=bf16x2 3=bf16x3 32=fp32)\n",g_emu_mode);
     if(g_emu_mbits && verbose) fprintf(stderr,"[tt-gmg] fine-SpMV output rounded to %d mantissa bits (2^-%d ~ %.1e rel)\n",g_emu_mbits,g_emu_mbits,std::ldexp(1.0,-g_emu_mbits));
     { Level L; L.A=std::move(A); L.ijk=ijk; LV.push_back(std::move(L)); }
