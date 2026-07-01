@@ -8,14 +8,9 @@ void kernel_main() {
     cb_reserve_back(cb_sc, 1);
     uint32_t sw = get_write_ptr(cb_sc);
     volatile tt_l1_ptr uint32_t* sp = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(sw);
-    for (int i = 0; i < 512; ++i) sp[i] = 0;
-    for (int j = 0; j < 8; ++j) sp[j] = scaler;
-    uint64_t na = get_noc_addr(sw);
-    noc_async_read_one_packet_set_state(na, 32);
-    noc_async_read_one_packet_with_state(na, sw + (1 << 9));
-    noc_async_read_one_packet_with_state(na, sw + (2 << 9));
-    noc_async_read_one_packet_with_state(na, sw + (3 << 9));
-    noc_async_read_barrier();
+    for (int i = 0; i < 512; ++i) sp[i] = 0;                 // bf16 tile = 2048 B = 512 u32 (4 faces x 128 u32)
+    for (int f = 0; f < 4; ++f)                              // first row of each 16x16 face = scaler (bf16 1.0 x2)
+        for (int j = 0; j < 8; ++j) sp[f * 128 + j] = scaler;
     cb_push_back(cb_sc, 1);
     constexpr auto args = TensorAccessorArgs<2>();
     const auto A = TensorAccessor(args, src, 32u * 32u * 4u);   // fp32 tile page = 4096 B

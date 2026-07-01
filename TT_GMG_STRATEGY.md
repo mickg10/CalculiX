@@ -261,3 +261,19 @@ CB sync. Needs multi-cycle bisection. NEXT: fix the scaler (use wh_generate_redu
 or verify the 4-face noc pattern) / confirm reduce_tile accumulate-into-dst semantics; once it prints ~2.6e-4 (not ~9),
 the fp32 primitive is PROVEN and the transposed-layout SpMV + gather + convergence + measurement follow (multi-day).
 Files committed to the fork under tt_gmg/reduce_fp32/. Hourly cron watchdog 3e93f635 continues re-engaging.
+
+## reduce_fp32 hang persists after scaler fix — 2026-07-01
+Replaced the noc-based scaler replication with a direct L1 fill (first row of each of 4 faces = bf16 1.0): STILL
+hangs (EXIT=124). So the hang is NOT the scaler; it is in the reduce compute. Leading hypotheses for next cycle:
+  (1) reduce_tile may not accept FP32 input tiles (cb_0 is Float32) — the unpacker may require bf16 input; if so,
+      feed bf16 products + fp32 ACCUMULATE (enforce_fp32_accumulation) — but then products are only bf16 (8-bit),
+      which may be insufficient for the DIA cancellation (need to re-verify precision, not just no-hang).
+  (2) accumulate-into-dst across 16 reduce_tile calls while holding tile_regs may need a different pattern
+      (per-tile init/uninit, or reduce to partials + separate accumulate).
+  (3) CB c_0 depth 4 vs 16 streamed tiles + held tile_regs — check for a producer/consumer stall.
+This is multi-cycle silent-hang bisection (~5 min/device cycle, poor observability). Harness compiles + is registered
+(tt_gmg/reduce_fp32, metal_example_reduce_fp32). Precision concern (1) is the real risk: if reduce input must be bf16,
+the transposed-reduce path gives fp32 accumulate but bf16 products — may still fail cancellation like the others.
+The fp32-PRODUCTS requirement may have NO clean primitive on this HW (matmul rounds products, eltwise can't fp32-accum,
+reduce may need bf16 input). If so, the fix needs a fundamentally different formulation (e.g. residual-scaling / 
+double-single split at the GMG level) — a genuine open research question, not just an engineering build.
