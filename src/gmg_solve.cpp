@@ -77,8 +77,8 @@ static int g_emu_mode = 1;            // compensated-SpMV precision (GMG_EMU_MOD
 // TT-GMG hook: when set by the Tenstorrent driver, the FINE-level (lv==0) smoother SpMV y=A0*x runs on the
 // 8-chip mesh (bf16x3, ~fp32). Coarser levels, the vcycle residual, and the outer PCG operator stay exact fp64
 // on the host -> the true-residual acceptance gate is unchanged (a wrong TT result can never be accepted).
-static int  (*g_tt_fine_spmv)(const double* x, double* y) = nullptr;   // returns 0 on success
-static long g_tt_fine_n = 0;          // n (=3*nb) the hook expects; guards accidental level/size mismatch
+extern "C" { int (*g_tt_fine_spmv)(const double* x, double* y) = nullptr;   // returns 0 on success (set by TT driver)
+             long g_tt_fine_n = 0; }  // n (=3*nb) the hook expects; guards accidental level/size mismatch
                                       // multi-pass = Ozaki/error-free-transform: split each value into hi/lo bf16 terms,
                                       // do extra bf16 products, accumulate fp32 -> recover precision from fast bf16 passes.
 static inline double bf16round(double d){
@@ -592,6 +592,7 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
         double al=rz/pAp;
         for(int i=0;i<N;i++){ x[i]+=al*p[i]; r[i]-=al*Ap[i]; }
         rel=std::sqrt(ddot(r.data(),r.data(),N))/res0; if(rel<tol){ iters=it+1; break; }
+        if(verbose && (it<6||it%5==0)) fprintf(stderr,"[tt-gmg] it=%d rel=%.3e (%.2fs elapsed)\n",it,rel,secs(ts,clk::now()));
         for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
         double rzn=ddot(r.data(),z.data(),N); if(!(rz!=0.0)||!std::isfinite(rzn)) break;
         double bet=rzn/rz; for(int i=0;i<N;i++) p[i]=z[i]+bet*p[i]; rz=rzn; }
