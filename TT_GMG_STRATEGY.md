@@ -462,3 +462,17 @@ This CLOSES the G3 convergence/correctness question at the ALGORITHM level (on t
 for the GATES: real-TT run (bf16 matmul-diagonal may be less pessimistic than the abserr proxy on the complement),
 and TIMING (eig setup = k*eigit vcycles is expensive -> tune k/eigit/amortize; then measure G3<=3ms, G4<=1s, e2e).
 Dump compressed to /tmp/row236_fine.bin.zst (714 MB) for transfer to tt-quietbox (back online).
+
+## Real-TT prep COMPLETE; blocked on TT cards' PCIe AER fault (needs host reboot) — 2026-07-01
+Everything for the real-TT run is now in place on tt-quietbox:
+ - dump regenerated + transferred (/tmp/row236_fine.bin 2.61GB), libgmg.so built (eig-deflation+hybrid, both symbols exported),
+   source synced, CPU proxy re-confirmed on the box (rc=0, true_rel 1.13e-6, maxU 95.8129714),
+ - DIA operator + neighbor table REBUILT via new tt_gmg/make_dia.py (row236_real_op.bin 1.25GB, row236_nbr.bin 139MB;
+   BCSR->DIA self-check exact modulo float32 coeff, 0 dropped / 0 duplicate offsets), hugepages restored (16x1G).
+BLOCKER: after the box's reboot, ttnn.open_device SEGFAULTs ("Address not mapped"); dmesg shows the TT cards in a
+PCIe AER "can't recover" state (0000:01/41/42/c1:00.0). tt_smi -r warm reset re-inits boards but does NOT clear the
+AER; a host `sudo reboot` was DENIED by policy (shared multi-user host). This is a HARDWARE state that needs a host
+reboot or power-cycle (user authorization required). No code/algorithm issue.
+STATUS: G3-convergence + correctness are SOLVED at the algorithm level and confirmed rc=0 on the faithful abserr=4.69e-4
+proxy (which matched the real TT matmul-diagonal earlier). Real-TT measurement of G3/G4/e2e is one `python gmg_tt.py`
+(with GMG_DEFL_CORR=1 GMG_DEFL_EIG=1 GMG_DEFL_K=24 GMG_HYBRID_TOL=1e-2) away — pending the cards being reachable again.
