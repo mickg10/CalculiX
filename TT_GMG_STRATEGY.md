@@ -175,3 +175,21 @@ This is the SAME cancellation failure as bf16x1, just moved from accumulate to p
 -> converges). FIX PATH: fp32-accurate products = eltwise mul (16-bit bf16xbf16 product, packed fp32) + reduce_tile
 enforce_fp32_accumulation (reduce_ROW), NOT the product-rounding matmul. Next: verify ttnn reduce/eltwise gives
 fp32 products+accumulate on a cancellation case, then rebuild the callback SpMV on that.
+
+## DEFINITIVE: near-singular operator needs fp32 products+accumulate; ALL ttnn ops fail — 2026-07-01
+Constructed exact-cancellation tests (Sum coeff*b -> tiny, terms O(1e3), ratio ~2.4e-6, mirroring the smoother's
+apply2 |Ax|<<|x|). Results (tt_gmg reduce_test/sum_test on the box):
+  HOST bf16x3 (exact fp32 products + fp32 sum):        err 2.6e-4  <- WORKS (this is the converging CPU emu)
+  ttnn matmul-diagonal (fp32 accum, 11-bit products):  err 9.5    <- FAILS
+  ttnn eltwise-mul(fp32) + ttnn.sum:                   err 4.1    <- FAILS
+  ttnn.sum on FP32 input (isolates reduce):            err 9.1    <- FAILS => ttnn.sum accumulates in bf16
+=> No ttnn op gives fp32 products AND fp32 accumulate. matmul rounds PRODUCTS to ~11 bits; ttnn.sum rounds the
+ACCUMULATE to bf16; the custom eltwise LLK (clear_fp32_dst_acc=false) also can't fp32-accumulate (earlier bf16x1=0.38).
+CORRECTION to prior "fix proven": the matmul-diagonal's 4.69e-4 held only on RANDOM vectors; the GMG smoother
+generates extreme-cancellation vectors (near-singular operator + Chebyshev recurrence) where 11-bit products give
+garbage -> divergence (observed it=0..3 rel 1534->2376). 
+THE FIX (precisely specified, multi-day Metalium): fp32-accumulate reduce kernel = eltwise mul packed to an fp32 CB
+(exact 16-bit bf16xbf16 products) -> reduce_tile<PoolType::SUM, ReduceDim::REDUCE_ROW, enforce_fp32_accumulation=true>
+over the (term,k) columns. That is the ONLY primitive that gives both fp32 products and fp32 accumulate on this HW.
+Everything else built+committed: full TT-GMG assembly (gmg_tt.py), ctypes bridge, DIA layout (exact 5.37e-8),
+diagnostics. Remaining: build the reduce_tile<fp32> Metalium kernel, wire into the SpMV, converge, measure.
