@@ -291,16 +291,16 @@ static inline void smoo_spmv(const Level&L,const double*x,double*y,int lv,bool e
     if(g_defl_rbm && lv==0){ if(g_Z.empty()) build_rbm(L); int n=3*L.B.nb; xd.assign(x,x+n); deflate_rbm(n,xd.data()); x=xd.data(); }
     if(emu) bspmv_emu(L.B,x,y); else bspmv(L.B,x,y);
     if(g_emu_mbits>0 && lv==0){ int n=L.B.nb*3; for(int i=0;i<n;i++) y[i]=round_mbits(y[i],g_emu_mbits); }  // probe fine-SpMV precision
-    if(g_emu_abserr>0.0 && lv==0){   // emulate bf16-PRODUCT absolute error: noise ~ abserr * sum|m*x| per row
-        const BCSR&B=L.B; static uint64_t s=0x9E3779B97F4A7C15ULL;
+    if(g_emu_abserr>0.0 && lv==0){   // emulate bf16-PRODUCT absolute error: DETERMINISTIC (fixed per-DOF sign so the
+        const BCSR&B=L.B;            // preconditioner is a fixed function of x -> PCG-consistent, faithful to real TT)
+        auto sgn=[](uint64_t i){ i=(i^0x9E3779B97F4A7C15ULL)*0xBF58476D1CE4E5B9ULL; i^=i>>27; return (i&1)?1.0:-1.0; };
         for(int I=0;I<B.nb;I++){ double t0=0,t1=0,t2=0;
             for(long b=B.ptr[I];b<B.ptr[I+1];b++){ const double*m=&B.val[(size_t)b*9]; const double*xx=&x[3*B.col[b]];
                 double a0=std::fabs(xx[0]),a1=std::fabs(xx[1]),a2=std::fabs(xx[2]);
                 t0+=std::fabs(m[0])*a0+std::fabs(m[1])*a1+std::fabs(m[2])*a2;
                 t1+=std::fabs(m[3])*a0+std::fabs(m[4])*a1+std::fabs(m[5])*a2;
                 t2+=std::fabs(m[6])*a0+std::fabs(m[7])*a1+std::fabs(m[8])*a2; }
-            auto rnd=[&](){ s^=s<<13; s^=s>>7; s^=s<<17; return ((double)((s>>11)&0xFFFFF)/524288.0-1.0); };
-            y[3*I]+=g_emu_abserr*t0*rnd(); y[3*I+1]+=g_emu_abserr*t1*rnd(); y[3*I+2]+=g_emu_abserr*t2*rnd(); }
+            y[3*I]+=g_emu_abserr*t0*sgn(3*I); y[3*I+1]+=g_emu_abserr*t1*sgn(3*I+1); y[3*I+2]+=g_emu_abserr*t2*sgn(3*I+2); }
     }
     if(g_defl_rbm && lv==0){ deflate_rbm(3*L.B.nb, y); }   // keep smoother in the RBM-complement (well-conditioned)
 }
@@ -634,7 +634,19 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     std::vector<double> x(N,0.0),r(N),z(N),p(N),Ap(N);
     for(int i=0;i<N;i++) r[i]=bp[i];
     double res0=std::sqrt(ddot(r.data(),r.data(),N)); if(res0==0) res0=1;
-    for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
+    // RBM deflation preconditioner (exact fp64 6-dim correction for the near-null space the bf16-safe deflated
+    // smoother skips): z += Z (Z^T A Z)^-1 Z^T r. Lets TT run the bf16x3 fine SpMV in the well-conditioned complement.
+    std::vector<std::vector<double>> DZ, DAZ; std::vector<double> DE(36,0.0); bool defl=(g_defl_rbm!=0);
+    if(defl){ build_rbm(LV[0]); DZ=g_Z; DAZ.assign(6,std::vector<double>(N));
+        for(int a=0;a<6;a++) bspmv(A0,DZ[a].data(),DAZ[a].data());
+        for(int a=0;a<6;a++) for(int b=0;b<6;b++) DE[a*6+b]=ddot(DZ[a].data(),DAZ[b].data(),N);
+        char u='L'; int six=6,info; dpotrf_(&u,&six,DE.data(),&six,&info);
+        if(info){ if(verbose) fprintf(stderr,"[tt-gmg] RBM E dpotrf info=%d -> defl off\n",info); defl=false; } }
+    auto rbm_corr=[&](const double*rr,double*zz){ if(!defl) return; double c[6];
+        for(int a=0;a<6;a++) c[a]=ddot(DZ[a].data(),rr,N);
+        char u='L'; int six=6,one=1,info; dpotrs_(&u,&six,&one,DE.data(),&six,c,&six,&info); (void)info;
+        for(int a=0;a<6;a++){ double ca=c[a]; const double*za=DZ[a].data(); for(int i=0;i<N;i++) zz[i]+=ca*za[i]; } };
+    for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data()); rbm_corr(r.data(),z.data());
     for(int i=0;i<N;i++) p[i]=z[i]; double rz=ddot(r.data(),z.data(),N);
     auto ts=clk::now(); int iters=maxit; double rel=1;
     for(int it=0;it<maxit;it++){
@@ -644,7 +656,7 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
         for(int i=0;i<N;i++){ x[i]+=al*p[i]; r[i]-=al*Ap[i]; }
         rel=std::sqrt(ddot(r.data(),r.data(),N))/res0; if(rel<tol){ iters=it+1; break; }
         if(verbose && (it<6||it%5==0)) fprintf(stderr,"[tt-gmg] it=%d rel=%.3e (%.2fs elapsed)\n",it,rel,secs(ts,clk::now()));
-        for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
+        for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data()); rbm_corr(r.data(),z.data());
         double rzn=ddot(r.data(),z.data(),N); if(!(rz!=0.0)||!std::isfinite(rzn)) break;
         double bet=rzn/rz; for(int i=0;i<N;i++) p[i]=z[i]+bet*p[i]; rz=rzn; }
     bspmv(A0,x.data(),Ap.data());

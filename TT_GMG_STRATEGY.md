@@ -327,3 +327,17 @@ solve fully handles the RBM space; then the fine smoother can run bf16x3 on TT (
 the solve converges. That is the path to G3/G4 with the real hardware: TT does the bulk bf16x3 fine SpMV in the
 RBM-complement, host fp64 handles the 6-dim RBM space + the outer PCG true-residual gate.
 Code: src/gmg_solve.cpp (GMG_EMU_ABSERR, GMG_DEFL_RBM, build_rbm/deflate_rbm). Committed.
+
+## CORRECTION: deflation implementation is BUGGY — route NOT yet validated — 2026-07-01
+Retract the prior "deflation route validated" claim. New test: GMG_DEFL_RBM=1 with NO abserr (exact fp64 smoother)
+ALSO stalls at rel 38.5 (baseline converges 56 iters). So my deflation breaks convergence even in the trivial exact
+case => the implementation is WRONG, and last turn's "divergence arrested at 38" was the buggy deflation plateauing,
+not a genuine fix. Root cause: naive z = M^-1 r + Z E^-1 Z^T r is NOT the correct deflated-PCG preconditioner —
+near-singular E=Z^T A Z overshoots (E^-1 huge), and the outer operator/residual are not deflated consistently
+(it=0 residual JUMPS to 38x). VALID part that stands: the GMG_EMU_ABSERR proxy faithfully reproduces the TT
+matmul-diagonal divergence (245->680 growing == real TT), and it IS deterministic now (per-DOF sign hash).
+NEXT (correct numerical methods, multi-cycle): implement a proper deflated CG — either (i) projected preconditioner
+z = (I - Z E^-1 (AZ)^T) M^-1 r + Z E^-1 Z^T r with a consistently deflated operator, or (ii) start x0 = Z E^-1 Z^T b
+then keep r orthogonal to AZ each iter (Saad DEFLCG). Regularize E if near-singular. Only after deflation converges
+in the EXACT case should it be retested with abserr, then the real TT. So: G3 route is PLAUSIBLE but UNPROVEN; the
+abserr TT-failure proxy is the validated asset. Gates unchanged: G1/G2/G5 pass; G3/G4/e2e blocked.
