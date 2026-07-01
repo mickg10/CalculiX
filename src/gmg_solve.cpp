@@ -87,7 +87,9 @@ static inline double round_mbits(double x, int mb){
 }
 static double g_emu_abserr = 0.0;  // >0: add per-row noise ~ abserr*sum|m*x| to fine SpMV (emulates the bf16-PRODUCT
                                    // absolute error that swamps cancellation — the real TT matmul-diagonal failure)
-static int g_defl_rbm = 0;         // >0: deflate 6 rigid-body modes from the fine SpMV input+output (research probe)
+static int g_defl_rbm = 0;         // >0: deflate 6 rigid-body modes from the fine SpMV input+output (smoother side)
+static int g_defl_corr = 0;        // >0: add the exact fp64 RBM coarse-correction to the PCG preconditioner
+static double g_defl_reg = 0.0;    // E-regularization (relative): DE[a,a] += reg*maxdiag before Cholesky
                                       // multi-pass = Ozaki/error-free-transform: split each value into hi/lo bf16 terms,
                                       // do extra bf16 products, accumulate fp32 -> recover precision from fast bf16 passes.
 static inline double bf16round(double d){
@@ -287,8 +289,6 @@ static void deflate_rbm(int n,double*v){ for(auto&z:g_Z){ double d=0; for(int i=
 // The hook falling back on any nonzero return keeps the solve correct even if a TT apply fails mid-run.
 static inline void smoo_spmv(const Level&L,const double*x,double*y,int lv,bool emu){
     if(g_tt_fine_spmv && lv==0 && (long)L.B.nb*3==g_tt_fine_n){ if(g_tt_fine_spmv(x,y)==0) return; }
-    std::vector<double> xd;
-    if(g_defl_rbm && lv==0){ if(g_Z.empty()) build_rbm(L); int n=3*L.B.nb; xd.assign(x,x+n); deflate_rbm(n,xd.data()); x=xd.data(); }
     if(emu) bspmv_emu(L.B,x,y); else bspmv(L.B,x,y);
     if(g_emu_mbits>0 && lv==0){ int n=L.B.nb*3; for(int i=0;i<n;i++) y[i]=round_mbits(y[i],g_emu_mbits); }  // probe fine-SpMV precision
     if(g_emu_abserr>0.0 && lv==0){   // emulate bf16-PRODUCT absolute error: DETERMINISTIC (fixed per-DOF sign so the
@@ -302,7 +302,6 @@ static inline void smoo_spmv(const Level&L,const double*x,double*y,int lv,bool e
                 t2+=std::fabs(m[6])*a0+std::fabs(m[7])*a1+std::fabs(m[8])*a2; }
             y[3*I]+=g_emu_abserr*t0*sgn(3*I); y[3*I+1]+=g_emu_abserr*t1*sgn(3*I+1); y[3*I+2]+=g_emu_abserr*t2*sgn(3*I+2); }
     }
-    if(g_defl_rbm && lv==0){ deflate_rbm(3*L.B.nb, y); }   // keep smoother in the RBM-complement (well-conditioned)
 }
 
 /* 4th-kind Chebyshev block-Jacobi smoother. NOTE: float (mixed) SpMV was tried and REJECTED — it degrades
@@ -608,6 +607,8 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     g_emu_mbits = (getenv("GMG_EMU_MBITS") && (lvv=strtol(getenv("GMG_EMU_MBITS"),NULL,10))>0) ? (int)lvv : 0;
     g_emu_abserr = getenv("GMG_EMU_ABSERR") ? atof(getenv("GMG_EMU_ABSERR")) : 0.0;
     g_defl_rbm = (getenv("GMG_DEFL_RBM") && atoi(getenv("GMG_DEFL_RBM"))>0) ? 1 : 0;
+    g_defl_corr = (getenv("GMG_DEFL_CORR") && atoi(getenv("GMG_DEFL_CORR"))>0) ? 1 : 0;
+    g_defl_reg = getenv("GMG_DEFL_REG") ? atof(getenv("GMG_DEFL_REG")) : 0.0;
     if((g_emu_abserr>0.0||g_defl_rbm) && verbose) fprintf(stderr,"[tt-gmg] abserr=%.3e defl_rbm=%d (TT failure-mode probe)\n",g_emu_abserr,g_defl_rbm);
     if(g_emu_bf16 && verbose) fprintf(stderr,"[tt-gmg] CPU EMU smoother ON mode=%d (2=bf16x2 3=bf16x3 32=fp32)\n",g_emu_mode);
     if(g_emu_mbits && verbose) fprintf(stderr,"[tt-gmg] fine-SpMV output rounded to %d mantissa bits (2^-%d ~ %.1e rel)\n",g_emu_mbits,g_emu_mbits,std::ldexp(1.0,-g_emu_mbits));
@@ -636,17 +637,26 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     double res0=std::sqrt(ddot(r.data(),r.data(),N)); if(res0==0) res0=1;
     // RBM deflation preconditioner (exact fp64 6-dim correction for the near-null space the bf16-safe deflated
     // smoother skips): z += Z (Z^T A Z)^-1 Z^T r. Lets TT run the bf16x3 fine SpMV in the well-conditioned complement.
-    std::vector<std::vector<double>> DZ, DAZ; std::vector<double> DE(36,0.0); bool defl=(g_defl_rbm!=0);
-    if(defl){ build_rbm(LV[0]); DZ=g_Z; DAZ.assign(6,std::vector<double>(N));
+    std::vector<std::vector<double>> DZ, DAZ; std::vector<double> DE(36,0.0); bool defl=(g_defl_corr!=0);
+    if(g_defl_corr||g_defl_rbm) build_rbm(LV[0]);          // RBM basis for correction and/or vcycle-input deflation
+    if(defl){ DZ=g_Z; DAZ.assign(6,std::vector<double>(N));
         for(int a=0;a<6;a++) bspmv(A0,DZ[a].data(),DAZ[a].data());
         for(int a=0;a<6;a++) for(int b=0;b<6;b++) DE[a*6+b]=ddot(DZ[a].data(),DAZ[b].data(),N);
+        double md=0; for(int a=0;a<6;a++) md=std::max(md,std::fabs(DE[a*6+a]));
+        if(g_defl_reg>0.0) for(int a=0;a<6;a++) DE[a*6+a]+=g_defl_reg*md;   // regularize near-singular E
+        if(verbose) fprintf(stderr,"[tt-gmg] RBM E maxdiag=%.3e reg=%.3e\n",md,g_defl_reg);
         char u='L'; int six=6,info; dpotrf_(&u,&six,DE.data(),&six,&info);
-        if(info){ if(verbose) fprintf(stderr,"[tt-gmg] RBM E dpotrf info=%d -> defl off\n",info); defl=false; } }
+        if(info){ if(verbose) fprintf(stderr,"[tt-gmg] RBM E dpotrf info=%d -> corr off\n",info); defl=false; } }
     auto rbm_corr=[&](const double*rr,double*zz){ if(!defl) return; double c[6];
         for(int a=0;a<6;a++) c[a]=ddot(DZ[a].data(),rr,N);
         char u='L'; int six=6,one=1,info; dpotrs_(&u,&six,&one,DE.data(),&six,c,&six,&info); (void)info;
         for(int a=0;a<6;a++){ double ca=c[a]; const double*za=DZ[a].data(); for(int i=0;i<N;i++) zz[i]+=ca*za[i]; } };
-    for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data()); rbm_corr(r.data(),z.data());
+    std::vector<double> rp(N);   // deflated-input vcycle: feed the (bf16) smoother only the RBM-complement residual
+    auto precond=[&](const double*rr,double*zz){ for(int i=0;i<N;i++) zz[i]=0;
+        if(g_defl_rbm && !g_Z.empty()){ for(int i=0;i<N;i++) rp[i]=rr[i]; deflate_rbm(N,rp.data()); vcycle(ctx,0,rp.data(),zz); }
+        else vcycle(ctx,0,rr,zz);
+        rbm_corr(rr,zz); };
+    precond(r.data(),z.data());
     for(int i=0;i<N;i++) p[i]=z[i]; double rz=ddot(r.data(),z.data(),N);
     auto ts=clk::now(); int iters=maxit; double rel=1;
     for(int it=0;it<maxit;it++){
@@ -656,7 +666,7 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
         for(int i=0;i<N;i++){ x[i]+=al*p[i]; r[i]-=al*Ap[i]; }
         rel=std::sqrt(ddot(r.data(),r.data(),N))/res0; if(rel<tol){ iters=it+1; break; }
         if(verbose && (it<6||it%5==0)) fprintf(stderr,"[tt-gmg] it=%d rel=%.3e (%.2fs elapsed)\n",it,rel,secs(ts,clk::now()));
-        for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data()); rbm_corr(r.data(),z.data());
+        precond(r.data(),z.data());
         double rzn=ddot(r.data(),z.data(),N); if(!(rz!=0.0)||!std::isfinite(rzn)) break;
         double bet=rzn/rz; for(int i=0;i<N;i++) p[i]=z[i]+bet*p[i]; rz=rzn; }
     bspmv(A0,x.data(),Ap.data());

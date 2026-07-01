@@ -341,3 +341,20 @@ z = (I - Z E^-1 (AZ)^T) M^-1 r + Z E^-1 Z^T r with a consistently deflated opera
 then keep r orthogonal to AZ each iter (Saad DEFLCG). Regularize E if near-singular. Only after deflation converges
 in the EXACT case should it be retested with abserr, then the real TT. So: G3 route is PLAUSIBLE but UNPROVEN; the
 abserr TT-failure proxy is the validated asset. Gates unchanged: G1/G2/G5 pass; G3/G4/e2e blocked.
+
+## Deflation attempts all unstable — G3 fix is unsolved research (honest) — 2026-07-01
+Split the deflation into two mechanisms + E-regularization and tested exhaustively on the validated abserr proxy:
+  RBM correction ALONE (exact fp64):           CONVERGES (828->24 by it10) -> the correction FORMULA is usable.
+  smoother-internal deflation (exact):          STALLS 38 -> breaks the Chebyshev recurrence.
+  vcycle-INPUT deflation + correction (exact):  DIVERGES 1348->7698 -> inconsistent deflated preconditioner.
+  correction + abserr=4.69e-4:                  floors 147 (stops divergence, no convergence).
+  correction + abserr 4.69e-5 / 4.69e-6:        floors 1472 / slowly-decreasing 8246 -> NON-MONOTONIC = unstable.
+HONEST CONCLUSION: none of my deflation variants is a correct+robust deflated CG. The near-singular E=Z^T A Z is
+ill-conditioned and my ad-hoc preconditioners either break the smoother, are inconsistent with the exact outer
+operator, or amplify unstably. Getting this right is genuine numerical research: a proper deflated CG (Saad DEFLCG:
+consistent projector P=I-Z(Z^TAZ)^-1(AZ)^T applied to BOTH operator and preconditioner, x0=Z E^-1 Z^T b start),
+robust E handling, and likely the ACTUAL near-null space of the CONSTRAINED operator (computed via a few inverse
+iterations) rather than the 6 analytic free RBMs. That is multi-day/multi-week research, uncertain.
+VALIDATED ASSETS that stand: (1) full TT-GMG built+run on 8 chips; (2) divergence root-caused; (3) no TT primitive
+gives fp32 products; (4) GMG_EMU_ABSERR deterministic proxy faithfully reproduces the TT failure (a reusable
+research tool). Gates: G1/G2/G5 pass; G3/G4/e2e blocked pending the correct deflated-CG research. Real operator restored.
