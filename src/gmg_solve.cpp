@@ -528,6 +528,83 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
   }
 }
 
+// TT-GMG driver entry: load a GMG_DUMP_FINE dump (fine BCSR + ijk + rhs), rebuild the scalar CSR, run the
+// full GMG-PCG. The fine (lv==0) smoother SpMV runs on the 8-chip TT mesh when the caller has set
+// g_tt_fine_spmv; coarser levels + the vcycle residual + the outer PCG stay exact fp64. Returns 0 on accept
+// (true_rel < 2*tol), writes the solution to out_x (n doubles) and maxU to out_maxu.
+extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, int verbose,
+                                       double* out_x, double* out_maxu) {
+  try {
+    FILE* f=fopen(path,"rb"); if(!f){ fprintf(stderr,"[tt-gmg] cannot open %s\n",path); return 1; }
+    int64_t h[5]; if(fread(h,8,5,f)!=5){ fclose(f); return 1; }
+    long nb=(long)h[0], nblk=(long)h[1]; int n=(int)(3*nb);
+    BCSR B; B.nb=(int)nb; B.ptr.resize(nb+1); B.col.resize(nblk); B.val.resize((size_t)nblk*9);
+    std::vector<long> ijk((size_t)nb*3); std::vector<double> bp(n), yref(n);
+    if(fread(B.ptr.data(),8,(size_t)nb+1,f)!=(size_t)nb+1 || fread(B.col.data(),4,(size_t)nblk,f)!=(size_t)nblk ||
+       fread(B.val.data(),8,(size_t)nblk*9,f)!=(size_t)nblk*9 || fread(ijk.data(),8,(size_t)nb*3,f)!=(size_t)nb*3 ||
+       fread(bp.data(),8,(size_t)n,f)!=(size_t)n){ fclose(f); return 1; }
+    (void)!fread(yref.data(),8,(size_t)n,f); fclose(f);
+    auto T0=clk::now();
+    // rebuild scalar CSR A from the block-3x3 BCSR (rows already sorted by block-col in the dump)
+    CSR A; A.nr=A.nc=n; A.ptr.assign((size_t)n+1,0);
+    for(long I=0;I<nb;I++){ long bn=B.ptr[I+1]-B.ptr[I]; for(int r=0;r<3;r++) A.ptr[3*I+r+1]=3*bn; }
+    for(int i=0;i<n;i++) A.ptr[i+1]+=A.ptr[i];
+    A.col.resize(A.ptr[n]); A.val.resize(A.ptr[n]);
+    #pragma omp parallel for schedule(dynamic,1024)
+    for(long I=0;I<nb;I++) for(int r=0;r<3;r++){ long o=A.ptr[3*I+r];
+        for(long b=B.ptr[I];b<B.ptr[I+1];b++){ int J=B.col[b]; for(int c=0;c<3;c++){ A.col[o]=3*J+c; A.val[o]=B.val[(size_t)b*9+r*3+c]; o++; } } }
+    g_tt_fine_n = n;   // arm the fine-SpMV hook size guard
+    GmgCtx ctx; auto&LV=ctx.LV; auto&WSP=ctx.WSP; auto&Cfac=ctx.Cfac; int&Cn=ctx.Cn;
+    const char*ev; long lvv;
+    if((ev=getenv("GMG_DEG"))  &&(lvv=strtol(ev,NULL,10))>0) ctx.DEG  =(int)(lvv<8?lvv:8);
+    if((ev=getenv("GMG_NPRE")) &&(lvv=strtol(ev,NULL,10))>0) ctx.NPRE =(int)(lvv<8?lvv:8);
+    if((ev=getenv("GMG_NPOST"))&&(lvv=strtol(ev,NULL,10))>0) ctx.NPOST=(int)(lvv<8?lvv:8);
+    if((ev=getenv("GMG_GAMMA"))&&(lvv=strtol(ev,NULL,10))>0) ctx.GAMMA=(int)(lvv<4?lvv:4);
+    { Level L; L.A=std::move(A); L.ijk=ijk; LV.push_back(std::move(L)); }
+    while((int)LV[LV.size()-1].A.nr>6000){
+        size_t fi=LV.size()-1; int nbf=LV[fi].A.nr/3; std::vector<long> cijk; int nbc;
+        CSR P=build_P(LV[fi].ijk,nbf,cijk,nbc); CSR Pt=transpose(P);
+        CSR AP=spmm(LV[fi].A,P); CSR Ac=spmm(Pt,AP);
+        LV[fi].P=std::move(P); LV[fi].Pt=std::move(Pt);
+        Level C; C.A=std::move(Ac); C.ijk=std::move(cijk); LV.push_back(std::move(C)); }
+    for(int lv=0;lv<(int)LV.size()-1;lv++){ LV[lv].B=to_bcsr(LV[lv].A);
+        block_diag_inv_b(LV[lv].B,LV[lv].Dinv); LV[lv].rho=1.1*lmax(LV[lv].B,LV[lv].Dinv);
+        LV[lv].A.col.clear();LV[lv].A.col.shrink_to_fit();LV[lv].A.val.clear();LV[lv].A.val.shrink_to_fit(); }
+    Cn=LV.back().A.nr; Cfac.assign((size_t)Cn*Cn,0.0);
+    { const CSR&Ac=LV.back().A; for(int i=0;i<Cn;i++) for(long p=Ac.ptr[i];p<Ac.ptr[i+1];p++) Cfac[(size_t)Ac.col[p]*Cn+i]=Ac.val[p]; }
+    { char uplo='L'; int info; dpotrf_(&uplo,&Cn,Cfac.data(),&Cn,&info); if(info){ fprintf(stderr,"[tt-gmg] coarse dpotrf info=%d\n",info); return 5; } }
+    WSP.resize(LV.size());
+    for(int lv=0;lv<(int)LV.size();lv++){ int nn=LV[lv].A.nr; WS&w=WSP[lv];
+        w.r.resize(nn);w.z.resize(nn);w.d.resize(nn);w.Ad.resize(nn);w.res.resize(nn);
+        int ncoarse=(lv<(int)LV.size()-1)?LV[lv].P.nc:nn; w.rc.resize(ncoarse); w.ec.resize(ncoarse); }
+    if(verbose) fprintf(stderr,"[tt-gmg] setup %.2fs, %zu levels, coarsest=%d, TT_fine=%s\n",
+                        secs(T0,clk::now()),LV.size(),Cn,g_tt_fine_spmv?"ON":"off");
+    const BCSR&A0=LV[0].B; int N=n;
+    std::vector<double> x(N,0.0),r(N),z(N),p(N),Ap(N);
+    for(int i=0;i<N;i++) r[i]=bp[i];
+    double res0=std::sqrt(ddot(r.data(),r.data(),N)); if(res0==0) res0=1;
+    for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
+    for(int i=0;i<N;i++) p[i]=z[i]; double rz=ddot(r.data(),z.data(),N);
+    auto ts=clk::now(); int iters=maxit; double rel=1;
+    for(int it=0;it<maxit;it++){
+        bspmv(A0,p.data(),Ap.data());                        // exact fp64 outer operator
+        double pAp=ddot(p.data(),Ap.data(),N); if(!(pAp>0.0)) break;
+        double al=rz/pAp;
+        for(int i=0;i<N;i++){ x[i]+=al*p[i]; r[i]-=al*Ap[i]; }
+        rel=std::sqrt(ddot(r.data(),r.data(),N))/res0; if(rel<tol){ iters=it+1; break; }
+        for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
+        double rzn=ddot(r.data(),z.data(),N); if(!(rz!=0.0)||!std::isfinite(rzn)) break;
+        double bet=rzn/rz; for(int i=0;i<N;i++) p[i]=z[i]+bet*p[i]; rz=rzn; }
+    bspmv(A0,x.data(),Ap.data());
+    double tr=0; for(int i=0;i<N;i++){ double e=bp[i]-Ap[i]; tr+=e*e; }
+    double true_rel=std::sqrt(tr)/res0, mx=0; for(int i=0;i<N;i++) mx=std::max(mx,std::fabs(x[i]));
+    if(out_maxu) *out_maxu=mx; if(out_x) for(int i=0;i<N;i++) out_x[i]=x[i];
+    if(verbose) fprintf(stderr,"[tt-gmg] PCG iters=%d rel=%.2e true_rel=%.2e maxU=%.7f solve=%.2fs total=%.2fs\n",
+                        iters,rel,true_rel,mx,secs(ts,clk::now()),secs(T0,clk::now()));
+    return (ctx.coarse_fail || !(true_rel < 2.0*tol)) ? 4 : 0;
+  } catch(...) { fprintf(stderr,"[tt-gmg] exception -> abort\n"); return 6; }
+}
+
 // FILE wrapper (backward compat): read the coord/DOF-map file, then call the in-memory core.
 extern "C" int ccx_gmg_solve(int n, const long* cs, const int* ri, const double* va,
                              double* b, const char* coordmap, int maxit, double tol, int verbose)
