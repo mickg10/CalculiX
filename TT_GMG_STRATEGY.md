@@ -234,3 +234,11 @@ CAVEAT: matmul-diagonal already used packer_l1_acc=True and stayed 11-bit (but t
 eltwise keeps 16-bit products, so the L1-acc precision is the only question). TEST on a cancellation operator first
 (construct row236_real_op.bin variant with per-element Sum coeff*b ~ small; must hit ~fp32 not bf16).
 Remaining either way = multi-day: build the fp32 SpMV, converge to maxU 95.81, add on-device gather, measure gates.
+
+## packer_l1_acc test result — 2026-07-01
+Built a 6-cross-term packer_l1_acc kernel (eltwise mul->fp32 dst, pack_reconfig_l1_acc(first?0:1), pack into one
+reserved cb_out tile across all 6*K products). NOTE: packer_l1_acc is NOT a ComputeConfig field in v0.73.1; it is
+controlled only by the kernel's pack_reconfig_l1_acc() calls. Run on a cancellation operator (n_out=512, ratio 7e-6)
+LOADS then HANGS (200s timeout, no error) -> kernel bug in the pack-accumulate pattern (reserving cb_out once but
+packing 486x into it likely violates CB/packer expectations). Debuggable but multi-cycle. Confirms: the fp32-accumulate
+SpMV fix (packer_l1_acc debugged OR transposed reduce_tile<enforce_fp32_accumulation>) is multi-day work either way.
