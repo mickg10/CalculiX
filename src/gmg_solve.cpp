@@ -702,10 +702,11 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
         rel=std::sqrt(ddot(r.data(),r.data(),N))/res0;
         if(rel<best_rel){ best_rel=rel; x_best=x; }
         if(rel<tol){ iters=it+1; break; }
-        if(g_hybrid_tol>0.0 && g_hybrid_active && rel<g_hybrid_tol){ g_hybrid_active=false; just_switched=true;  // exact fp64 finish
-            if(verbose) fprintf(stderr,"[tt-gmg] HYBRID: rel=%.3e < %.3e -> exact smoother finish (CG restart) at it=%d\n",rel,g_hybrid_tol,it); }
-        if(!g_hybrid_active && best_rel<g_hybrid_tol && rel>3.0*best_rel){ iters=it+1;   // exact-phase divergence -> return best
-            if(verbose) fprintf(stderr,"[tt-gmg] exact-phase divergence rel=%.3e > 3x best=%.3e -> return best iterate at it=%d\n",rel,best_rel,it); break; }
+        if(g_hybrid_tol>0.0 && g_hybrid_active && rel<g_hybrid_tol){ g_hybrid_active=false; defl=false;  // -> plain exact GMG-PCG
+            bspmv(A0,x.data(),Ap.data()); for(int i=0;i<N;i++) r[i]=bp[i]-Ap[i];   // drop deflation, recompute TRUE residual
+            rel=std::sqrt(ddot(r.data(),r.data(),N))/res0; just_switched=true;
+            if(rel<best_rel){ best_rel=rel; x_best=x; }
+            if(verbose) fprintf(stderr,"[tt-gmg] HYBRID: switch to plain exact GMG-PCG (drop deflation) at it=%d, true rel=%.3e\n",it,rel); }
         if(verbose && (it<6||it%5==0)) fprintf(stderr,"[tt-gmg] it=%d rel=%.3e (%.2fs elapsed)\n",it,rel,secs(ts,clk::now()));
         for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
         double rzn=ddot(r.data(),z.data(),N); if(!(rz!=0.0)||!std::isfinite(rzn)) break;
