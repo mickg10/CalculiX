@@ -419,3 +419,17 @@ last few smoother SpMVs to CPU/exact once the TT preconditioner reaches ~5e-4 ->
 amortize the eigenbasis (warm). Code: src/gmg_solve.cpp GMG_DEFL_EIG/GMG_DEFL_K/GMG_DEFL_EIGIT.
 This reclassifies G3 from "fundamentally blocked" to "convergence SOLVED via eig-deflation; reaching 1e-6 + timing are
 the remaining engineering". Gates still G1/G2/G5 pass, G3/G4/e2e not yet MEASURED end-to-end on real TT.
+
+## Hybrid fp64-finish implemented (CG restart); confirmation pending (box unreachable) — 2026-07-01
+The breakthrough stands: computed-eigenvector deflation (k=24) makes the bf16/abserr fine-SpMV CONVERGE to the ~5e-4
+precision floor (vs 466-stall). To close the floor->1e-6 gap, added a HYBRID finish: once PCG rel<GMG_HYBRID_TOL,
+disable the bf16/abserr smoother (exact fp64) AND do a CG RESTART (p=z, rz=r.z) — because switching the preconditioner
+mid-CG without restart broke conjugacy (observed rel 9.5e-3 -> 2.93 divergence). Restart-on-switch is committed
+(src/gmg_solve.cpp: g_hybrid_tol, g_hybrid_active, just_switched). The confirming run (eig k=24 + abserr=4.69e-4 +
+HYBRID_TOL=1e-2 -> expect true_rel<=1e-6, maxU 95.813) could NOT complete: tt-quietbox (100.117.137.85) went
+unreachable (4x SSH timeouts) mid-test — infrastructure, not a code issue. RE-RUN when the box returns:
+  OMP_NUM_THREADS=16 GMG_DEFL_CORR=1 GMG_DEFL_EIG=1 GMG_DEFL_K=24 GMG_EMU_ABSERR=4.69e-4 GMG_HYBRID_TOL=1e-2 \
+    ./ttgmg_test /tmp/row236_fine.bin   (also sweep HYBRID_TOL 3e-2..1e-3 and k=16..48 for iters-to-1e-6).
+NET THIS SESSION: G3 reclassified from "fundamentally blocked" to "convergence SOLVED via computed-eigenvector
+deflated PCG (proven on the abserr proxy); hybrid fp64 finish implemented to reach tol; pending confirmation + real-TT
+integration + timing". Gates: G1/G2/G5 pass; G3/G4/e2e still not MEASURED end-to-end on real TT.

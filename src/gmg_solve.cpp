@@ -87,6 +87,8 @@ static inline double round_mbits(double x, int mb){
 }
 static double g_emu_abserr = 0.0;  // >0: add per-row noise ~ abserr*sum|m*x| to fine SpMV (emulates the bf16-PRODUCT
                                    // absolute error that swamps cancellation — the real TT matmul-diagonal failure)
+static double g_hybrid_tol = 0.0;  // >0: HYBRID finish — disable the bf16/abserr smoother (use exact fp64) once the
+static bool   g_hybrid_active = true;  // PCG residual drops below g_hybrid_tol, to close from the precision floor to tol
 static int g_defl_rbm = 0;         // >0: deflate 6 rigid-body modes from the fine SpMV input+output (smoother side)
 static int g_defl_corr = 0;        // >0: add the exact fp64 RBM coarse-correction to the PCG preconditioner
 static double g_defl_reg = 0.0;    // E-regularization (relative): DE[a,a] += reg*maxdiag before Cholesky
@@ -301,7 +303,7 @@ static inline void smoo_spmv(const Level&L,const double*x,double*y,int lv,bool e
     if(g_tt_fine_spmv && lv==0 && (long)L.B.nb*3==g_tt_fine_n){ if(g_tt_fine_spmv(x,y)==0) return; }
     if(emu) bspmv_emu(L.B,x,y); else bspmv(L.B,x,y);
     if(g_emu_mbits>0 && lv==0){ int n=L.B.nb*3; for(int i=0;i<n;i++) y[i]=round_mbits(y[i],g_emu_mbits); }  // probe fine-SpMV precision
-    if(g_emu_abserr>0.0 && lv==0){   // emulate bf16-PRODUCT absolute error: DETERMINISTIC (fixed per-DOF sign so the
+    if(g_emu_abserr>0.0 && g_hybrid_active && lv==0){   // emulate bf16-PRODUCT absolute error: DETERMINISTIC (fixed per-DOF sign so the
         const BCSR&B=L.B;            // preconditioner is a fixed function of x -> PCG-consistent, faithful to real TT)
         auto sgn=[](uint64_t i){ i=(i^0x9E3779B97F4A7C15ULL)*0xBF58476D1CE4E5B9ULL; i^=i>>27; return (i&1)?1.0:-1.0; };
         for(int I=0;I<B.nb;I++){ double t0=0,t1=0,t2=0;
@@ -616,6 +618,7 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     if((ev=getenv("GMG_EMU_MODE")) && (lvv=strtol(ev,NULL,10))>0) g_emu_mode=(int)lvv;
     g_emu_mbits = (getenv("GMG_EMU_MBITS") && (lvv=strtol(getenv("GMG_EMU_MBITS"),NULL,10))>0) ? (int)lvv : 0;
     g_emu_abserr = getenv("GMG_EMU_ABSERR") ? atof(getenv("GMG_EMU_ABSERR")) : 0.0;
+    g_hybrid_tol = getenv("GMG_HYBRID_TOL") ? atof(getenv("GMG_HYBRID_TOL")) : 0.0; g_hybrid_active = true;
     g_defl_rbm = (getenv("GMG_DEFL_RBM") && atoi(getenv("GMG_DEFL_RBM"))>0) ? 1 : 0;
     g_defl_corr = (getenv("GMG_DEFL_CORR") && atoi(getenv("GMG_DEFL_CORR"))>0) ? 1 : 0;
     g_defl_reg = getenv("GMG_DEFL_REG") ? atof(getenv("GMG_DEFL_REG")) : 0.0;
@@ -688,17 +691,20 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
         for(int i=0;i<N;i++) r[i]=bp[i]-Ap[i]; Papply(r.data()); }
     for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
     for(int i=0;i<N;i++) p[i]=z[i]; double rz=ddot(r.data(),z.data(),N);
-    auto ts=clk::now(); int iters=maxit; double rel=1;
+    auto ts=clk::now(); int iters=maxit; double rel=1; bool just_switched=false;
     for(int it=0;it<maxit;it++){
         bspmv(A0,p.data(),Ap.data()); Papply(Ap.data());     // DEFLATED operator P*A*p (keeps CG in the complement)
         double pAp=ddot(p.data(),Ap.data(),N); if(!(pAp>0.0)) break;
         double al=rz/pAp;
         for(int i=0;i<N;i++){ x[i]+=al*p[i]; r[i]-=al*Ap[i]; }
         rel=std::sqrt(ddot(r.data(),r.data(),N))/res0; if(rel<tol){ iters=it+1; break; }
+        if(g_hybrid_tol>0.0 && g_hybrid_active && rel<g_hybrid_tol){ g_hybrid_active=false; just_switched=true;  // exact fp64 finish
+            if(verbose) fprintf(stderr,"[tt-gmg] HYBRID: rel=%.3e < %.3e -> exact smoother finish (CG restart) at it=%d\n",rel,g_hybrid_tol,it); }
         if(verbose && (it<6||it%5==0)) fprintf(stderr,"[tt-gmg] it=%d rel=%.3e (%.2fs elapsed)\n",it,rel,secs(ts,clk::now()));
         for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
         double rzn=ddot(r.data(),z.data(),N); if(!(rz!=0.0)||!std::isfinite(rzn)) break;
-        double bet=rzn/rz; for(int i=0;i<N;i++) p[i]=z[i]+bet*p[i]; rz=rzn; }
+        if(just_switched){ for(int i=0;i<N;i++) p[i]=z[i]; rz=rzn; just_switched=false; }   // CG RESTART on preconditioner switch
+        else { double bet=rzn/rz; for(int i=0;i<N;i++) p[i]=z[i]+bet*p[i]; rz=rzn; } }
     if(defl){ bspmv(A0,x.data(),Ap.data()); std::vector<double> rr(N);        // final exact near-null correction
         for(int i=0;i<N;i++) rr[i]=bp[i]-Ap[i]; addZ(rr.data(),x.data()); }
     bspmv(A0,x.data(),Ap.data());
