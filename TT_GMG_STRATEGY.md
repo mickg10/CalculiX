@@ -193,3 +193,15 @@ THE FIX (precisely specified, multi-day Metalium): fp32-accumulate reduce kernel
 over the (term,k) columns. That is the ONLY primitive that gives both fp32 products and fp32 accumulate on this HW.
 Everything else built+committed: full TT-GMG assembly (gmg_tt.py), ctypes bridge, DIA layout (exact 5.37e-8),
 diagnostics. Remaining: build the reduce_tile<fp32> Metalium kernel, wire into the SpMV, converge, measure.
+
+## Fix build recipe located (reduce_tile fp32) — 2026-07-01
+The fp32-accumulate reduce primitive exists: reduce_tile<REDUCE_OP, ReduceDim, enforce_fp32_accumulation=true>
+(api/compute/reduce.h). Reference impl: ttnn/.../reduction/generic/device/kernels/compute/reduce_hw_neg.cpp
+(scaler CB = CBIndex::c_2, a 1.0 tile seeded by the reader; reduce_init/reduce_tile/reduce_uninit per column-tile,
+accumulating into one dst idx). NOTE ttnn's own generic reduce does NOT pass enforce_fp32_accumulation, which is
+why ttnn.sum fails cancellation (tested: err 9.1 fp32-in). The custom kernel MUST pass the 3rd template arg =true.
+FULL FIX BUILD (multi-day): (a) compute kernel: eltwise mul each (term,k) pair packed to an fp32 CB (exact 16-bit
+products) then reduce_tile<SUM,REDUCE_ROW,true> over the (term,k) column-tiles -> y[32,1]; (b) reader: deliver
+coeff/b column-tiles in [element,(term,k)] layout + a 1.0 scaler tile; (c) host: transpose to that layout + on-device
+gather; (d) wire into tt_fine_spmv, converge (expect ~56 it like emu bf16x3), measure G3/G4/end-to-end. Verify the
+reduce_tile<...,true> primitive on the exact-cancellation case FIRST (must match HOST bf16x3 err 2.6e-4, not 9.1).
