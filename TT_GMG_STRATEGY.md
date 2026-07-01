@@ -476,3 +476,10 @@ reboot or power-cycle (user authorization required). No code/algorithm issue.
 STATUS: G3-convergence + correctness are SOLVED at the algorithm level and confirmed rc=0 on the faithful abserr=4.69e-4
 proxy (which matched the real TT matmul-diagonal earlier). Real-TT measurement of G3/G4/e2e is one `python gmg_tt.py`
 (with GMG_DEFL_CORR=1 GMG_DEFL_EIG=1 GMG_DEFL_K=24 GMG_HYBRID_TOL=1e-2) away — pending the cards being reachable again.
+
+## TT chips hardware-wedged (ARC/DRAM/CPU timeout) -> needs COLD POWER-CYCLE — 2026-07-01
+tt_smi snapshot: "Error in detecting devices! Communication Status: Success; DRAM Status: Timeout; CPU Status:
+Timeout; ARC Status: Timeout (1/1 init); Ethernet: 6/16". The on-chip ARC microcontroller is hung, so tt_smi -r
+(which resets THROUGH ARC) cannot recover it; a soft reboot may not either. Recovery needs a full cold power-cycle
+of tt-quietbox (physical or BMC/IPMI) -- user action. Dump + DIA + libgmg all staged on the box, and the CPU-proxy
+rc=0 result is committed; the real-TT measurement is one `gmg_tt.py` run away once the chips re-initialize.
