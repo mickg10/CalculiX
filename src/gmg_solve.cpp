@@ -90,6 +90,7 @@ static double g_emu_abserr = 0.0;  // >0: add per-row noise ~ abserr*sum|m*x| to
 static int g_defl_rbm = 0;         // >0: deflate 6 rigid-body modes from the fine SpMV input+output (smoother side)
 static int g_defl_corr = 0;        // >0: add the exact fp64 RBM coarse-correction to the PCG preconditioner
 static double g_defl_reg = 0.0;    // E-regularization (relative): DE[a,a] += reg*maxdiag before Cholesky
+static int g_defl_deg = 1;         // polynomial deflation degree (1=RBMs; higher enlarges the near-null subspace)
                                       // multi-pass = Ozaki/error-free-transform: split each value into hi/lo bf16 terms,
                                       // do extra bf16 products, accumulate fp32 -> recover precision from fast bf16 passes.
 static inline double bf16round(double d){
@@ -268,20 +269,26 @@ static double lmax(const BCSR&B,const std::vector<double>&Dinv){
 struct Level { CSR A,P,Pt; BCSR B; std::vector<double> Dinv; double rho; std::vector<long> ijk; };
 struct WS { std::vector<double> r,z,d,Ad,res,rc,ec; };
 
-// RBM deflation basis (6 orthonormal rigid-body modes) built lazily from the fine-level lattice coords (L.ijk).
+// Polynomial deflation basis: per-component monomials of the (normalized) lattice coords up to total degree `deg`,
+// Gram-Schmidt orthonormalized (near-dependent dropped). deg>=1 already spans the 6 rigid-body modes; higher deg
+// approximates the broader near-null eigenspace that drives the bf16-product cancellation divergence.
 static std::vector<std::vector<double>> g_Z;
-static void build_rbm(const Level&L){
-    int nb=L.B.nb, n=3*nb; if((int)L.ijk.size()<(size_t)3*nb) return;
-    g_Z.assign(6,std::vector<double>(n,0.0));
-    for(int i=0;i<nb;i++){ double X=(double)L.ijk[3*i],Y=(double)L.ijk[3*i+1],Z=(double)L.ijk[3*i+2];
-        g_Z[0][3*i]=1; g_Z[1][3*i+1]=1; g_Z[2][3*i+2]=1;               // translations
-        g_Z[3][3*i+1]=-Z; g_Z[3][3*i+2]=Y;                             // rot x
-        g_Z[4][3*i]=Z;    g_Z[4][3*i+2]=-X;                            // rot y
-        g_Z[5][3*i]=-Y;   g_Z[5][3*i+1]=X; }                           // rot z
-    for(int a=0;a<6;a++){ for(int b=0;b<a;b++){ double d=0; for(int i=0;i<n;i++) d+=g_Z[a][i]*g_Z[b][i];
-                              for(int i=0;i<n;i++) g_Z[a][i]-=d*g_Z[b][i]; }
-        double nr=0; for(int i=0;i<n;i++) nr+=g_Z[a][i]*g_Z[a][i]; nr=std::sqrt(nr);
-        if(nr>1e-12) for(int i=0;i<n;i++) g_Z[a][i]/=nr; }
+static void build_defl(const Level&L,int deg){
+    int nb=L.B.nb, n=3*nb; if((int)L.ijk.size()<(size_t)3*nb || deg<1){ g_Z.clear(); return; }
+    double mn[3]={1e300,1e300,1e300},mx[3]={-1e300,-1e300,-1e300};
+    for(int i=0;i<nb;i++)for(int d=0;d<3;d++){double v=(double)L.ijk[3*i+d]; if(v<mn[d])mn[d]=v; if(v>mx[d])mx[d]=v;}
+    double sc[3]; for(int d=0;d<3;d++) sc[d]=(mx[d]>mn[d])?2.0/(mx[d]-mn[d]):0.0;
+    std::vector<int> ea,eb,ec;
+    for(int td=0;td<=deg;td++)for(int a=0;a<=td;a++)for(int b=0;b<=td-a;b++){ea.push_back(a);eb.push_back(b);ec.push_back(td-a-b);}
+    int nm=(int)ea.size(); g_Z.clear();
+    for(int m=0;m<nm;m++) for(int comp=0;comp<3;comp++){
+        std::vector<double> v(n,0.0);
+        for(int i=0;i<nb;i++){ double cx=((double)L.ijk[3*i]-mn[0])*sc[0]-1,cy=((double)L.ijk[3*i+1]-mn[1])*sc[1]-1,cz=((double)L.ijk[3*i+2]-mn[2])*sc[2]-1;
+            double val=1; for(int e=0;e<ea[m];e++)val*=cx; for(int e=0;e<eb[m];e++)val*=cy; for(int e=0;e<ec[m];e++)val*=cz;
+            v[3*i+comp]=val; }
+        for(auto&q:g_Z){ double d=0; for(int i=0;i<n;i++)d+=v[i]*q[i]; for(int i=0;i<n;i++)v[i]-=d*q[i]; }
+        double nr=0; for(int i=0;i<n;i++)nr+=v[i]*v[i]; nr=std::sqrt(nr);
+        if(nr>1e-8){ for(int i=0;i<n;i++)v[i]/=nr; g_Z.push_back(std::move(v)); } }
 }
 static void deflate_rbm(int n,double*v){ for(auto&z:g_Z){ double d=0; for(int i=0;i<n;i++) d+=z[i]*v[i];
                                                           for(int i=0;i<n;i++) v[i]-=d*z[i]; } }
@@ -609,6 +616,7 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     g_defl_rbm = (getenv("GMG_DEFL_RBM") && atoi(getenv("GMG_DEFL_RBM"))>0) ? 1 : 0;
     g_defl_corr = (getenv("GMG_DEFL_CORR") && atoi(getenv("GMG_DEFL_CORR"))>0) ? 1 : 0;
     g_defl_reg = getenv("GMG_DEFL_REG") ? atof(getenv("GMG_DEFL_REG")) : 0.0;
+    { int dd; g_defl_deg = (getenv("GMG_DEFL_DEG") && (dd=atoi(getenv("GMG_DEFL_DEG")))>=1) ? dd : 1; }
     if((g_emu_abserr>0.0||g_defl_rbm) && verbose) fprintf(stderr,"[tt-gmg] abserr=%.3e defl_rbm=%d (TT failure-mode probe)\n",g_emu_abserr,g_defl_rbm);
     if(g_emu_bf16 && verbose) fprintf(stderr,"[tt-gmg] CPU EMU smoother ON mode=%d (2=bf16x2 3=bf16x3 32=fp32)\n",g_emu_mode);
     if(g_emu_mbits && verbose) fprintf(stderr,"[tt-gmg] fine-SpMV output rounded to %d mantissa bits (2^-%d ~ %.1e rel)\n",g_emu_mbits,g_emu_mbits,std::ldexp(1.0,-g_emu_mbits));
@@ -638,22 +646,24 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     // ---- Deflated PCG (Saad DCG). The near-null space (6 RBMs) is solved EXACTLY in fp64; the CG runs in the
     // A-orthogonal complement via the projected operator PA = A - AZ E^-1 (AZ)^T, so the (bf16/TT) smoother only ever
     // sees complement residuals -> no extreme cancellation -> bf16x3 is accurate there. E = Z^T A Z (6x6, Cholesky).
-    std::vector<std::vector<double>> DZ, DAZ; std::vector<double> DE(36,0.0); bool defl=(g_defl_corr!=0);
-    if(defl){ build_rbm(LV[0]); DZ=g_Z; DAZ.assign(6,std::vector<double>(N));
-        for(int a=0;a<6;a++) bspmv(A0,DZ[a].data(),DAZ[a].data());
-        for(int a=0;a<6;a++) for(int b=0;b<6;b++) DE[a*6+b]=ddot(DZ[a].data(),DAZ[b].data(),N);
-        double md=0; for(int a=0;a<6;a++) md=std::max(md,std::fabs(DE[a*6+a]));
-        if(g_defl_reg>0.0) for(int a=0;a<6;a++) DE[a*6+a]+=g_defl_reg*md;
-        char u='L'; int six=6,info; dpotrf_(&u,&six,DE.data(),&six,&info);
+    std::vector<std::vector<double>> DZ, DAZ; std::vector<double> DE; bool defl=(g_defl_corr!=0); int K6=0;
+    if(defl){ build_defl(LV[0],g_defl_deg); DZ=g_Z; K6=(int)DZ.size();
+        if(K6<1){ defl=false; }
+        else { DAZ.assign(K6,std::vector<double>(N)); DE.assign((size_t)K6*K6,0.0);
+        for(int a=0;a<K6;a++) bspmv(A0,DZ[a].data(),DAZ[a].data());
+        for(int a=0;a<K6;a++) for(int b=0;b<K6;b++) DE[(size_t)a*K6+b]=ddot(DZ[a].data(),DAZ[b].data(),N);
+        double md=0; for(int a=0;a<K6;a++) md=std::max(md,std::fabs(DE[(size_t)a*K6+a]));
+        if(g_defl_reg>0.0) for(int a=0;a<K6;a++) DE[(size_t)a*K6+a]+=g_defl_reg*md;
+        char u='L'; int kk=K6,info; dpotrf_(&u,&kk,DE.data(),&kk,&info);
         if(info){ if(verbose) fprintf(stderr,"[tt-gmg] E dpotrf info=%d -> defl off\n",info); defl=false; }
-        else if(verbose) fprintf(stderr,"[tt-gmg] deflated PCG on: E maxdiag=%.3e reg=%.3e\n",md,g_defl_reg); }
-    auto Esolve=[&](double*c){ char u='L'; int six=6,one=1,info; dpotrs_(&u,&six,&one,DE.data(),&six,c,&six,&info); (void)info; };
-    auto Papply=[&](double*v){ if(!defl) return; double c[6];                 // v <- (I - AZ E^-1 Z^T) v
-        for(int a=0;a<6;a++) c[a]=ddot(DZ[a].data(),v,N); Esolve(c);
-        for(int a=0;a<6;a++){ double ca=c[a]; const double*az=DAZ[a].data(); for(int i=0;i<N;i++) v[i]-=ca*az[i]; } };
-    auto addZ=[&](const double*rr,double*xx){ double c[6];                    // xx += Z E^-1 Z^T rr  (near-null solve)
-        for(int a=0;a<6;a++) c[a]=ddot(DZ[a].data(),rr,N); Esolve(c);
-        for(int a=0;a<6;a++){ double ca=c[a]; const double*za=DZ[a].data(); for(int i=0;i<N;i++) xx[i]+=ca*za[i]; } };
+        else if(verbose) fprintf(stderr,"[tt-gmg] deflated PCG on: k=%d (deg=%d) E maxdiag=%.3e reg=%.3e\n",K6,g_defl_deg,md,g_defl_reg); } }
+    auto Esolve=[&](double*c){ char u='L'; int kk=K6,one=1,info; dpotrs_(&u,&kk,&one,DE.data(),&kk,c,&kk,&info); (void)info; };
+    auto Papply=[&](double*v){ if(!defl) return; std::vector<double> c(K6);   // v <- (I - AZ E^-1 Z^T) v
+        for(int a=0;a<K6;a++) c[a]=ddot(DZ[a].data(),v,N); Esolve(c.data());
+        for(int a=0;a<K6;a++){ double ca=c[a]; const double*az=DAZ[a].data(); for(int i=0;i<N;i++) v[i]-=ca*az[i]; } };
+    auto addZ=[&](const double*rr,double*xx){ std::vector<double> c(K6);      // xx += Z E^-1 Z^T rr  (near-null solve)
+        for(int a=0;a<K6;a++) c[a]=ddot(DZ[a].data(),rr,N); Esolve(c.data());
+        for(int a=0;a<K6;a++){ double ca=c[a]; const double*za=DZ[a].data(); for(int i=0;i<N;i++) xx[i]+=ca*za[i]; } };
     if(defl){ addZ(bp.data(),x.data()); bspmv(A0,x.data(),Ap.data());         // x0 = Z E^-1 Z^T b  -> r0 deflated
         for(int i=0;i<N;i++) r[i]=bp[i]-Ap[i]; Papply(r.data()); }
     for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());

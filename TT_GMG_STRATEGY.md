@@ -374,3 +374,20 @@ all k, and raise k until abserr=4.69e-4 converges. Cost: k-dim E per iter + k Sp
 hundreds. This is the concrete next research step, plus measuring the added per-iter cost against the timing gates.
 ASSETS: correct deflated PCG (committed), validated abserr proxy, full TT-GMG. Gates: G1/G2/G5 pass; G3/G4/e2e need
 the enlarged-deflation research. Real operator restored.
+
+## Polynomial deflation exhausted; smoother-internal cancellation is the deep blocker — 2026-07-01
+Generalized the deflated PCG to a polynomial deflation subspace (per-component monomials up to degree D, k=3*C(D+3,3)
+after orthonormalization; GMG_DEFL_DEG). Tested vs abserr=4.69e-4 (TT matmul-diagonal level):
+  deg2 k=30: STALLS 532    deg3 k=60: STALLS 1228    deg4 k=105: STALLS 2594   (all fail; exact still converges)
+=> the near-null space driving the bf16 divergence is NOT low-degree-polynomial, so cheap polynomial deflation does
+not fix it. DEEPER ROOT CAUSE (now understood): the abserr fires inside smoo_spmv on the Chebyshev smoother's
+INTERNAL recurrence vectors, which develop extreme cancellation (|Ax|<<|x|) regardless of the OUTER deflated residual.
+Outer deflation cannot prevent smoother-internal cancellation. So the true fixes are all research-level/expensive/HW-
+blocked: (a) fp32 products (HW cannot); (b) deflate with the ACTUAL near-null eigenvectors computed by LOBPCG/inverse
+iteration AND inside the smoother (expensive per-iter, uncertain k, and smoother-internal deflation broke the
+recurrence in tests); (c) a DIFFERENT smoother (damped Jacobi/poly with no internal cancellation) that tolerates bf16
+products but likely converges slower (threatening the timing gates). 
+FINAL HONEST ASSESSMENT: closing G3 (pure-TT bf16 fine-SpMV for row236's near-singular operator) is not achievable
+with any practical method found; it is an open research problem on this hardware. Validated assets remain: full TT-GMG
+built+run, root cause proven, correct deflated PCG, validated abserr proxy, exhaustive primitive+deflation tally.
+Gates: G1/G2/G5 pass; G3/G4/e2e blocked (research). Real operator restored.
