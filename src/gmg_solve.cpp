@@ -635,40 +635,42 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     std::vector<double> x(N,0.0),r(N),z(N),p(N),Ap(N);
     for(int i=0;i<N;i++) r[i]=bp[i];
     double res0=std::sqrt(ddot(r.data(),r.data(),N)); if(res0==0) res0=1;
-    // RBM deflation preconditioner (exact fp64 6-dim correction for the near-null space the bf16-safe deflated
-    // smoother skips): z += Z (Z^T A Z)^-1 Z^T r. Lets TT run the bf16x3 fine SpMV in the well-conditioned complement.
+    // ---- Deflated PCG (Saad DCG). The near-null space (6 RBMs) is solved EXACTLY in fp64; the CG runs in the
+    // A-orthogonal complement via the projected operator PA = A - AZ E^-1 (AZ)^T, so the (bf16/TT) smoother only ever
+    // sees complement residuals -> no extreme cancellation -> bf16x3 is accurate there. E = Z^T A Z (6x6, Cholesky).
     std::vector<std::vector<double>> DZ, DAZ; std::vector<double> DE(36,0.0); bool defl=(g_defl_corr!=0);
-    if(g_defl_corr||g_defl_rbm) build_rbm(LV[0]);          // RBM basis for correction and/or vcycle-input deflation
-    if(defl){ DZ=g_Z; DAZ.assign(6,std::vector<double>(N));
+    if(defl){ build_rbm(LV[0]); DZ=g_Z; DAZ.assign(6,std::vector<double>(N));
         for(int a=0;a<6;a++) bspmv(A0,DZ[a].data(),DAZ[a].data());
         for(int a=0;a<6;a++) for(int b=0;b<6;b++) DE[a*6+b]=ddot(DZ[a].data(),DAZ[b].data(),N);
         double md=0; for(int a=0;a<6;a++) md=std::max(md,std::fabs(DE[a*6+a]));
-        if(g_defl_reg>0.0) for(int a=0;a<6;a++) DE[a*6+a]+=g_defl_reg*md;   // regularize near-singular E
-        if(verbose) fprintf(stderr,"[tt-gmg] RBM E maxdiag=%.3e reg=%.3e\n",md,g_defl_reg);
+        if(g_defl_reg>0.0) for(int a=0;a<6;a++) DE[a*6+a]+=g_defl_reg*md;
         char u='L'; int six=6,info; dpotrf_(&u,&six,DE.data(),&six,&info);
-        if(info){ if(verbose) fprintf(stderr,"[tt-gmg] RBM E dpotrf info=%d -> corr off\n",info); defl=false; } }
-    auto rbm_corr=[&](const double*rr,double*zz){ if(!defl) return; double c[6];
-        for(int a=0;a<6;a++) c[a]=ddot(DZ[a].data(),rr,N);
-        char u='L'; int six=6,one=1,info; dpotrs_(&u,&six,&one,DE.data(),&six,c,&six,&info); (void)info;
-        for(int a=0;a<6;a++){ double ca=c[a]; const double*za=DZ[a].data(); for(int i=0;i<N;i++) zz[i]+=ca*za[i]; } };
-    std::vector<double> rp(N);   // deflated-input vcycle: feed the (bf16) smoother only the RBM-complement residual
-    auto precond=[&](const double*rr,double*zz){ for(int i=0;i<N;i++) zz[i]=0;
-        if(g_defl_rbm && !g_Z.empty()){ for(int i=0;i<N;i++) rp[i]=rr[i]; deflate_rbm(N,rp.data()); vcycle(ctx,0,rp.data(),zz); }
-        else vcycle(ctx,0,rr,zz);
-        rbm_corr(rr,zz); };
-    precond(r.data(),z.data());
+        if(info){ if(verbose) fprintf(stderr,"[tt-gmg] E dpotrf info=%d -> defl off\n",info); defl=false; }
+        else if(verbose) fprintf(stderr,"[tt-gmg] deflated PCG on: E maxdiag=%.3e reg=%.3e\n",md,g_defl_reg); }
+    auto Esolve=[&](double*c){ char u='L'; int six=6,one=1,info; dpotrs_(&u,&six,&one,DE.data(),&six,c,&six,&info); (void)info; };
+    auto Papply=[&](double*v){ if(!defl) return; double c[6];                 // v <- (I - AZ E^-1 Z^T) v
+        for(int a=0;a<6;a++) c[a]=ddot(DZ[a].data(),v,N); Esolve(c);
+        for(int a=0;a<6;a++){ double ca=c[a]; const double*az=DAZ[a].data(); for(int i=0;i<N;i++) v[i]-=ca*az[i]; } };
+    auto addZ=[&](const double*rr,double*xx){ double c[6];                    // xx += Z E^-1 Z^T rr  (near-null solve)
+        for(int a=0;a<6;a++) c[a]=ddot(DZ[a].data(),rr,N); Esolve(c);
+        for(int a=0;a<6;a++){ double ca=c[a]; const double*za=DZ[a].data(); for(int i=0;i<N;i++) xx[i]+=ca*za[i]; } };
+    if(defl){ addZ(bp.data(),x.data()); bspmv(A0,x.data(),Ap.data());         // x0 = Z E^-1 Z^T b  -> r0 deflated
+        for(int i=0;i<N;i++) r[i]=bp[i]-Ap[i]; Papply(r.data()); }
+    for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
     for(int i=0;i<N;i++) p[i]=z[i]; double rz=ddot(r.data(),z.data(),N);
     auto ts=clk::now(); int iters=maxit; double rel=1;
     for(int it=0;it<maxit;it++){
-        bspmv(A0,p.data(),Ap.data());                        // exact fp64 outer operator
+        bspmv(A0,p.data(),Ap.data()); Papply(Ap.data());     // DEFLATED operator P*A*p (keeps CG in the complement)
         double pAp=ddot(p.data(),Ap.data(),N); if(!(pAp>0.0)) break;
         double al=rz/pAp;
         for(int i=0;i<N;i++){ x[i]+=al*p[i]; r[i]-=al*Ap[i]; }
         rel=std::sqrt(ddot(r.data(),r.data(),N))/res0; if(rel<tol){ iters=it+1; break; }
         if(verbose && (it<6||it%5==0)) fprintf(stderr,"[tt-gmg] it=%d rel=%.3e (%.2fs elapsed)\n",it,rel,secs(ts,clk::now()));
-        precond(r.data(),z.data());
+        for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
         double rzn=ddot(r.data(),z.data(),N); if(!(rz!=0.0)||!std::isfinite(rzn)) break;
         double bet=rzn/rz; for(int i=0;i<N;i++) p[i]=z[i]+bet*p[i]; rz=rzn; }
+    if(defl){ bspmv(A0,x.data(),Ap.data()); std::vector<double> rr(N);        // final exact near-null correction
+        for(int i=0;i<N;i++) rr[i]=bp[i]-Ap[i]; addZ(rr.data(),x.data()); }
     bspmv(A0,x.data(),Ap.data());
     double tr=0; for(int i=0;i<N;i++){ double e=bp[i]-Ap[i]; tr+=e*e; }
     double true_rel=std::sqrt(tr)/res0, mx=0; for(int i=0;i<N;i++) mx=std::max(mx,std::fabs(x[i]));

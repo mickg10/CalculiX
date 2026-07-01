@@ -358,3 +358,19 @@ iterations) rather than the 6 analytic free RBMs. That is multi-day/multi-week r
 VALIDATED ASSETS that stand: (1) full TT-GMG built+run on 8 chips; (2) divergence root-caused; (3) no TT primitive
 gives fp32 products; (4) GMG_EMU_ABSERR deterministic proxy faithfully reproduces the TT failure (a reusable
 research tool). Gates: G1/G2/G5 pass; G3/G4/e2e blocked pending the correct deflated-CG research. Real operator restored.
+
+## CORRECT deflated PCG built + convergence threshold QUANTIFIED — 2026-07-01
+Implemented a proper deflated PCG (Saad DCG) in ccx_gmg_solve_from_dump: x0=Z E^-1 Z^T b, deflated initial residual,
+deflated operator PA = A - AZ E^-1 (AZ)^T applied each iter, final exact near-null correction. GMG_DEFL_CORR=1.
+  EXACT: converges IDENTICALLY to baseline (676->93->13.6->4.9) -> deflated PCG is CORRECT (prior attempts were buggy).
+Threshold sweep (abserr = bf16-PRODUCT absolute error proxy) WITH the correct deflated PCG:
+  abserr 4.69e-4 (TT matmul-diagonal level): STALLS 466      abserr 1e-5: STALLS ~7e3
+  abserr 1e-6: CONVERGES (3828->15.8 decreasing)             abserr 1e-8: baseline-like
+=> convergence threshold with 6-RBM deflation is ~1e-6; the TT matmul-diagonal (4.69e-4) is ~500x TOO COARSE.
+So 6-RBM deflation is CORRECT but INSUFFICIENT — the near-null space driving the bf16 divergence is broader than the
+6 rigid-body modes. FIX PATH (quantified, well-defined research): enlarge the deflation subspace — compute the k
+smallest eigenmodes of A (a few LOBPCG/inverse-iteration sweeps, done ONCE at setup on the host in fp64), deflate
+all k, and raise k until abserr=4.69e-4 converges. Cost: k-dim E per iter + k SpMVs at setup; k likely tens-to-low-
+hundreds. This is the concrete next research step, plus measuring the added per-iter cost against the timing gates.
+ASSETS: correct deflated PCG (committed), validated abserr proxy, full TT-GMG. Gates: G1/G2/G5 pass; G3/G4/e2e need
+the enlarged-deflation research. Real operator restored.
