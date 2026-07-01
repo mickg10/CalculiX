@@ -66,6 +66,35 @@ namespace {
 using clk = std::chrono::high_resolution_clock;
 static double secs(clk::time_point a, clk::time_point b){ return std::chrono::duration<double>(b-a).count(); }
 
+// --- TT-precision emulation (research probe, off by default) ---------------------------------------
+// GMG_EMU_BF16=1 rounds the SMOOTHER's SpMV and block-Jacobi results to bf16 (8-bit mantissa, round-to-
+// nearest-even) to emulate running the V-cycle smoother on a Tenstorrent Wormhole (bf16 matrix engine,
+// fp32 accumulate). The fp64 OUTER PCG, the exact double outer operator bspmv(A0), and the coarse solve
+// are UNCHANGED -- this measures only the convergence cost of a low-precision preconditioner on row236.
+static int g_emu_bf16 = 0;
+static int g_emu_bf16_maxlv = 1000;   // bf16 only on levels <= this (env GMG_EMU_BF16_MAXLV; 0 = finest only)
+static int g_emu_mode = 1;            // compensated-SpMV precision (GMG_EMU_MODE): 1=bf16x1, 2=bf16x2(~fp16+), 3=bf16x3(~fp32), 32=fp32
+// TT-GMG hook: when set by the Tenstorrent driver, the FINE-level (lv==0) smoother SpMV y=A0*x runs on the
+// 8-chip mesh (bf16x3, ~fp32). Coarser levels, the vcycle residual, and the outer PCG operator stay exact fp64
+// on the host -> the true-residual acceptance gate is unchanged (a wrong TT result can never be accepted).
+static int  (*g_tt_fine_spmv)(const double* x, double* y) = nullptr;   // returns 0 on success
+static long g_tt_fine_n = 0;          // n (=3*nb) the hook expects; guards accidental level/size mismatch
+                                      // multi-pass = Ozaki/error-free-transform: split each value into hi/lo bf16 terms,
+                                      // do extra bf16 products, accumulate fp32 -> recover precision from fast bf16 passes.
+static inline double bf16round(double d){
+    float f=(float)d; uint32_t u; std::memcpy(&u,&f,4);
+    uint32_t rb=(u>>16)&1u; u += 0x7FFFu + rb;            // round-to-nearest-even into the top 16 bits
+    u &= 0xFFFF0000u; std::memcpy(&f,&u,4); return (double)f;
+}
+static inline void bf16vec(double*v,int n){
+    #pragma omp parallel for schedule(static)
+    for(int i=0;i<n;i++) v[i]=bf16round(v[i]);
+}
+static inline float bf16f(float f){                       // round a float to bf16 (RNE)
+    uint32_t u; std::memcpy(&u,&f,4); uint32_t rb=(u>>16)&1u; u += 0x7FFFu + rb;
+    u &= 0xFFFF0000u; std::memcpy(&f,&u,4); return f;
+}
+
 struct CSR { int nr=0,nc=0; std::vector<long> ptr; std::vector<int> col; std::vector<double> val;
              long nnz() const { return ptr.empty()?0:ptr.back(); } };
 
@@ -110,6 +139,28 @@ static void bspmv(const BCSR&B,const double*x,double*y){
             double x0=xx[0],x1=xx[1],x2=xx[2];
             y0+=m[0]*x0+m[1]*x1+m[2]*x2; y1+=m[3]*x0+m[4]*x1+m[5]*x2; y2+=m[6]*x0+m[7]*x1+m[8]*x2; }
         y[3*I]=y0; y[3*I+1]=y1; y[3*I+2]=y2; }
+}
+// Tenstorrent-Wormhole SpMV emulation with a COMPENSATED (Ozaki/error-free-transform) precision ladder.
+// Each fp value is split into bf16 terms hi + lo (+ lo2); the product uses 1/3/6 bf16 sub-products so the
+// result recovers ~bf16 / ~fp16+ / ~fp32 accuracy from fast bf16 passes, accumulated in fp32. This models
+// what a real TT kernel would do: N bf16 matmul passes (N*throughput) to reach the accuracy PCG needs.
+static inline float prod_emu(double mval,double xval){
+    if(g_emu_mode==32) return (float)mval*(float)xval;          // fp32 reference
+    float mf=(float)mval, xf=(float)xval, mh=bf16f(mf), xh=bf16f(xf);
+    float p=mh*xh;                                              // pass 1: bf16 x bf16
+    if(g_emu_mode>=2){ float ml=bf16f(mf-mh), xl=bf16f(xf-xh); p+=mh*xl+ml*xh;             // +2 cross terms (~16-bit)
+        if(g_emu_mode>=3){ float ml2=bf16f(mf-mh-ml), xl2=bf16f(xf-xh-xl); p+=ml*xl+mh*xl2+ml2*xh; } } // ~24-bit ≈ fp32
+    return p;
+}
+static void bspmv_emu(const BCSR&B,const double*x,double*y){
+    #pragma omp parallel for schedule(static)
+    for(int I=0;I<B.nb;I++){ float y0=0,y1=0,y2=0;
+        for(long b=B.ptr[I];b<B.ptr[I+1];b++){ const double*m=&B.val[(size_t)b*9]; const double*xx=&x[3*B.col[b]];
+            y0+=prod_emu(m[0],xx[0])+prod_emu(m[1],xx[1])+prod_emu(m[2],xx[2]);
+            y1+=prod_emu(m[3],xx[0])+prod_emu(m[4],xx[1])+prod_emu(m[5],xx[2]);
+            y2+=prod_emu(m[6],xx[0])+prod_emu(m[7],xx[1])+prod_emu(m[8],xx[2]); }
+        if(g_emu_mode==1){ y[3*I]=bf16round((double)y0); y[3*I+1]=bf16round((double)y1); y[3*I+2]=bf16round((double)y2); }
+        else { y[3*I]=(double)y0; y[3*I+1]=(double)y1; y[3*I+2]=(double)y2; } }   // multi-pass keeps fp32 result
 }
 // 3x3 block-diagonal inverse straight from BCSR
 static void block_diag_inv_b(const BCSR&B, std::vector<double>&Dinv){
@@ -206,18 +257,27 @@ static double lmax(const BCSR&B,const std::vector<double>&Dinv){
 struct Level { CSR A,P,Pt; BCSR B; std::vector<double> Dinv; double rho; std::vector<long> ijk; };
 struct WS { std::vector<double> r,z,d,Ad,res,rc,ec; };
 
+// Fine-smoother SpMV dispatch: TT 8-chip bf16x3 (lv==0, if hooked & size matches) > bf16 emulation > exact double.
+// The hook falling back on any nonzero return keeps the solve correct even if a TT apply fails mid-run.
+static inline void smoo_spmv(const Level&L,const double*x,double*y,int lv,bool emu){
+    if(g_tt_fine_spmv && lv==0 && (long)L.B.nb*3==g_tt_fine_n){ if(g_tt_fine_spmv(x,y)==0) return; }
+    if(emu) bspmv_emu(L.B,x,y); else bspmv(L.B,x,y);
+}
+
 /* 4th-kind Chebyshev block-Jacobi smoother. NOTE: float (mixed) SpMV was tried and REJECTED — it degrades
    convergence 15->28 iters on this near-singular operator (soft modes need double even in the preconditioner),
    a net loss vs double. Keep double. */
-static void cheb4(const Level&L,int deg,const double*rhs,double*x,WS&w){
-    int n=L.B.nb*3; bspmv(L.B,x,w.Ad.data());
+static void cheb4(const Level&L,int deg,const double*rhs,double*x,WS&w,int lv){
+    int n=L.B.nb*3; bool emu = g_emu_bf16 && lv<=g_emu_bf16_maxlv;   // bf16 only on the requested (fine) levels
+    smoo_spmv(L,x,w.Ad.data(),lv,emu);
     #pragma omp parallel for schedule(static)
     for(int i=0;i<n;i++){ w.r[i]=rhs[i]-w.Ad[i]; w.d[i]=0; }
     for(int it=1;it<=deg;it++){ double c=(double)(2*it-3)/(double)(2*it+1); double a=(double)(4*(2*it-1))/((double)(2*it+1)*L.rho);
         bj_apply(L.Dinv,w.r.data(),w.z.data(),n);
+        if(emu && g_emu_mode==1) bf16vec(w.z.data(),n);  // bf16 block-Jacobi (single-pass mode only)
         #pragma omp parallel for schedule(static)
         for(int i=0;i<n;i++){ w.d[i]=c*w.d[i]+a*w.z[i]; x[i]+=w.d[i]; }
-        if(it<deg){ bspmv(L.B,w.d.data(),w.Ad.data());
+        if(it<deg){ smoo_spmv(L,w.d.data(),w.Ad.data(),lv,emu);
             #pragma omp parallel for schedule(static)
             for(int i=0;i<n;i++) w.r[i]-=w.Ad[i]; } }
 }
@@ -240,13 +300,32 @@ static void vcycle(GmgCtx&g, int lv, const double*rhs, double*x){
     if(lv==(int)g.LV.size()-1){ for(int i=0;i<g.Cn;i++) x[i]=rhs[i]; int nrhs=1,info=0; char uplo='L';
         dpotrs_(&uplo,&g.Cn,&nrhs,g.Cfac.data(),&g.Cn,x,&g.Cn,&info); if(info!=0) g.coarse_fail=1; return; }
     Level&L=g.LV[lv]; WS&w=g.WSP[lv]; int n=L.A.nr;
-    for(int s=0;s<g.NPRE;s++) cheb4(L,g.DEG,rhs,x,w);
+    for(int s=0;s<g.NPRE;s++) cheb4(L,g.DEG,rhs,x,w,lv);
     bspmv(L.B,x,w.Ad.data()); for(int i=0;i<n;i++) w.res[i]=rhs[i]-w.Ad[i];
     int ncoarse=L.P.nc; spmv(L.Pt,w.res.data(),w.rc.data());
     for(int i=0;i<ncoarse;i++) w.ec[i]=0;
     for(int gi=0;gi<g.GAMMA;gi++) vcycle(g,lv+1,w.rc.data(),w.ec.data());
     spmv(L.P,w.ec.data(),w.Ad.data()); for(int i=0;i<n;i++) x[i]+=w.Ad[i];
-    for(int s=0;s<g.NPOST;s++) cheb4(L,g.DEG,rhs,x,w);
+    for(int s=0;s<g.NPOST;s++) cheb4(L,g.DEG,rhs,x,w,lv);
+}
+// Fine-level operator dump for the TT-GMG port (env GMG_DUMP_FINE=path). Binary layout (all little-endian):
+//   int64 nb, int64 nblk, int64 nx, int64 ny, int64 nz
+//   int64 ptr[nb+1]; int32 col[nblk]; double val[nblk*9]   (BCSR: block (I,J) = val[9*slot + 3r + c])
+//   int64 ijk[nb*3]                                          (lattice coord of each block-row, stencil structure)
+//   double xref[3*nb]; double yref[3*nb]                     (reference SpMV y = A*x for bit-correctness on TT)
+static void dump_fine(const char*path,const BCSR&B,const std::vector<long>&ijk,const double*bp,int n,long nx,long ny,long nz){
+    FILE*f=fopen(path,"wb"); if(!f){ fprintf(stderr,"[gmg] GMG_DUMP_FINE: cannot open %s\n",path); return; }
+    int64_t nb=B.nb, nblk=B.ptr.back(), h[5]={nb,nblk,nx,ny,nz};
+    fwrite(h,8,5,f);
+    fwrite(B.ptr.data(),8,(size_t)nb+1,f);
+    fwrite(B.col.data(),4,(size_t)nblk,f);
+    fwrite(B.val.data(),8,(size_t)nblk*9,f);
+    fwrite(ijk.data(),8,(size_t)nb*3,f);
+    std::vector<double> x(n),y(n); for(int i=0;i<n;i++) x[i]=bp[i]; bspmv(B,x.data(),y.data());
+    fwrite(x.data(),8,(size_t)n,f); fwrite(y.data(),8,(size_t)n,f);
+    fclose(f);
+    fprintf(stderr,"[gmg] GMG_DUMP_FINE: wrote %s (nb=%lld nblk=%lld lattice=%lldx%lldx%lld)\n",
+            path,(long long)nb,(long long)nblk,(long long)nx,(long long)ny,(long long)nz);
 }
 } // namespace
 
@@ -269,6 +348,12 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
     if((ev=getenv("GMG_GAMMA")) && (lv=strtol(ev,NULL,10))>0) GAMMA=(int)(lv<4   ?lv:4);
     if((ev=getenv("GMG_MAXIT")) && (lv=strtol(ev,NULL,10))>0) maxit=(int)(lv<100000?lv:100000);
     if((ev=getenv("GMG_TOL"))   && atof(ev)>0) tol=atof(ev);
+    g_emu_bf16 = (getenv("GMG_EMU_BF16") && atoi(getenv("GMG_EMU_BF16"))>0) ? 1 : 0;   // TT-precision probe
+    g_emu_bf16_maxlv = 1000;
+    if((ev=getenv("GMG_EMU_BF16_MAXLV")) && (lv=strtol(ev,NULL,10))>=0) g_emu_bf16_maxlv=(int)(lv<1000?lv:1000);
+    g_emu_mode = 1;
+    if((ev=getenv("GMG_EMU_MODE")) && (lv=strtol(ev,NULL,10))>0) g_emu_mode=(int)lv;
+    if(g_emu_bf16 && verbose) fprintf(stderr,"[gmg] TT-PRECISION EMULATION ON: mode=%d (1=bf16x1 3=bf16x3 32=fp32) smoother on levels<=%d (outer PCG + coarser stay fp64)\n",g_emu_mode,g_emu_bf16_maxlv);
     if(mt<3 || mt>64 || nk<=0 || maxit<=0 || !(tol>0)) return 1;   // invalid inputs -> direct fallback
     int gmg_amb =
 #ifdef _OPENMP
@@ -385,6 +470,8 @@ extern "C" int ccx_gmg_solve_mem(int n, const long* cs, const int* ri, const dou
         int ncoarse = (lv<(int)LV.size()-1)? LV[lv].P.nc : nn; w.rc.resize(ncoarse); w.ec.resize(ncoarse); }
     if(verbose) fprintf(stderr,"[gmg] hierarchy %zu levels, coarsest n=%d, total setup %.2fs (deg=%d npre=%d npost=%d gamma=%d)\n",
                         LV.size(),Cn,secs(T0,clk::now()),DEG,NPRE,NPOST,GAMMA);
+
+    if((ev=getenv("GMG_DUMP_FINE")) && ev[0]) dump_fine(ev,LV[0].B,LV[0].ijk,bp.data(),n,nx,ny,nz);   // TT-GMG port target
 
     // ---- PCG with V/W-cycle preconditioner ----
     const BCSR&A0=LV[0].B; int N=n;
