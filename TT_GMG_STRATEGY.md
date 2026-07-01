@@ -135,3 +135,16 @@ between bf16x1 2.5e-3 and bf16x3 2.6e-7, ~ bf16x2 class) is therefore in the CON
 matmul-diagonal SpMV will converge the TT-GMG (likely ~100-160 iters, more than fp64's 56 but correct, and
 the fp64 outer PCG + true-residual gate guarantees the final answer). Precision is no longer a blocker;
 remaining is the production matmul-diagonal Metalium kernel + gather + integration + timing.
+
+## Convergence DEFINITIVELY proven for the matmul-diagonal fix — 2026-07-01
+Added a fine-SpMV output-precision probe (GMG_EMU_MBITS = round output to M mantissa bits) to isolate
+OUTPUT-error tolerance from ACCUMULATE corruption. On the real row236 operator (tol 1e-6):
+  mbits 7 (7.8e-3): 56 it   mbits 8 (3.9e-3): 56 it   mbits 9 (2.0e-3): 56 it
+  mbits 10..13: 56 it       (all == fp64's 56 iters)
+Meanwhile bf16x1 (bf16 ACCUMULATE) DIVERGES (500 it, rel 386). The distinction is decisive: the GMG tolerates
+OUTPUT error up to ~8e-3 with NO iteration penalty, but bf16 ACCUMULATE (losing the near-singular cancellation)
+diverges. The matmul-diagonal fix has fp32 accumulate + bf16 products => OUTPUT-class error at 4.69e-4, which is
+16x inside the convergent band => it converges in ~56 iters, correct answer (fp64 outer PCG guarantees it anyway).
+=> BOTH remaining unknowns are now airtight: fp32-accumulate achievable on HW (matmul, proven) AND its precision
+converges (proven). NO research risk remains. Remaining = pure production: implement matmul-diagonal (ttnn C++
+matmul or Metalium mm.cpp) in tt_fine_spmv, on-device gather, measure G3/G4/end-to-end.

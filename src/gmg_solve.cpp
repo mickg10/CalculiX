@@ -79,6 +79,12 @@ static int g_emu_mode = 1;            // compensated-SpMV precision (GMG_EMU_MOD
 // on the host -> the true-residual acceptance gate is unchanged (a wrong TT result can never be accepted).
 extern "C" { int (*g_tt_fine_spmv)(const double* x, double* y) = nullptr;   // returns 0 on success (set by TT driver)
              long g_tt_fine_n = 0; }  // n (=3*nb) the hook expects; guards accidental level/size mismatch
+static int g_emu_mbits = 0;   // >0: round fine-SpMV output to this many mantissa bits (probe matmul-diagonal precision)
+static inline double round_mbits(double x, int mb){
+    if(x==0.0 || !std::isfinite(x)) return x;
+    int e; double m = std::frexp(x, &e); double s = std::ldexp(1.0, mb);
+    return std::ldexp(std::round(m*s)/s, e);
+}
                                       // multi-pass = Ozaki/error-free-transform: split each value into hi/lo bf16 terms,
                                       // do extra bf16 products, accumulate fp32 -> recover precision from fast bf16 passes.
 static inline double bf16round(double d){
@@ -262,6 +268,7 @@ struct WS { std::vector<double> r,z,d,Ad,res,rc,ec; };
 static inline void smoo_spmv(const Level&L,const double*x,double*y,int lv,bool emu){
     if(g_tt_fine_spmv && lv==0 && (long)L.B.nb*3==g_tt_fine_n){ if(g_tt_fine_spmv(x,y)==0) return; }
     if(emu) bspmv_emu(L.B,x,y); else bspmv(L.B,x,y);
+    if(g_emu_mbits>0 && lv==0){ int n=L.B.nb*3; for(int i=0;i<n;i++) y[i]=round_mbits(y[i],g_emu_mbits); }  // probe fine-SpMV precision
 }
 
 /* 4th-kind Chebyshev block-Jacobi smoother. NOTE: float (mixed) SpMV was tried and REJECTED — it degrades
@@ -564,7 +571,9 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     g_emu_bf16 = (getenv("GMG_EMU_BF16") && atoi(getenv("GMG_EMU_BF16"))>0) ? 1 : 0;
     g_emu_bf16_maxlv = 1000; g_emu_mode = 1;
     if((ev=getenv("GMG_EMU_MODE")) && (lvv=strtol(ev,NULL,10))>0) g_emu_mode=(int)lvv;
+    g_emu_mbits = (getenv("GMG_EMU_MBITS") && (lvv=strtol(getenv("GMG_EMU_MBITS"),NULL,10))>0) ? (int)lvv : 0;
     if(g_emu_bf16 && verbose) fprintf(stderr,"[tt-gmg] CPU EMU smoother ON mode=%d (2=bf16x2 3=bf16x3 32=fp32)\n",g_emu_mode);
+    if(g_emu_mbits && verbose) fprintf(stderr,"[tt-gmg] fine-SpMV output rounded to %d mantissa bits (2^-%d ~ %.1e rel)\n",g_emu_mbits,g_emu_mbits,std::ldexp(1.0,-g_emu_mbits));
     { Level L; L.A=std::move(A); L.ijk=ijk; LV.push_back(std::move(L)); }
     while((int)LV[LV.size()-1].A.nr>6000){
         size_t fi=LV.size()-1; int nbf=LV[fi].A.nr/3; std::vector<long> cijk; int nbc;
