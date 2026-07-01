@@ -100,3 +100,15 @@ optimization loop needs.
 ## Acceptance = done when
 row236 solves on 8×Wormhole with `maxU = golden`, cold ≤ 5 s (warm ≤ 1.5 s), fp64 host gate intact, and the
 result feeds the CCX solve path unchanged (opt-in, off by default).
+
+## Root cause of the smoother divergence (definitive, API-level) — 2026-07-01
+The bf16x3 fine-SpMV kernel used tt-metal **eltwise** `mul_tiles` with acc_to_dest. Source inspection of
+`tt_metal/hw/inc/api/compute/eltwise_binary.h` shows `mul_tiles`/`add_tiles`/`sub_tiles`/`binary_dest_reuse_tiles`
+ALL hardcode `clear_fp32_dst_acc = true` -> the fp32 accumulator is wiped every call, so the eltwise path
+CANNOT accumulate in fp32 regardless of `fp32_dest_acc_en`/`MathFidelity`. Proven on HW: bf16x1 on a dense
+random-vector operator = 0.38 err vs host fp32 2.3e-3; 6-term = 1.5; all earlier "fp32-exact 6.4e-7" numbers
+were masked by peak-normalized metrics on smooth/sparse vectors. Only `matmul_tiles` accumulates DST+=C in fp32
+(and `reduce_init` has `enforce_fp32_accumulation`). FIX: reframe the DIA/stencil K-reduction onto matmul_tiles
+(diagonal-trick: C[m,m]=sum_k a_k[m]*b_k[m] via A[m,k]@B[k,n]; or block-3x3 stencil matmul) -> true fp32 accumulate.
+This is the remaining blocker for G3-precision -> G4 -> end-to-end. Everything else (driver, hook, dump-solve,
+CPU convergence, 8-chip sharding, gather) is built and committed.
