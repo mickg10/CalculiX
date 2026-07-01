@@ -692,19 +692,25 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
     for(int i=0;i<N;i++) p[i]=z[i]; double rz=ddot(r.data(),z.data(),N);
     auto ts=clk::now(); int iters=maxit; double rel=1; bool just_switched=false;
-    for(int it=0;it<maxit;it++){
+    std::vector<double> x_best; double best_rel=1e300;   // deflated PCG with approximate eig-vectors can drift AFTER
+    for(int it=0;it<maxit;it++){                          // reaching the minimum -> keep the best iterate, stop on divergence
         bspmv(A0,p.data(),Ap.data()); Papply(Ap.data());     // DEFLATED operator P*A*p (keeps CG in the complement)
         double pAp=ddot(p.data(),Ap.data(),N); if(!(pAp>0.0)) break;
         double al=rz/pAp;
         for(int i=0;i<N;i++){ x[i]+=al*p[i]; r[i]-=al*Ap[i]; }
-        rel=std::sqrt(ddot(r.data(),r.data(),N))/res0; if(rel<tol){ iters=it+1; break; }
+        rel=std::sqrt(ddot(r.data(),r.data(),N))/res0;
+        if(rel<best_rel){ best_rel=rel; x_best=x; }
+        if(rel<tol){ iters=it+1; break; }
         if(g_hybrid_tol>0.0 && g_hybrid_active && rel<g_hybrid_tol){ g_hybrid_active=false; just_switched=true;  // exact fp64 finish
             if(verbose) fprintf(stderr,"[tt-gmg] HYBRID: rel=%.3e < %.3e -> exact smoother finish (CG restart) at it=%d\n",rel,g_hybrid_tol,it); }
+        if(!g_hybrid_active && best_rel<g_hybrid_tol && rel>3.0*best_rel){ iters=it+1;   // exact-phase divergence -> return best
+            if(verbose) fprintf(stderr,"[tt-gmg] exact-phase divergence rel=%.3e > 3x best=%.3e -> return best iterate at it=%d\n",rel,best_rel,it); break; }
         if(verbose && (it<6||it%5==0)) fprintf(stderr,"[tt-gmg] it=%d rel=%.3e (%.2fs elapsed)\n",it,rel,secs(ts,clk::now()));
         for(int i=0;i<N;i++) z[i]=0; vcycle(ctx,0,r.data(),z.data());
         double rzn=ddot(r.data(),z.data(),N); if(!(rz!=0.0)||!std::isfinite(rzn)) break;
         if(just_switched){ for(int i=0;i<N;i++) p[i]=z[i]; rz=rzn; just_switched=false; }   // CG RESTART on preconditioner switch
         else { double bet=rzn/rz; for(int i=0;i<N;i++) p[i]=z[i]+bet*p[i]; rz=rzn; } }
+    if(!x_best.empty() && best_rel<rel){ x=x_best; rel=best_rel; }   // return the best iterate seen
     if(defl){ bspmv(A0,x.data(),Ap.data()); std::vector<double> rr(N);        // final exact near-null correction
         for(int i=0;i<N;i++) rr[i]=bp[i]-Ap[i]; addZ(rr.data(),x.data()); }
     bspmv(A0,x.data(),Ap.data());

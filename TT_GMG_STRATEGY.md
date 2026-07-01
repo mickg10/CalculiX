@@ -433,3 +433,32 @@ unreachable (4x SSH timeouts) mid-test — infrastructure, not a code issue. RE-
 NET THIS SESSION: G3 reclassified from "fundamentally blocked" to "convergence SOLVED via computed-eigenvector
 deflated PCG (proven on the abserr proxy); hybrid fp64 finish implemented to reach tol; pending confirmation + real-TT
 integration + timing". Gates: G1/G2/G5 pass; G3/G4/e2e still not MEASURED end-to-end on real TT.
+
+## Box returned; /tmp wiped by reboot -> regenerating dump + ready to confirm eig-deflation — 2026-07-01
+tt-quietbox came back (auto-watcher fired) but had REBOOTED: /tmp wiped, so /tmp/row236_fine.bin (2.4GB dump),
+row236_real_op.bin, row236_nbr.bin all gone; no ccx binary on the box carried the dump code either. Recovery:
+ - Located the row236 deck: ccx_optimize/tests/_work/row236_gmg/dn.inp (121MB) + ccx_opt exists but stale builds/
+   lacked dump code. The build source ccx_optimize/src/gmg_solve.cpp was stale (Jun17, no dump/eig); synced it
+   forward from calculix-fork/src/gmg_solve.cpp (my TT superset) and rebuilt: builds/15/ccx_opt (accel, GMG enabled,
+   GMG_DUMP_FINE present).
+ - Regenerating /tmp/row236_fine.bin via: (cd tests/_work/row236_gmg; GMG_DUMP_FINE=/tmp/row236_fine.bin
+   CCX_ACCEL_SOLVE=gmg OMP_NUM_THREADS=12 builds/15/ccx_opt dn).
+ - Pre-built /tmp/ttgmg_test_mac (clang++ tt_gmg_test.cpp + fork gmg_solve.cpp + Accelerate) so the eig-deflation
+   hybrid confirmation (GMG_DEFL_CORR=1 GMG_DEFL_EIG=1 GMG_DEFL_K=24 GMG_EMU_ABSERR=4.69e-4 GMG_HYBRID_TOL=1e-2)
+   can run LOCALLY on the Mac (CPU-only) the moment the dump lands — no box needed for the algorithm proof. Real-TT
+   integration + G1-G5/e2e timing still need the box (dump scp'd back + tt-metal kernels).
+
+## CONFIRMED on the proxy: eig-deflation + hybrid CONVERGES to the CORRECT answer (rc=0) — 2026-07-01
+After regenerating the dump, ran the full CPU confirmation on the Mac:
+  GMG_DEFL_CORR=1 GMG_DEFL_EIG=1 GMG_DEFL_K=24 GMG_EMU_ABSERR=4.69e-4 GMG_HYBRID_TOL=1e-2 ttgmg_test row236_fine.bin
+  -> PCG iters=69, true_rel=1.34e-6 (< 2e-6 gate), maxU=95.8129714 == golden reduced 95.813, rc=0. PASS.
+Root cause of the earlier "maxU right but rel=1.20": the deflated PCG with APPROXIMATE eigenvectors (5 inverse-iter
+sweeps) converges to ~1e-6 then goes CG-unstable and drifts back up. Trajectory: it=60 2.98e-6, it=65 1.16e-6 (min),
+then diverges. FIX (committed): track the best iterate + stop on exact-phase divergence (rel > 3x best), return best.
+So the full recipe that makes the bf16/TT fine-SpMV converge to the correct row236 solution is:
+  (1) computed near-null eigenvector deflation (Saad DCG, projected operator PA), (2) bf16 smoother in the complement
+  to ~5e-4 floor, (3) HYBRID switch to exact fp64 smoother + CG restart, (4) best-iterate + divergence stop.
+This CLOSES the G3 convergence/correctness question at the ALGORITHM level (on the faithful abserr proxy). Remaining
+for the GATES: real-TT run (bf16 matmul-diagonal may be less pessimistic than the abserr proxy on the complement),
+and TIMING (eig setup = k*eigit vcycles is expensive -> tune k/eigit/amortize; then measure G3<=3ms, G4<=1s, e2e).
+Dump compressed to /tmp/row236_fine.bin.zst (714 MB) for transfer to tt-quietbox (back online).
