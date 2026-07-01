@@ -159,3 +159,19 @@ PROVEN ttnn matmul-diagonal fine-SpMV. All three pieces are now proven independe
 REMAINING = assemble: Python callback = gather b=x[nbr] + full-operator ttnn matmul-diagonal (A=coeff^T resident,
 B per call, 6 cross-term batched matmuls, diagonal via C[:,arange,arange]) -> converge, measure G3/G4/end-to-end.
 Per-call is slow first (gather + batched matmul); optimize (resident x, on-device gather) for the timing gates.
+
+## CRITICAL: matmul-diagonal DIVERGES on cancellation vectors — root cause found — 2026-07-01
+Assembled the full TT-GMG (Python ctypes libgmg.so + ttnn matmul-diagonal callback, tt_gmg/gmg_tt.py) and ran it
+on the real operator. It DIVERGED (it=0..3 rel 1534->1988->2225->2376; CPU baseline 641->404->285->217 converges).
+Debugged: DIA layout is exact (5.37e-8 vs true BCSR), batched matmul-diag correct (3.65e-4), full-op SpMV on
+random/RBM/smooth vectors 1e-3 and unbiased. BUT a runtime probe on the ACTUAL solver vectors found the killer:
+  apply1: |x|=1.9e-6 |y|=2.5e-6 rel_err 1.6e-3   (ok)
+  apply2: |x|=64.0   |y|=0.026  rel_err = 36.3 (3600%!)  <-- the Chebyshev smoother makes |Ax| ~ |x|/2400
+The near-singular operator + Chebyshev recurrence generate EXTREME-cancellation vectors (|Ax|<<|x|). The
+matmul-diagonal fp32-ACCUMULATES but its PRODUCTS are bf16-rounded to ~11 bits (4.69e-4 floor, tested 6/9-term +
+packer_l1_acc). Absolute product error ~4.7e-4*|A||x| ~ 0.03 SWAMPS the true |y|=0.026 -> garbage -> divergence.
+This is the SAME cancellation failure as bf16x1, just moved from accumulate to products. Random-vector accuracy
+(4.69e-4) was misleading; the smoother's cancellation vectors need ~fp32 PRODUCTS (CPU emu bf16x3 = 2.6e-7 products
+-> converges). FIX PATH: fp32-accurate products = eltwise mul (16-bit bf16xbf16 product, packed fp32) + reduce_tile
+enforce_fp32_accumulation (reduce_ROW), NOT the product-rounding matmul. Next: verify ttnn reduce/eltwise gives
+fp32 products+accumulate on a cancellation case, then rebuild the callback SpMV on that.
