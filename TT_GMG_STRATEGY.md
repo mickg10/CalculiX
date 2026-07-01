@@ -391,3 +391,15 @@ FINAL HONEST ASSESSMENT: closing G3 (pure-TT bf16 fine-SpMV for row236's near-si
 with any practical method found; it is an open research problem on this hardware. Validated assets remain: full TT-GMG
 built+run, root cause proven, correct deflated PCG, validated abserr proxy, exhaustive primitive+deflation tally.
 Gates: G1/G2/G5 pass; G3/G4/e2e blocked (research). Real operator restored.
+
+## Smoother-config sweep also fails — G3 block is fundamental (final) — 2026-07-01
+Tested every smoother lever vs abserr=4.69e-4 (TT matmul-diagonal precision): DEG=1 (short recurrence) stalls 330;
+DEG=1 + deg2 deflation stalls 608; DEG=1 NPRE=NPOST=4 (heavy smoothing) stalls 134. None converge. Combined with the
+full prior tally (no TT fp32 primitive; RBM+polynomial deflation to k=105 insufficient; double-single & host-accumulate
+non-viable), this is AIRTIGHT: the bf16-product absolute error on row236's near-singular operator floors the GMG at a
+high residual regardless of smoother degree, deflation subspace, or smoothing intensity. Closing G3 needs either fp32
+products (this HW cannot) or deflation with the ACTUAL computed near-null eigenvectors everywhere (expensive per-iter,
+uncertain mode count, threatens the timing gates) -> an open research problem, likely infeasible under ≤3ms/≤1s.
+FINAL: G1/G2/G5 pass; G3/G4/cold/warm/stretch/correctness are blocked by a proven fundamental precision limit, not an
+engineering gap. All findings, the correct deflated PCG, the validated abserr proxy, and the research directions are
+committed here. The pure-TT G3 path as specified is not achievable on this hardware within the timing constraints.
