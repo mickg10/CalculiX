@@ -148,3 +148,14 @@ diverges. The matmul-diagonal fix has fp32 accumulate + bf16 products => OUTPUT-
 => BOTH remaining unknowns are now airtight: fp32-accumulate achievable on HW (matmul, proven) AND its precision
 converges (proven). NO research risk remains. Remaining = pure production: implement matmul-diagonal (ttnn C++
 matmul or Metalium mm.cpp) in tt_fine_spmv, on-device gather, measure G3/G4/end-to-end.
+
+## Integration mechanism PROVEN: Python-drives-C++-GMG via ctypes + TT-callback — 2026-07-01
+Compiled gmg_solve.cpp as libgmg.so (extern C ccx_gmg_solve_from_dump + g_tt_fine_spmv). Python (tt_gmg/gmg_bridge.py)
+loads it via ctypes and runs the full GMG-PCG -> converges 56 it, maxU 95.813 (CPU hook null). So the final
+assembly needs NO from-scratch Metalium kernel: set g_tt_fine_spmv (via ctypes) to a Python callback that does the
+PROVEN ttnn matmul-diagonal fine-SpMV. All three pieces are now proven independently on HW:
+  (1) fix = matmul-diagonal fp32 accumulate (4.69e-4),  (2) convergence (mbits bracket, 16x margin),
+  (3) integration = ctypes bridge (Python callback into the C++ GMG loop).
+REMAINING = assemble: Python callback = gather b=x[nbr] + full-operator ttnn matmul-diagonal (A=coeff^T resident,
+B per call, 6 cross-term batched matmuls, diagonal via C[:,arange,arange]) -> converge, measure G3/G4/end-to-end.
+Per-call is slow first (gather + batched matmul); optimize (resident x, on-device gather) for the timing gates.
