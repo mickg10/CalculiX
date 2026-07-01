@@ -300,7 +300,7 @@ static void deflate_rbm(int n,double*v){ for(auto&z:g_Z){ double d=0; for(int i=
 // Fine-smoother SpMV dispatch: TT 8-chip bf16x3 (lv==0, if hooked & size matches) > bf16 emulation > exact double.
 // The hook falling back on any nonzero return keeps the solve correct even if a TT apply fails mid-run.
 static inline void smoo_spmv(const Level&L,const double*x,double*y,int lv,bool emu){
-    if(g_tt_fine_spmv && lv==0 && (long)L.B.nb*3==g_tt_fine_n){ if(g_tt_fine_spmv(x,y)==0) return; }
+    if(g_tt_fine_spmv && g_hybrid_active && lv==0 && (long)L.B.nb*3==g_tt_fine_n){ if(g_tt_fine_spmv(x,y)==0) return; }
     if(emu) bspmv_emu(L.B,x,y); else bspmv(L.B,x,y);
     if(g_emu_mbits>0 && lv==0){ int n=L.B.nb*3; for(int i=0;i<n;i++) y[i]=round_mbits(y[i],g_emu_mbits); }  // probe fine-SpMV precision
     if(g_emu_abserr>0.0 && g_hybrid_active && lv==0){   // emulate bf16-PRODUCT absolute error: DETERMINISTIC (fixed per-DOF sign so the
@@ -659,6 +659,7 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
     if(defl){
         if(g_defl_eig){   // COMPUTED near-null eigenvectors via inverse iteration (vcycle ~ A^-1), exact smoother
             int k=g_defl_k; double save_ae=g_emu_abserr; g_emu_abserr=0.0;
+            bool save_ha=g_hybrid_active; g_hybrid_active=false;   // exact CPU smoother for the eigenvector inverse iteration
             g_Z.assign(k,std::vector<double>(N));
             uint64_t s=0x243F6A8885A308D3ULL;
             for(int a=0;a<k;a++) for(int i=0;i<N;i++){ s^=s<<13;s^=s>>7;s^=s<<17; g_Z[a][i]=((double)((s>>11)&2047)/1024.0-1.0); }
@@ -667,7 +668,7 @@ extern "C" int ccx_gmg_solve_from_dump(const char* path, int maxit, double tol, 
                 for(int a=0;a<k;a++){ for(int i=0;i<N;i++) yy[i]=0; vcycle(ctx,0,g_Z[a].data(),yy.data()); g_Z[a]=yy; }
                 for(int a=0;a<k;a++){ for(int b=0;b<a;b++){ double d=ddot(g_Z[a].data(),g_Z[b].data(),N); for(int i=0;i<N;i++) g_Z[a][i]-=d*g_Z[b][i]; }
                     double nr=std::sqrt(ddot(g_Z[a].data(),g_Z[a].data(),N)); if(nr>1e-30) for(int i=0;i<N;i++) g_Z[a][i]/=nr; } }
-            g_emu_abserr=save_ae;
+            g_emu_abserr=save_ae; g_hybrid_active=save_ha;
             if(verbose) fprintf(stderr,"[tt-gmg] computed %d near-null eigenvectors (%d inverse-iter sweeps)\n",k,g_defl_eigit);
         } else build_defl(LV[0],g_defl_deg);
         DZ=g_Z; K6=(int)DZ.size();
