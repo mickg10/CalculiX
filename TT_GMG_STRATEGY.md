@@ -205,3 +205,19 @@ products) then reduce_tile<SUM,REDUCE_ROW,true> over the (term,k) column-tiles -
 coeff/b column-tiles in [element,(term,k)] layout + a 1.0 scaler tile; (c) host: transpose to that layout + on-device
 gather; (d) wire into tt_fine_spmv, converge (expect ~56 it like emu bf16x3), measure G3/G4/end-to-end. Verify the
 reduce_tile<...,true> primitive on the exact-cancellation case FIRST (must match HOST bf16x3 err 2.6e-4, not 9.1).
+
+## Fix fully de-risked from API docs — 2026-07-01
+reduce.h: enforce_fp32_accumulation "Enable[s] accumulation of reduction in full FP32 precision (Requires
+DST_ACCUM_MODE==true)". So the fp32-reduce kernel is CONFIRMED buildable:
+  ComputeConfig: fp32_dest_acc_en=true (== DST_ACCUM_MODE).
+  compute: reduce_init<SUM,REDUCE_ROW,true>(cb_prod,cb_scaler,cb_out); per (term,k) column-tile:
+           eltwise mul -> fp32 CB (exact 16-bit product), reduce_tile<SUM,REDUCE_ROW,true>(cb_prod,cb_scaler,0,0,0);
+           reduce_uninit(); pack [32,1].
+  reader:  wh_generate_reduce_scaler(cb_scaler, 0x3f800000)  (1.0f) + deliver coeff/b column-tiles.
+This gives fp32 products AND fp32 accumulate == CPU emu bf16x3 (2.6e-7) -> converges (~56 it). Base example
+tt_metal/programming_examples/tt_gmg_solve builds; adapt its kernels. FULL remaining (multi-day): build+verify the
+reduce kernel on the exact-cancellation case (must hit ~2.6e-4 not 9.1), build the [element,(term,k)] transposed
+layout + on-device gather, wire into tt_fine_spmv, converge to maxU 95.81, measure G3<=3ms/G4<=1s/end-to-end.
+SESSION SUMMARY: built+ran full TT-GMG (diverged), root-caused (near-singular cancellation needs fp32 products+
+accumulate), disproved the matmul-diagonal "fix" (random-vector only), ruled out ALL ttnn ops, located+confirmed the
+custom reduce_tile<fp32> fix. G1/G2/G5 pass; G3/G4/end-to-end need the above build. Zero unknowns remain.
