@@ -431,3 +431,19 @@ still hit kernel.cpp:293 -> heterogeneous per-chip harvesting IS also real, so p
 (fixed includes + per-device programs) was never tested together before (the earlier per-device run timed out
 *because* of the broken include, retrying the failed compile forever). Now building+running that combo. Lesson:
 porting Metalium kernels across tt-metal versions requires fixing compute_kernel_api/dataflow include paths.
+
+## g15glx03 DEFINITIVE root cause: galaxy tt-metal lacks mul_tiles_init(acc_to_dest) -- fast-MAC needs v0.73.1 — 2026-07-05
+Traced ALL the galaxy failures to their true root. The compute kernel mac_compute.cpp calls
+`mul_tiles_init(cb_a, cb_b, 1/*acc_to_dest*/, 0/*call_line*/)` -- a 4-arg overload with fp32-destination
+ACCUMULATION that is the entire basis of the fast-MAC (accumulate a[k]*b[k] over the 81-term stencil into DST).
+The galaxy's flash-tree tt-metal (older version) only has `mul_tiles_init(uint32_t icb0, uint32_t icb1)` (2 args,
+no acc_to_dest). Compile error: "too many arguments to mul_tiles_init". So the compute kernel NEVER compiled ->
+no binary -> the kernel.cpp:293 dispatch failure chased all session. This is NOT fixable by include paths (fixed)
+or per-device programs (kern=0/mbox=0 but the compute kernel still fails to build). It is a HARD tt-metal API
+version incompatibility. To run the fast-MAC on the galaxy you must EITHER rewrite the compute kernel for the
+older API (manual accumulation via 2-arg mul_tiles + add_tiles across K -- substantial, uncertain) OR build
+tt-metal v0.73.1 on the galaxy (hours). CLEAN full-gate path is tt-quietbox, which HAS v0.73.1: the fast-MAC
+compiles + runs there, G3=3.46ms already measured, cold/warm/stretch achievable (one homogeneous program). This
+session on g15glx03 CLOSED: correctness/G1/G5 (golden 95.812971 via ttnn matmul-diagonal, which uses supported
+ops) + G2 (351ms). The fast-MAC timing gates are a v0.73.1-API feature -> tt-quietbox (tt-fold-gated) is the
+right box for them; the galaxy needs a compute-kernel port. Box restored, galaxy reset clean.
