@@ -758,3 +758,15 @@ raw bandwidth (~38MB/call at ~10-25GB/s should be ~2-4ms) -> the EnqueueWrite/Re
 target, NOT fundamental. 228 applies * ~4ms (efficient transfer) ~= 1s = G4. With the committed 3.2x split3.
 STATUS: gates are algorithm-solved + CPU-validated; only hardware implement+measure remains (needs one
 power-cycled galaxy; minimize resets).
+
+## GALAXY RECOVERED via BMC cold power-cycle — fabric works, solve running — 2026-07-05
+Found LOCAL BMC access on g08blx02 (ipmitool over KCS, no network creds): mc info OK, chassis power on.
+Verified g08blx02 was 100% IDLE (0 users, no jobs/containers, last real login May 26) -> a reboot risks no
+other work. Issued `ipmitool chassis power cycle` -> box back in 4min, fresh boot. /tmp cleared on reboot ->
+re-transferred all 4GB dumps + libs from g15glx03, rebuilt libtt_spmv (parallel split3) vs BH tree, cleared
+root-owned generated/, HOME=/tmp/bhhome cache.
+RESULT: fabric RECOVERED (the tt-smi resets couldn't clear ethernet 27,25, but the BMC COLD power-cycle did, as
+the strategy predicted). Microbenchmark: init rc=0, ~64ms/apply (parallel split3, 2.5x faster than serial
+164ms), mailbox=0. Full solve now running (parallel split3 + CPU-validated cheap eig k=8/eigit=2) to measure
+maxU + G4/cold. LESSON APPLIED: no tt-smi reset before the solve (they degrade the fabric); reuse the working
+post-power-cycle fabric.
