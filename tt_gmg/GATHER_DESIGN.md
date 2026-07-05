@@ -540,3 +540,22 @@ tt_spmv gather-apply hang -- add per-op timing inside tt_spmv (write-x / enqueue
 which enqueue blocks on the 32-chip mesh, and either fix the replicated-x gather path or fold the gather into
 the resident-x on-device smoother (the strategy's "resident x, on-device gather" optimization). This is a
 bounded device-debug phase on top of a proven end-to-end pipeline.
+
+## G4 hang PINPOINTED: EnqueueReadMeshBuffer blocks -> gather+MAC workload never completes — 2026-07-05
+Instrumented tt_spmv apply with flushed stderr markers around each enqueue. On a clean device (mailbox=0):
+  TTAPPLY_preWriteX  -> printed  (x-writes about to run)
+  TTAPPLY_preWorkload-> printed  (all 3 replicated x writes RETURNED ok)
+  TTAPPLY_preRead    -> printed  (EnqueueMeshWorkload(non-blocking) RETURNED ok)
+  TTAPPLY_postRead   -> NEVER printed  => hang is in EnqueueReadMeshBuffer(cq, cd, K->c, true)
+=> The blocking read of the fp32 output c hangs because the enqueued gather+MAC WORKLOAD never completes on the
+   32-chip mesh (no mailbox error; a core is stuck without erroring, or output c is never produced).
+KEY DIFF vs G3: spmv_mac (0.740ms, exact) uses mac_reader = direct a-terms x PRE-GATHERED b-terms (no on-device
+gather). tt_spmv uses gather_reader = gather x on-device by nbr indices from the REPLICATED x buffer, then MAC.
+The gather path is what stalls the workload. Suspects, in order: (1) the TensorAccessor page_size args I added
+for the reap port on gather_reader's indexed x/nbr reads may mis-address the indirect gather -> a core waits on
+a NOC read that never returns; (2) replicated-x buffer accessibility under the persistent re-enqueued
+MeshWorkload; (3) nbr page layout (int32, 512/page=2048B) vs the accessor. NEXT: bisect by swapping tt_spmv to
+mac_reader (host-side pre-gather b, like spmv_mac) to confirm the read completes -> proves the gather_reader is
+the culprit; then fix gather_reader's on-device indexed reads (verify page_size/addressing vs v0.73.1) or fold
+the gather into the resident-x on-device smoother. GATES: G1/G2/G3(MAC,exact)/G5 CLOSED; pipeline proven e2e;
+G4/cold/warm/stretch blocked on this one on-device gather-workload completion bug.
