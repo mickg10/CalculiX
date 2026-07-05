@@ -343,3 +343,13 @@ clears hung ARC" + I have no BMC access to g15glx03; and the explicit "do not di
 authorization"). Multi-chip on g15glx03 is therefore gated on an owner/BMC hardware reset; the timing gates are
 otherwise closable on tt-quietbox 8-chip (spmv_mac built, 3.46ms) via an authorized tt-fold window. Every
 software avenue -- config, all fabric modes, mesh APIs, fabric-manager init AND terminate -- is exhausted.
+
+## g15glx03 MULTI-CHIP MESH IS UP after authorized galaxy reset — 2026-07-05
+User authorized the reset. `tt-smi -glx_reset_auto` (galaxy 6U tray reset) -> "Re-initialized 32 boards", rc=0,
+which RELOADED the stuck fabric-router firmware. Then the WORKING mesh bringup (in-process):
+  PYTHONPATH=$MT/ttnn:$MT:$MT/tools   (ttnn dir FIRST -- ordering matters, else ttnn loads without _ttnn bindings)
+  ttnn.set_fabric_config(ttnn.FabricConfig.FABRIC_1D)
+  md = ttnn.open_mesh_device(ttnn.MeshShape(1,32))   -> MESH_OPEN_OK ndev=32 (22.6s), distributed matmul across
+  all 32 chips OK (sum=266065), mailbox_err=0, sync_throw=0. THE 32-CHIP FABRIC IS FUNCTIONAL.
+So the multi-chip timing gates are now achievable on g15glx03. Next: run the row236 fine-SpMV on the 32-chip
+mesh (Metalium spmv_mac with set_fabric_config, or a mesh-sharded ttnn apply) -> G3/G4/cold/warm/stretch.
