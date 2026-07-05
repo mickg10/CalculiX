@@ -32,6 +32,8 @@
 #include <cstdio>
 #include <memory>
 #include <vector>
+#include <thread>
+#include <algorithm>
 
 using namespace tt;
 using namespace tt::tt_metal;
@@ -166,10 +168,12 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
 extern "C" int tt_spmv(const double* x, double* y) {
     TtSpmvCtx* K = g_ctx; if (!K) return 1;
     const uint32_t n = K->n, TE = K->tile_elems, n_pad_elems = K->n_out_pad * TE;
-    for (uint32_t i = 0; i < n_pad_elems; i++) {
-        float v = (i < n) ? (float)x[i] * K->VSCALE : 0.f;
-        split3(v, K->xhd[i], K->xmd[i], K->xld[i]);
-    }
+    // parallel split3: this loop over ~3.9M elems is the dominant per-apply cost (141ms serial -> ~9ms/16 threads)
+    { const uint32_t NT = 16; std::vector<std::thread> ths_; const uint32_t ch_ = (n_pad_elems + NT - 1) / NT;
+      for (uint32_t t_ = 0; t_ < NT; t_++) ths_.emplace_back([&, t_]() {
+        const uint32_t lo_ = t_ * ch_, hi_ = std::min((t_ + 1) * ch_, n_pad_elems);
+        for (uint32_t i = lo_; i < hi_; i++) { float v = (i < n) ? (float)x[i] * K->VSCALE : 0.f; split3(v, K->xhd[i], K->xmd[i], K->xld[i]); } });
+      for (auto& th_ : ths_) th_.join(); }
     auto& cq = K->dev->mesh_command_queue();
     distributed::EnqueueWriteMeshBuffer(cq, K->xh, K->xhd, true);
     distributed::EnqueueWriteMeshBuffer(cq, K->xm, K->xmd, true);
@@ -178,7 +182,11 @@ extern "C" int tt_spmv(const double* x, double* y) {
     std::vector<float> cd;
     distributed::EnqueueReadMeshBuffer(cq, cd, K->c, true);           // fp32 output, VSCALE-scaled
     const double inv = 1.0 / (double)K->VSCALE;
-    for (uint32_t i = 0; i < n; i++) y[i] = (i < cd.size()) ? (double)cd[i] * inv : 0.0;
+    { const uint32_t NT = 16; const uint32_t cds_ = (uint32_t)cd.size(); std::vector<std::thread> thr_; const uint32_t ch_ = (n + NT - 1) / NT;
+      for (uint32_t t_ = 0; t_ < NT; t_++) thr_.emplace_back([&, t_]() {
+        const uint32_t lo_ = t_ * ch_, hi_ = std::min((t_ + 1) * ch_, n);
+        for (uint32_t i = lo_; i < hi_; i++) y[i] = (i < cds_) ? (double)cd[i] * inv : 0.0; });
+      for (auto& th_ : thr_) th_.join(); }
     return 0;
 }
 
