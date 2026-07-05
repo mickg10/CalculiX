@@ -220,3 +220,17 @@ RESULTS on g15glx03 (real TT): ttnn MATMUL_OK; gmg_tt.py --check on real row236 
 random err/|A||x|=1.7e-4, transl-x(cancellation)=7.2e-5, smooth=2.5e-4 == the known bf16x3 product floor,
 run_mailbox=0. Full eig-defl+hybrid solve launched (expect rc=0 maxU=95.8129714). This box is now a viable
 device for the timing gates: build spmv_mac/tt_spmv here (cmake installed) -> G3/G4/cold/warm/stretch.
+
+## ✅ CORRECTNESS MEASURED on g15glx03 (2nd TT box, 32-chip WH galaxy) — 2026-07-05
+Full eig-deflation(K=24)+hybrid(1e-2) GMG solve of real row236 (n=3872214) ran END-TO-END on g15glx03 and
+converged to golden:  TT-GMG rc=0  maxU=95.812971 (== golden reduced 95.8129714)  PCG iters=84  rel=8.84e-07
+true_rel=1.13e-06  applies=136  solve=905s (slow ttnn matmul-diagonal path, 6.24s/apply).
+=> Correctness gate now independently confirmed on TWO TT boxes (tt-quietbox 8-chip AND g15glx03 32-chip).
+Stack: flash tree (sfpi 7.29.0), tvenv, ULFM MPI, native libgmg.so, sudo-rm'd root-owned cache. Recipe above.
+REMAINING (timing gates G2/G3/G4/cold/warm/stretch): need the FAST Metalium spmv_mac path, not this slow ttnn
+path. On g15glx03 the in-tree Metalium build is blocked by container-extraction baked paths (build_Release
+CMakeCache was generated at /tt-metal with container cmake 4.x + a container compiler/deps; reconfigure on the
+host hits missing toolchain paths). Options for the timing gates: (a) tt-quietbox already has metal_example_spmv_mac
+BUILT (3.46ms G3) + validated v0.73.1 -> just needs a tt-fold window; (b) a from-scratch tt-metal build on
+g15glx03 (hours). The fast-path artifacts (tt_spmv.cpp, run_tt_spmv.py, gather_reader_deint, spmv_mac_deint) are
+all committed and ready for whichever device builds Metalium.
