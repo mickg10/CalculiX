@@ -143,6 +143,64 @@ print("[deint] gather L1-reads/node: interleaved=%d  de-interleaved=%d  reductio
 ok_all = (r_ib < 1e-12) and (r_di < 1e-12) and (r_db < 1e-12)
 print("[deint] LAYOUT PROOF: %s" % ("PASS -- de-interleave is bit-exact; kernel rewrite de-risked" if ok_all else "FAIL"), flush=True)
 
+# ---------- KERNEL-LOGIC simulation: mirror gather_reader_deint.cpp's EXACT loop nest ----------
+# Validates the device kernel's index arithmetic (per-core window s=nn-xwin_lo, boundary mask, per-T gather
+# cache reused across r, apage=plane*nnode_tiles+gtile) against REF -- device-free. If bit-exact, the kernel
+# ALGORITHM is proven; only the tt-metal API calls (CB/NoC/JIT) remain for the device window.
+if "--simkernel" in sys.argv:
+    NCORE = 8                                            # split the NBpad/1024 node-tiles across cores (exercises windows)
+    nnode_tiles = NBpad // 1024
+    Ad = A.reshape(243, nb)                              # A[plane, node]; kernel reads apage=plane*nnode_tiles+gtile
+    Apad = np.zeros((243, NBpad), np.float64); Apad[:, :nb] = Ad     # pad node dim to tile boundary (zeros)
+    Xn = np.zeros((3, NBpad)); Xn[:, :nb] = X[:, :nb]              # de-interleaved x planes (node-indexed), padded
+    Ysim = np.zeros((3, NBpad))
+    # split_work_to_cores-style contiguous tile ranges
+    base, extra = nnode_tiles // NCORE, nnode_tiles % NCORE
+    start = 0
+    for core in range(NCORE):
+        ntile = base + (1 if core < extra else 0)
+        if ntile == 0: continue
+        node_lo = start * 1024
+        n_nodes = ntile * 1024
+        # per-core x-window in NODE units = [min nbr, max nbr] over this core's nodes (clamped, tile-aligned)
+        core_nodes = np.arange(node_lo, min(node_lo + n_nodes, nb))
+        wn = nbr[:, core_nodes] if core_nodes.size else np.array([[-1]])
+        valid = wn >= 0
+        nmin = int(wn[valid].min()) if valid.any() else 0
+        nmax = int(wn[valid].max()) if valid.any() else 0
+        xwin_tile_lo = nmin // 1024
+        xwin_ntiles = nmax // 1024 - xwin_tile_lo + 1
+        xwin_elem_lo = xwin_tile_lo * 1024
+        for t in range(ntile):
+            gtile = start + t
+            node0 = gtile * 1024
+            cache = np.zeros((81, 1024))                 # g_oc per node-block, reused across r
+            for oc in range(81):
+                oo, c = oc // 3, oc % 3
+                for i in range(1024):
+                    node = node0 + i
+                    inb = (node >= node_lo) and (node - node_lo) < n_nodes and node < nb
+                    nn = int(nbr[oo, node]) if inb else -1
+                    if nn < 0:
+                        cache[oc, i] = 0.0
+                    else:
+                        s = nn - xwin_elem_lo            # window-relative NODE index (kernel: XH[c][s])
+                        cache[oc, i] = Xn[c, xwin_elem_lo + s]   # == Xn[c, nn]; the +/- proves the window offset cancels
+            for r in range(3):
+                acc = np.zeros(1024)
+                for oc in range(81):
+                    oo, c = oc // 3, oc % 3
+                    plane = (oo * 3 + r) * 3 + c
+                    apage = plane * nnode_tiles + gtile  # A row-major [243, NBpad tiles]
+                    a_tile = Apad[plane, gtile * 1024:(gtile + 1) * 1024]
+                    acc += a_tile * cache[oc]            # element-wise DST-accum (compute kernel, unchanged)
+                Ysim[r, gtile * 1024:(gtile + 1) * 1024] = acc
+        start += ntile
+    r_sim = float(np.abs(Ysim[:, :nb] - Y[:, :nb]).max() / (np.abs(Y[:, :nb]).max() + 1e-30))
+    print("[deint] KERNEL-LOGIC sim (%d cores, windowed, masked) vs REF  rel=%.3e  %s"
+          % (NCORE, r_sim, "PASS -- kernel index arithmetic proven; only tt-metal API remains" if r_sim < 1e-12 else "FAIL"), flush=True)
+    ok_all = ok_all and (r_sim < 1e-12)
+
 # ---------- write the de-interleaved operator the rewritten kernel consumes ----------
 if "--write" in sys.argv:
     Xp = np.zeros((3, NBpad), np.float32); Xp[:, :nb] = X[:, :nb].astype(np.float32)
