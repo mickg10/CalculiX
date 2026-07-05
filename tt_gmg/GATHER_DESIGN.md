@@ -465,3 +465,21 @@ exposes non-clearing fp32 accumulate). DEFINITIVE: full timing gates (G3/G4/cold
 which is tt-fold-gated. On g15glx03 we CLOSED correctness/G1/G5 (golden 95.812971 via ttnn matmul-diagonal, which
 uses only supported high-level ops) + G2 (352ms). Box restored, galaxy reset clean. This is the exhaustive,
 irreducible technical boundary for the fast path on the galaxy.
+
+## g15glx03 galaxy fast-path: EXHAUSTIVE terminal state -- fast-MAC needs v0.73.1; galaxy trees can't host it — 2026-07-05
+Pursued every autonomous galaxy avenue to run the fast-MAC. Findings:
+ - flash tree (glm47_flash_galaxy_wormhole, what ttnn mesh/correctness ran on): compute kernel WON'T compile --
+   older API (2-arg mul_tiles_init; chlkc_pack/chlkc_unpack codegen won't emit for the raw-LLK fp32-accumulate
+   path). fp32-accumulate MAC is a v0.73.1 feature.
+ - reap tree (glm47_reap_268b_galaxy_wormhole, newer v0.0.1 2026-03, galaxy fabric + prebuilt libs): tried to
+   build spmv_mac against it. Its compdb has /tt-metal build paths (built in its own container); reconstructing
+   flags in a foreign container is a header-by-header slog (bfloat16 -> -std=c++20 -> nlohmann -> ...), and it
+   has NO tt-metalium/fabric.hpp (different fabric API) + STILL 3-arg mul_tiles_init. Not a drop-in host.
+ - Building v0.73.1 fresh on the galaxy: git works, 2.3T free, but multi-hour + uncertain the stock v0.73.1
+   even supports the 32-chip galaxy fabric (the flash/reap trees carry galaxy-specific fabric support).
+NET / DEFINITIVE: the fast-MAC fp32-accumulate kernel is a hard tt-metal v0.73.1 dependency. The one box with
+v0.73.1 is tt-quietbox, where the fast-MAC compiles + runs (G3=3.46ms measured) and cold/warm/stretch are
+achievable (one homogeneous program) -- gated ONLY by the explicit do-not-disrupt-tt-fold constraint. On
+g15glx03 this session CLOSED: correctness/G1/G5 (golden 95.812971 via ttnn matmul-diagonal = supported ops) +
+G2 (352ms/32-chip), after cracking the (authorized-reset) fabric that was the original wall. Full timing gates
+(G3/G4/cold/warm/stretch) require v0.73.1 = tt-quietbox. Box restored, galaxy reset clean.
