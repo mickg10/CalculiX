@@ -148,3 +148,22 @@ THROUGHPUT (the real G3 unlock, on the proven-correct op):
         many in flight so the NoC hides latency; one barrier/tile. Turns latency-bound into bandwidth-bound (~1.8ms).
     (3) or L1-resident SHARDED x across the chip's 64 cores (700KB/core) + on-chip-NoC gather from the holding core.
   - Recommended: (1)+(2) together — de-interleave removes broadcast, async NoC removes latency-blocking => G3 reachable.
+
+## DE-INTERLEAVE LAYOUT PROVEN BIT-EXACT (host, no device) + kernel written — 2026-07-05
+The highest-leverage G3 fix (de-interleave the DOF, lines 143-151) is now de-risked WITHOUT a device.
+`tt_gmg/make_deint_op.py` builds the de-interleaved operator (X[c][node] planes, A[(o*3+r)*3+c, node]
+243 planes) and PROVES the reindex against both the current interleaved kernel formula and a direct BCSR SpMV:
+  interleaved vs BCSR     rel=7.4e-16 OK
+  de-interleaved vs int   rel=0.000e+00  BIT-EXACT   <-- the reindex is provably identical
+  de-interleaved vs BCSR  rel=7.4e-16 OK
+  gather L1-reads/node: interleaved=243  de-interleaved=81  reduction=3.00x
+So the de-interleave removes the 3x r-broadcast redundancy AND the per-element e/3 div (node = tile*1024+i
+directly). `--src /tmp/row236_fine.bin --write` emits /tmp/row236_deint_op.bin (X[3,NBpad], nbr[27,NBpad],
+A[243,nb], REF[3,nb]) for on-device validation. Layout risk is GONE.
+WRITTEN (pending device JIT/validation, no tt-metal headers off-box): kernels/gather_reader_deint.cpp —
+de-interleaved windowed gather with the 81 (o,c) gathers CACHED per node-block and reused across the 3 output
+r-planes (the 3x win), node-granular loads (no div), 9 x-plane windows (xh/xm/xl for c=0,1,2). Compute/writer
+UNCHANGED (element-wise DST-accum, 81 terms/output-tile). NEXT device window: wire spmv_mac SPMV_DEINT mode to
+build the 9 x-buffers + 243-plane a from row236_deint_op.bin, JIT gather_reader_deint, verify rel_err==pre-stored
+path at SPMV_NCHIP=1, then 8-chip timing (target <3ms via 3x-fewer + node-granular gathers; async-NoC is the
+follow-on if still latency-bound), then tt_spmv callback -> gmg_tt.py -> G4/cold/warm/stretch + maxU=95.8129714.
