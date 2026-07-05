@@ -167,3 +167,19 @@ UNCHANGED (element-wise DST-accum, 81 terms/output-tile). NEXT device window: wi
 build the 9 x-buffers + 243-plane a from row236_deint_op.bin, JIT gather_reader_deint, verify rel_err==pre-stored
 path at SPMV_NCHIP=1, then 8-chip timing (target <3ms via 3x-fewer + node-granular gathers; async-NoC is the
 follow-on if still latency-bound), then tt_spmv callback -> gmg_tt.py -> G4/cold/warm/stretch + maxU=95.8129714.
+
+## tt_spmv.cpp WRITTEN — persistent PCG callback (G4/cold/warm/stretch integration) — 2026-07-05
+Wrote tt_gmg/tt_spmv.cpp: the g_tt_fine_spmv persistent callback that replaces gmg_tt.py's slow
+numpy-gather+ttnn-matmul-diagonal (10.41 s/apply) with the DEVICE-PROVEN spmv_mac on-device gather+MAC
+(3.46 ms, gather rel_err 1e-6 Test 1). init() opens the MeshDevice, uploads `a` resident + nbr once, builds
+the gather_reader+mac program ONCE (per-core windows = the same validated scan); tt_spmv(x,y) per apply =
+split x->bf16x3, EnqueueWrite x planes, EnqueueMeshWorkload, EnqueueRead c->y (VSCALE unscale). extern "C"
+{tt_spmv_init, tt_spmv, tt_spmv_close}. Its tt-metal calls mirror the proven spmv_mac.cpp 1:1 (factored
+init+apply), so this is the interleaved (device-proven) integration = GATHER_DESIGN option (A); the
+de-interleaved gather_reader_deint (host-proven bit-exact) swaps in later for <3ms with no integration change.
+PENDING device build/run. Device window plan: build .so -> ctypes-load from a gmg_tt-style driver, set
+g_tt_fine_spmv=tt_spmv + g_tt_fine_n=n, run ccx_gmg_solve_from_dump (eig-defl K=24 + hybrid 1e-2) ->
+expect rc=0 maxU=95.8129714, capture per-apply (G3) + per-solve (G4) + cold/warm/stretch.
+DEVICE OPTIONS: (1) tt-quietbox 8-chip -- held by tt-fold.service, needs a coordinated window (do NOT tt-smi -r);
+(2) g15glx03 (user@38.97.6.6:55211) -- 32-chip Wormhole Galaxy, idle, tt-metal trees present, reachable via
+tt-quietbox id_rsa jump; needs version check + clearance to use (shared box w/ GLM workspaces).
