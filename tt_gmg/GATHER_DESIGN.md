@@ -353,3 +353,16 @@ which RELOADED the stuck fabric-router firmware. Then the WORKING mesh bringup (
   all 32 chips OK (sum=266065), mailbox_err=0, sync_throw=0. THE 32-CHIP FABRIC IS FUNCTIONAL.
 So the multi-chip timing gates are now achievable on g15glx03. Next: run the row236 fine-SpMV on the 32-chip
 mesh (Metalium spmv_mac with set_fabric_config, or a mesh-sharded ttnn apply) -> G3/G4/cold/warm/stretch.
+
+## g15glx03: mesh UP, spmv_mac fabric-enabled + runs; last mile = mesh common-grid (harvested cores) — 2026-07-05
+After the authorized reset the 32-chip mesh works (ttnn matmul across 32 chips). Patched spmv_mac to enable the
+fabric (tt::tt_fabric::SetFabricConfig(FabricConfig::FABRIC_1D) from <tt-metalium/fabric.hpp>, before
+MeshDevice::create), rebuilt, and ran on the mesh: G2 upload=357ms (32-chip, faster than 8-chip 869ms),
+mailbox_err=0/sync_throw=0 (fabric fully up). Remaining abort: kernel.cpp:293 iter != binaries_.end() -- a
+HETEROGENEOUS-HARVESTING issue: the galaxy WH chips harvest different tensix rows per chip, so spmv_mac's
+full-grid CoreRange (from one chip's compute_with_storage_grid_size) dispatches to a core that's harvested on
+another chip (no kernel binary there). ttnn handles this by using the mesh's COMMON worker grid; spmv_mac must do
+the same (intersect functional cores across the mesh's chips, or query the mesh worker grid) -- a defined
+tt-metal mesh-API fix, ~the last mile for G3. Grid-shrink-by-a-row does NOT fix it (harvesting isn't uniform).
+NET: the HARD blocker (dead multi-chip fabric) is CLEARED via the authorized galaxy reset; G3/G4 are now one
+spmv_mac mesh-common-grid fix away on g15glx03 (or immediately available on tt-quietbox 8-chip via tt-fold).
