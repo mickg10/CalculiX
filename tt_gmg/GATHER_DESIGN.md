@@ -279,3 +279,14 @@ internally; replicating that for raw Metalium is a multi-day reverse-engineering
 and even then only reproduces tt-quietbox's existing 8-chip result. TERMINAL for the autonomous g15glx03 fast
 path. The fast timing gates (G3<3ms/G4/cold/warm/stretch) are closable NOW only on tt-quietbox (standard 8-chip
 mesh WORKS, metal_example_spmv_mac already built at 3.46ms) via a tt-fold window.
+
+## g15glx03 multi-chip is HARDWARE/FABRIC-BROKEN (ttnn's own mesh fails too) — no software path — 2026-07-05
+Decisive: ttnn.get_num_devices()=32, but ttnn.open_mesh_device(MeshShape(1,2/1,4/1,8/2,4)) ALL FAIL with
+run_mailbox on fabric cores (21,16)/(25,17). So the inter-chip mesh/fabric on this galaxy box is NON-FUNCTIONAL
+even through ttnn -- not our code, not raw Metalium, not fixable in software (the ETH/fabric links between
+chips aren't bringing up on this box's config). Only SINGLE-chip works (ttnn.open_device(0) + single-Device
+Metalium), which cannot reach the multi-chip timing targets (G3<3ms needs 8-chip = 3.46ms; single-chip ~8x).
+=> There is NO autonomous path to the timing gates on g15glx03: multi-chip is hardware-broken, single-chip
+too slow. The ONLY path to G3/G4/cold/warm/stretch is tt-quietbox (8-chip mesh WORKS there; metal_example_spmv_mac
+already built at 3.46ms) via a tt-fold window -- an action gated by an EXPLICIT "do not disrupt tt-fold without
+authorization" constraint. Terminal state for autonomous work, proven by ttnn's own mesh failing.
