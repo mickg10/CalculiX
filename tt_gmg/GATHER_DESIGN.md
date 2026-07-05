@@ -200,3 +200,23 @@ force small nl_nodes / more cores; (b) 8-chip needs per-chip global_off program 
 (c) all tt-metal API call correctness (JIT). PROVEN off-box: layout bit-exact, kernel index arithmetic bit-exact,
 driver wiring, host window/repack math. Next device window (tt-quietbox tt-fold window OR g15glx03 v0.68 check):
 build libtt_spmv.so -> run_tt_spmv.py -> G4/cold/warm/stretch + maxU; and metal_example_spmv_mac_deint -> G3<3ms.
+
+## g15glx03 (32-chip Wormhole galaxy) BROUGHT UP + real SpMV PASSES — 2026-07-05
+Second TT box online: user@38.97.6.6:55211 (g15glx03), 32-chip Wormhole galaxy, idle, sudo. Full tt-metal
+bring-up from a containerized/extracted state; the working recipe (reusable):
+- USE THE flash tree: ~/src_docker/ws/glm47_flash_galaxy_wormhole/tt-metal (v0.68, sfpi 7.29.0 INTACT, built).
+  Do NOT use glm47_reap_268b (its sfpi compiler got clobbered -> 7.8.0 -> compute run_mailbox errors).
+- venv: uv venv ~/tvenv --python 3.10; uv pip install loguru numpy pyyaml networkx graphviz click torch
+  pandas matplotlib seaborn tabulate tqdm plotly docopt. Import ttnn via PYTHONPATH=$MT:$MT/ttnn:$MT/tools.
+- ULFM MPI: docker cp /opt/openmpi-v5.0.7-ulfm out of the GLM image -> /opt; OPAL_PREFIX=/opt/openmpi-v5.0.7-ulfm.
+- env: TT_METAL_HOME=$MT ARCH_NAME=wormhole_b0 LD_LIBRARY_PATH=/opt/openmpi-v5.0.7-ulfm/lib:$BR/lib:$BR/ttnn:$BR/tt_metal
+  ulimit -n 1048576. sysmem uses IOMMU (hugepages not required).
+- CACHE GOTCHA: sudo rm -rf ~/.cache/tt-metal-cache before runs -- the container left a ROOT-OWNED cache dir
+  (14744280354293326149) that tt-metal can't write into -> "failed to open compile failure log". This + the
+  clobbered compiler were the two firmware-JIT blockers; both now understood.
+- libgmg.so: rebuild NATIVELY on-box (tt-quietbox's was glibc-2.38, box is 2.35):
+  g++ -O3 -fopenmp -shared -fPIC gmg_solve.cpp -o ~/ttgmg/libgmg.so -lopenblas  (apt: libopenblas-dev).
+RESULTS on g15glx03 (real TT): ttnn MATMUL_OK; gmg_tt.py --check on real row236 (n=3872214) PASSES --
+random err/|A||x|=1.7e-4, transl-x(cancellation)=7.2e-5, smooth=2.5e-4 == the known bf16x3 product floor,
+run_mailbox=0. Full eig-defl+hybrid solve launched (expect rc=0 maxU=95.8129714). This box is now a viable
+device for the timing gates: build spmv_mac/tt_spmv here (cmake installed) -> G3/G4/cold/warm/stretch.
