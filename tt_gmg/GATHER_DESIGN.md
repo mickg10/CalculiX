@@ -522,3 +522,21 @@ the V-cycle and issue multiple smoother sweeps + residual on-device per visit (o
 V-cycle on-device), eliminating the per-apply host round-trip. This is an architecture change to tt_spmv.cpp's
 API + gmg_solve.cpp's fine hook, on top of a fully-proven end-to-end pipeline (fabric, reap port, ARC, glibc,
 LAPACK, wiring, correctness all cleared).
+
+## G4 blocker isolated: persistent on-device GATHER-apply hangs (not mailbox/harvesting) — 2026-07-05
+Microbenchmarked tt_spmv per-apply directly (ttbench.py: init once, loop tt_spmv(x,y), time each):
+  - Dirty device (after killed timeout runs): mailbox=20, applies never print -> stuck core (23,17) 0x40.
+  - CLEAN device (fresh glx_reset_auto): init rc=0 37.2s, mailbox=0, but the FIRST tt_spmv apply STILL hangs
+    (200s timeout, zero "apply k: ms" lines).
+=> The blocker is NOT the run_mailbox/harvesting (clean device has mailbox=0); it is a HANG in tt_spmv's
+   persistent on-device GATHER apply path. Note G3's 0.740ms is the spmv_mac MAC path (mac_reader: a-terms x
+   pre-gathered b-terms); tt_spmv uses gather_reader (gather x on-device by nbr indices from a REPLICATED x
+   buffer) -- a different code path. init's EnqueueWriteMeshBuffer works (a resident uploaded in 37s), so the
+   hang is in the per-apply EnqueueMeshWorkload(gather program) or the replicated-x write/EnqueueRead, on the
+   32-chip mesh.
+GATES: G1/G2/G3(MAC 0.740ms exact)/G5 CLOSED on galaxy; full pipeline wired end-to-end (fabric, reap port, GMG
+rebuilt glibc-2.35, ctypes wiring, deflation engages). G4/cold/warm/stretch need the NEXT PHASE: debug the
+tt_spmv gather-apply hang -- add per-op timing inside tt_spmv (write-x / enqueue-workload / read-y), confirm
+which enqueue blocks on the 32-chip mesh, and either fix the replicated-x gather path or fold the gather into
+the resident-x on-device smoother (the strategy's "resident x, on-device gather" optimization). This is a
+bounded device-debug phase on top of a proven end-to-end pipeline.
