@@ -290,3 +290,15 @@ Metalium), which cannot reach the multi-chip timing targets (G3<3ms needs 8-chip
 too slow. The ONLY path to G3/G4/cold/warm/stretch is tt-quietbox (8-chip mesh WORKS there; metal_example_spmv_mac
 already built at 3.46ms) via a tt-fold window -- an action gated by an EXPLICIT "do not disrupt tt-fold without
 authorization" constraint. Terminal state for autonomous work, proven by ttnn's own mesh failing.
+
+## g15glx03 multi-chip impossible — proven 3 ways; autonomous timing-gate path is EXHAUSTED — 2026-07-05
+Third confirmation: opening multiple/independent ttnn devices in one process ALSO fails run_mailbox on fabric
+cores (21,16)/(25,17) -- same as MeshDevice and ttnn.open_mesh_device. So EVERY multi-chip access path on this
+galaxy box hits the non-functional inter-chip fabric; only ONE chip at a time is usable. The <3ms/8-chip timing
+gates are therefore PHYSICALLY IMPOSSIBLE on g15glx03 (no software fix for a dead fabric). Levers exhausted:
+in-tree cmake (container paths), standalone find_package (broken export), manual compile+link (SUCCEEDED),
+run under NUM_HW_CQS=1 / mpirun-ULFM / NCHIP 1&8, ttnn mesh open, independent multi-device -- all multi-chip
+paths dead. NET: the ONLY route to G3/G4/cold/warm/stretch is tt-quietbox 8-chip (mesh works, spmv_mac built,
+3.46ms) via a tt-fold window, which is gated by the EXPLICIT do-not-disrupt-tt-fold-without-authorization
+constraint. Autonomous work is at a proven terminal boundary. Delivered this session: correctness CLOSED on a
+2nd TT box (g15glx03, golden maxU=95.812971), G2 measured (869ms), Metalium spmv_mac built on g15glx03.
