@@ -234,3 +234,23 @@ host hits missing toolchain paths). Options for the timing gates: (a) tt-quietbo
 BUILT (3.46ms G3) + validated v0.73.1 -> just needs a tt-fold window; (b) a from-scratch tt-metal build on
 g15glx03 (hours). The fast-path artifacts (tt_spmv.cpp, run_tt_spmv.py, gather_reader_deint, spmv_mac_deint) are
 all committed and ready for whichever device builds Metalium.
+
+## g15glx03 Metalium spmv_mac: BUILDS + G2 measured, kernel-exec hits v0.68 wall — 2026-07-05
+Built the fast Metalium spmv_mac on g15glx03 INSIDE the GLM docker container (its build env is intact):
+- in-tree cmake + host standalone find_package both fail (container-extraction baked paths / broken export
+  IMPORTED_LOCATION). WORKING recipe: extract clean compile flags from `ninja -t compdb` (richest tt_metal
+  entry, strip -c/-o/-MT/-MF/-MD/*_EXPORTS), then:
+  clang++-17 <flags> -c spmv_mac.cpp -o spmv_mac.o  &&  clang++-17 spmv_mac.o -L$BR/lib -Wl,-rpath,$BR/lib
+  -ltt_metal -ldevice -ltt_stl -o spmv_mac   => compile rc=0, link rc=0 (100KB exe). Run needs
+  TT_METAL_HOME + TT_METAL_RUNTIME_ROOT set + operator symlinked into container /tmp + device passthrough.
+MEASURED on g15glx03 (real TT): operator loads (n_out=3782 K=81); DBG G2 matrix upload = 869 ms (8-chip) /
+3994 ms (1-chip) [pre-stored-b path, 6 bf16 streams = 1.25GB; above the 0.3s gate as expected for that path].
+WALL: kernel dispatch aborts with `run_mailbox 0x40 (expected 0x80/0x0)` + kernel.cpp:293 `iter != binaries_.end()`
+at BOTH NCHIP=1 and 8. ttnn's own matmul runs fine on this box (roundtrip + gmg_tt.py --check both passed), so
+the failure is SPECIFIC to our custom Metalium kernels (mac_reader/compute/writer + gather_reader) on tt-metal
+v0.68 -- they were authored/validated on v0.73.1 (tt-quietbox). Likely a harvested-core-grid (galaxy WH chips
+harvest tensix rows -> full-grid CoreRange dispatches to a core with no kernel binary) or a v0.68 CB/dispatch
+API diff. Fix = adapt the kernels/host to v0.68 (use functional cores only / version-guard the CB+DST APIs) OR
+run the validated v0.73.1 spmv_mac on tt-quietbox (already built, 3.46ms G3) via a tt-fold window.
+NET this session: correctness CLOSED on g15glx03 (golden), Metalium build proven on g15glx03, G2 measured;
+G3/G4/cold/warm/stretch blocked on the v0.68 custom-kernel compat OR the tt-quietbox tt-fold window.
