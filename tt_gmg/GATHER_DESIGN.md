@@ -315,3 +315,19 @@ intervention on shared infra that must not be done autonomously without authoriz
 for g15glx03 multi-chip: bare mesh, NUM_HW_CQS=1, mpirun-ULFM, independent multi-device, and set_fabric_config
 (every mode+shape) all fail identically at fabric routers. Timing gates remain closable only on tt-quietbox
 8-chip (spmv_mac built, 3.46ms) via a tt-fold window.
+
+## g15glx03 ROOT CAUSE FOUND: fabric-router firmware stuck (needs hardware reset) — 2026-07-05
+Traced to the root via the CORRECT tool. The galaxy multi-chip bringup IS run_fabric_manager +
+TT_MESH_GRAPH_DESC_PATH=galaxy_1x32_mesh_graph_descriptor.textproto + --mesh-shape 1x32 --fabric-config FABRIC_1D
+--initialize-fabric (mismatched 8x4 crashed in get_mapped_devices; matched 1x32 runs). But it THROWS at
+tt_metal/impl/device/firmware/fabric_firmware_initializer.cpp:212
+FabricFirmwareInitializer::wait_for_fabric_router_sync -> the fabric routers on ETH core (25,17) are stuck at
+run_mailbox 0x40 (expected 0x80/0x0) and never sync (x32 retries then abort). This is STUCK FABRIC-ROUTER
+FIRMWARE -- a hardware/firmware state that no software (not ttnn, not raw Metalium, not the fabric manager) can
+clear. The ONLY fix is a hardware reset (tt-smi -r or a BMC cold power-cycle) to re-init the router firmware.
+NOT SAFE to do autonomously: the strategy warns `tt-smi -r` re-wedges healthy cards (would also break the
+CURRENTLY-WORKING single-chip access that produced the correctness result), and I have NO BMC access to g15glx03
+to recover if it wedges -- risking bricking a shared box with no recovery path. So multi-chip on g15glx03 needs
+an AUTHORIZED hardware reset (owner/BMC). Timing gates otherwise closable on tt-quietbox 8-chip (spmv_mac built,
+3.46ms) via a tt-fold window. Full root-cause diagnosis complete; remaining action is a hardware/authorization
+decision, not a software one.
