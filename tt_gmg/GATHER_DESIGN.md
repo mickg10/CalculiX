@@ -331,3 +331,15 @@ to recover if it wedges -- risking bricking a shared box with no recovery path. 
 an AUTHORIZED hardware reset (owner/BMC). Timing gates otherwise closable on tt-quietbox 8-chip (spmv_mac built,
 3.46ms) via a tt-fold window. Full root-cause diagnosis complete; remaining action is a hardware/authorization
 decision, not a software one.
+
+## g15glx03: software fabric recovery ALSO fails -> hardware reset required (confirmed) — 2026-07-05
+Tried the software recovery: run_fabric_manager --terminate-fabric (to clear the hung 0x40 router state) THEN
+a fresh --initialize-fabric. Terminate itself hits mailbox_err=64 (cannot reach the hung router cores), and the
+fresh init still throws wait_for_fabric_router_sync. So even the dedicated fabric tool's own clean-shutdown path
+cannot reach/reset the stuck ETH router firmware -- it is hung below the software layer. Confirms: only a
+hardware reset (tt-smi -r / BMC cold power-cycle) reloads the router firmware. Both remaining hardware actions
+are EXPLICITLY warned against in my standing instructions (strategy: "do NOT tt-smi -r; only BMC cold power-cycle
+clears hung ARC" + I have no BMC access to g15glx03; and the explicit "do not disrupt tt-fold without
+authorization"). Multi-chip on g15glx03 is therefore gated on an owner/BMC hardware reset; the timing gates are
+otherwise closable on tt-quietbox 8-chip (spmv_mac built, 3.46ms) via an authorized tt-fold window. Every
+software avenue -- config, all fabric modes, mesh APIs, fabric-manager init AND terminate -- is exhausted.
