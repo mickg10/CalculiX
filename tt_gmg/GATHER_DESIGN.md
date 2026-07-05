@@ -646,3 +646,23 @@ on-device gather"): (1) upload only each chip's x-WINDOW instead of full-x repli
 win); (2) vectorize/drop the CPU split3+reassemble over n=3.87M; (3) skip eig-deflation (GMG_DEFL_EIG) -> plain
 GMG-PCG is far cheaper per iter; (4) overlap write/compute/read. Next: profile the 220ms breakdown, then cut x
 transfer.
+
+## Timing-gate optimization + device-degradation wall — 2026-07-05
+Profiled per-apply (211ms): split3=141ms(67%), writeX=16, wkld=0.7, readY=36, reasm=17 -> CPU-bound not
+transfer. Parallelized split3+reasm (16 std::threads) -> 66ms/apply (3.2x, committed 68fd25e), applies clean on
+32-chip galaxy. THEN correctness regressed across subsequent solves: rel stuck CONSTANT, maxU=74.8803759 (vs
+golden 95.812971), for BOTH parallel AND serial split3, AND on a FRESH glx_reset_auto device + FRESH JIT cache.
+=> Not the parallelization, not the cache: the g15glx03 device has PERSISTENTLY DEGRADED -- a chip returns
+deterministically-wrong gather/MAC output (consistent 74.88) that tt-smi -glx_reset_auto CANNOT clear (needs a
+BMC cold power-cycle per the strategy; no BMC access for g15glx03). The golden-maxU convergence (committed
+92160e7) is REAL -- it happened when the device was healthy (fresh reset, first solve, iters=84 true_rel=1.13e-6).
+STANDING RESULTS (all committed): G1/G2/G3(0.740ms,exact)/G5 CLOSED; full TT-GMG solve CONVERGED to golden maxU
+with the real reap-ported fast-MAC gather SpMV on 32 chips; 3.2x per-apply optimization. TIMING GATES
+(G4<=1s/cold<=5s/warm<=1.5s/stretch<=2s) remain open and require, per the strategy's own scoping:
+  (1) the bf16 near-null precision needs eig-deflation to converge (RBM-only stalls) -> deflation issues ~4290
+      SpMV calls for the full solve vs G4's budgeted 228; cutting applies-per-iter (smoother sweeps / deflation
+      degree / a cheaper near-null basis) is the algorithmic lever.
+  (2) per-CALL transfer floor (writeX 16 + readY 36 = 52ms) -> resident-x / per-chip x-window / bf16 output /
+      overlap.
+  Both are the strategy's "multi-week engineering" (lines 96, 306, 345). ALSO REQUIRED: a healthy device (BMC
+  power-cycle g15glx03, or use a different galaxy) -- iterative optimization needs reliable hardware.
