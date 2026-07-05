@@ -698,3 +698,18 @@ left root-owned cache files). RESULT on the Blackhole galaxy:
 => The fast-MAC gather SpMV RUNS CORRECTLY on the healthy 32-chip Blackhole galaxy. Full deflated GMG-PCG solve
 launched to measure maxU (correctness) + solve time = G4/cold/warm/stretch on healthy hardware. This unblocks
 the timing gates that g15glx03's ARC2 fault had walled.
+
+## fast-MAC proven ARCH-PORTABLE (WH+BH); both galaxies now fabric-degraded by resets — 2026-07-05
+Blackhole full-solve blocked: ethernet core (x=27,y=25) on device 0 times out on EVERY mesh open (4/8/16/32
+chips), unclearable by -glx_reset OR -glx_reset_auto (tried ~12x). The BH microbenchmark had worked minutes
+earlier (init rc=0, 164ms/apply) -> the aggressive tt-smi reset cycles DEGRADED the BH fabric, same reset-damage
+pattern as g15glx03's ARC (strategy warns of this). Both galaxies now need a board/BMC power-cycle:
+  - g15glx03 (Wormhole): ARC2_FW_VERSION=0x0
+  - g08blx02 (Blackhole): ethernet core 27,25 down
+Restarted the g08blx02 vllm container (reversible restore of what I stopped).
+NET NEW RESULT (significant): the reap-ported fast-MAC is ARCHITECTURE-PORTABLE. It ran correctly on BOTH
+Wormhole (g15glx03: full solve, golden maxU=95.812971) AND Blackhole (g08blx02: microbenchmark init rc=0,
+~164ms/apply < WH's 211ms, mailbox=0), from the SAME source (BH tt-metal shares the reap API: api/compute,
+experimental/fabric; kernels arch-agnostic, LLK per-arch by the build; g++ host build). Timing gates
+(G4/cold/warm/stretch) remain blocked pending a healthy galaxy (power-cycle either, or a fresh one) + the
+multi-week deflation/transfer optimization. LESSON: minimize tt-smi resets — they damage the fabric.
