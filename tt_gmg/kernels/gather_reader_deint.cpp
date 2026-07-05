@@ -110,9 +110,10 @@ void kernel_main() {
         // (2) emit 3 output tiles (r=0,1,2), each 81 (a,b) pairs: a=A[(o*3+r)*3+c, gtile], b=cached g_oc.
         for (uint32_t r = 0; r < 3; ++r) {
             for (uint32_t oc = 0; oc < K3; ++oc) {
-                const uint32_t oo = oc / 3, c = oc % 3;
-                const uint32_t plane = (oo * 3 + r) * 3 + c;                // 0..242
-                const uint32_t apage = plane * nnode_tiles + gtile;        // A row-major [243, NBpad tiles]
+                const uint32_t oc_dummy = oc; (void)oc_dummy;
+                const uint32_t otile = gtile * 3 + r;                       // shardable output-tile (spmv_mac-style)
+                const uint32_t apage = otile * 81 + oc;                    // a_deint[output_tile][81]: 81 contiguous pages/tile
+                (void)nnode_tiles;                                          // a is now output-tile-major (host repacks)
                 cb_reserve_back(cb_a, 3); cb_reserve_back(cb_b, 3);
                 const uint32_t pa = get_write_ptr(cb_a), pb = get_write_ptr(cb_b);
                 noc_async_read_page(apage, Aah, pa + 0*TB); noc_async_read_page(apage, Aam, pa + 1*TB); noc_async_read_page(apage, Aal, pa + 2*TB);

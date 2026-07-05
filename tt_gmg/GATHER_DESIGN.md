@@ -183,3 +183,20 @@ expect rc=0 maxU=95.8129714, capture per-apply (G3) + per-solve (G4) + cold/warm
 DEVICE OPTIONS: (1) tt-quietbox 8-chip -- held by tt-fold.service, needs a coordinated window (do NOT tt-smi -r);
 (2) g15glx03 (user@38.97.6.6:55211) -- 32-chip Wormhole Galaxy, idle, tt-metal trees present, reachable via
 tt-quietbox id_rsa jump; needs version check + clearance to use (shared box w/ GLM workspaces).
+
+## DEVICE-FREE BUILD EXHAUSTED — both paths turnkey; validated where possible — 2026-07-05
+Filled the last two device-free gaps so a device window is pure build+measure:
+- run_tt_spmv.py: ctypes driver that loads libtt_spmv.so, tt_spmv_init (device open + a-resident + program),
+  wires g_tt_fine_spmv=&tt_spmv + g_tt_fine_n=n on libgmg.so, runs ccx_gmg_solve_from_dump (eig-defl+hybrid).
+  -> the G4/cold/warm/stretch measurement driver (interleaved, device-proven SpMV). Python syntax OK.
+- spmv_mac_deint.cpp: DEINT Test-1 harness. Builds output-tile-major a_deint[(gt*3+r)*81+oc] (== spmv_mac
+  [n_out][K] shape, shardable), 9 de-interleaved x planes (bf16x3), node-major nbr; wires gather_reader_deint
+  (13 CB compile args + 13 TensorAccessorArgs in the kernel's exact order), compute n_out=3*ntile K=81.
+  Single-chip (SPMV_NCHIP=1 SPMV_DEINT_NTILES) first; validates cd[(gt*3+r)*1024+i] vs REFs[r][node].
+Layout tightened to the SHARDABLE apage=otile*81+oc (kernel gather_reader_deint + sim + harness all agree);
+re-ran make_deint_op --simkernel: KERNEL-LOGIC vs REF rel=0.000e+00 STILL PASS with the exact page arithmetic.
+OPEN device-only questions (cannot resolve off-box): (a) gather cache CB c_12 = 81*3 tiles = 486KB L1 -- may
+force small nl_nodes / more cores; (b) 8-chip needs per-chip global_off program (GATHER_DESIGN 134-140);
+(c) all tt-metal API call correctness (JIT). PROVEN off-box: layout bit-exact, kernel index arithmetic bit-exact,
+driver wiring, host window/repack math. Next device window (tt-quietbox tt-fold window OR g15glx03 v0.68 check):
+build libtt_spmv.so -> run_tt_spmv.py -> G4/cold/warm/stretch + maxU; and metal_example_spmv_mac_deint -> G3<3ms.

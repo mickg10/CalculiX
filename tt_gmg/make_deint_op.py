@@ -152,6 +152,15 @@ if "--simkernel" in sys.argv:
     nnode_tiles = NBpad // 1024
     Ad = A.reshape(243, nb)                              # A[plane, node]; kernel reads apage=plane*nnode_tiles+gtile
     Apad = np.zeros((243, NBpad), np.float64); Apad[:, :nb] = Ad     # pad node dim to tile boundary (zeros)
+    # SHARDABLE a layout (== spmv_mac [n_out][K]): a_deint[output_tile=gtile*3+r][oc=o*3+c][i], apage=otile*81+oc.
+    # This makes the DEINT harness shard by output-tile exactly like the proven spmv_mac (81 contiguous pages/tile).
+    a_deint = np.zeros((3 * nnode_tiles * 81, 1024))
+    for gt in range(nnode_tiles):
+        for r in range(3):
+            for oc in range(81):
+                oo, c = oc // 3, oc % 3
+                plane = (oo * 3 + r) * 3 + c
+                a_deint[(gt * 3 + r) * 81 + oc] = Apad[plane, gt * 1024:(gt + 1) * 1024]
     Xn = np.zeros((3, NBpad)); Xn[:, :nb] = X[:, :nb]              # de-interleaved x planes (node-indexed), padded
     Ysim = np.zeros((3, NBpad))
     # split_work_to_cores-style contiguous tile ranges
@@ -188,11 +197,10 @@ if "--simkernel" in sys.argv:
                         cache[oc, i] = Xn[c, xwin_elem_lo + s]   # == Xn[c, nn]; the +/- proves the window offset cancels
             for r in range(3):
                 acc = np.zeros(1024)
+                otile = gtile * 3 + r                    # output tile index (shardable, spmv_mac-style)
                 for oc in range(81):
-                    oo, c = oc // 3, oc % 3
-                    plane = (oo * 3 + r) * 3 + c
-                    apage = plane * nnode_tiles + gtile  # A row-major [243, NBpad tiles]
-                    a_tile = Apad[plane, gtile * 1024:(gtile + 1) * 1024]
+                    apage = otile * 81 + oc              # EXACT kernel/host page arithmetic (81 contiguous/tile)
+                    a_tile = a_deint[apage]              # read a via the page index the harness will lay out
                     acc += a_tile * cache[oc]            # element-wise DST-accum (compute kernel, unchanged)
                 Ysim[r, gtile * 1024:(gtile + 1) * 1024] = acc
         start += ntile
