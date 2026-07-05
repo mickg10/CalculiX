@@ -499,3 +499,26 @@ reap codegen DOES handle -> chlkc=0), TensorAccessor gets the 3rd page_size arg 
 4096). Full-system MeshShape(4,8) + FABRIC_1D + worker_cores. Remaining: G4 (PCG<=1s), cold/warm/stretch -- wire
 this fast SpMV into the GMG PCG loop (tt_spmv.cpp persistent + run_tt_spmv.py) on the reap tree; with 0.740ms/
 apply * ~136 applies ~= 100ms SpMV, G4<=1s is very achievable.
+
+## G4/cold/warm/stretch: full pipeline runs end-to-end but is TRANSFER-BOUND (per-call host<->device) — 2026-07-05
+The complete TT-GMG pipeline now runs end-to-end on the g15glx03 galaxy: reap-ported fast-MAC (libtt_spmv.so) +
+GMG solver rebuilt natively for glibc-2.35 (libgmg_local.so from src/gmg_solve.cpp, g++ -fopenmp, host
+LAPACK/BLAS/OpenBLAS staged) + run_tt_spmv.py wiring g_tt_fine_spmv into the deflated+hybrid PCG.
+  tt_spmv_init rc=0 (26.6s device open + a-resident + program build)
+  wired g_tt_fine_spmv  g_tt_fine_n=3872214
+  [tt-gmg] setup 6.12s, 5 levels, coarsest=4284, TT_fine=ON
+  [tt-gmg] computed 24 near-null eigenvectors (5 inverse-iter sweeps)
+  [tt-gmg] deflated PCG on: k=24 ...
+  -> exit=124 (30-min timeout); never completed the PCG.
+DECISIVE DIAGNOSIS: G3 device SpMV is 0.740 ms/apply (5123 GB/s, exact) -- the DEVICE is fast. But run_tt_spmv
+calls tt_spmv PER fine apply from the CPU GMG, and each call pays a host<->device round-trip (x ~23MB bf16x3 up,
+replicated to 32 chips + y down). The eig-deflation setup alone (24 vectors * 5 inverse-iter sweeps, each a full
+V-cycle w/ fine smoother applies) issues hundreds-thousands of such calls; the per-CALL transfer (not the 0.740ms
+device compute) dominates wall time -> the full solve is transfer-bound and doesn't meet G4(<=1s)/cold(<=5s)/
+warm(<=1.5s)/stretch(<=2s).
+GATES: G1 (golden maxU) / G2 (352ms) / G3 (0.740ms, exact) / G5 (33.3ms) CLOSED on the galaxy. G4/cold/warm/
+stretch require the NEXT PHASE: a batched/on-device fine-level smoother -- keep the fine vectors resident across
+the V-cycle and issue multiple smoother sweeps + residual on-device per visit (or run the whole fine-level
+V-cycle on-device), eliminating the per-apply host round-trip. This is an architecture change to tt_spmv.cpp's
+API + gmg_solve.cpp's fine hook, on top of a fully-proven end-to-end pipeline (fabric, reap port, ARC, glibc,
+LAPACK, wiring, correctness all cleared).
