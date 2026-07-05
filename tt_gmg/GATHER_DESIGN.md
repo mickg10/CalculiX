@@ -254,3 +254,18 @@ API diff. Fix = adapt the kernels/host to v0.68 (use functional cores only / ver
 run the validated v0.73.1 spmv_mac on tt-quietbox (already built, 3.46ms G3) via a tt-fold window.
 NET this session: correctness CLOSED on g15glx03 (golden), Metalium build proven on g15glx03, G2 measured;
 G3/G4/cold/warm/stretch blocked on the v0.68 custom-kernel compat OR the tt-quietbox tt-fold window.
+
+## g15glx03 timing gates: DEFINITIVELY blocked by galaxy MeshDevice dispatch (stock examples prove it) — 2026-07-05
+Isolated the run_mailbox wall with tt-metal's OWN stock examples (built via the compdb-flags recipe):
+- SINGLE-Device Metalium (stock add_2_integers_in_compute) + TT_METAL_NUM_HW_CQS=1  => mailbox_err=0, RUNS.
+- MeshDevice/distributed Metalium: stock distributed_program_dispatch AND our spmv_mac => BOTH abort with
+  `Read unexpected run_mailbox value from core (x=19,y=17)` (mailbox_err=32), even at NCHIP=1, even NUM_HW_CQS=1.
+CONCLUSION (evidence-backed, not our code): the 32-chip WH galaxy's MeshDevice/multi-chip dispatch is not usable
+by raw Metalium in this container/box without the full TT-Mesh galaxy init (mesh-graph descriptor + fabric
+routing + MPI ranks) that ttnn performs internally -- which is why gmg_tt.py (ttnn) closed correctness but raw
+Metalium MeshDevice programs cannot dispatch. Core (19,17) is a galaxy fabric/mesh-dispatch core.
+=> The FAST multi-chip path (G3<3ms, G4, cold/warm/stretch) on g15glx03 needs a deep galaxy-multi-host TT-Mesh
+integration (days; even then it only reproduces what tt-quietbox already has). The validated path is tt-quietbox
+8-chip (standard mesh WORKS; metal_example_spmv_mac already built at 3.46ms) via a tt-fold window.
+FINAL this session: correctness CLOSED on g15glx03 (golden, ttnn path), G2 measured (869ms), Metalium binary
+BUILT on g15glx03, and the multi-chip dispatch wall DEFINITIVELY characterized with stock-example evidence.
