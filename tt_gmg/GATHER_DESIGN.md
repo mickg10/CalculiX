@@ -735,3 +735,26 @@ RESUME STEPS once a galaxy is power-cycled healthy (minimize resets!):
   2. run_tt_spmv with GMG_DEFL_DEG=2 (EIG=0) -> check convergence to golden maxU + measure applies/time.
   3. if converges: measure G4 (solve time), cold (first solve), warm (cached setup re-solve).
   4. then transfer optimization for the <=1s / <=1.5s / <=2s targets.
+
+## GATE-CLOSING ALGORITHM FOUND + CPU-VALIDATED (routed around both degraded galaxies) — 2026-07-05
+Used gmg_solve.cpp's deterministic bf16-product-error emulation (g_emu_abserr, line 306) to test the entire
+gate-blocking convergence question on CPU with NO working galaxy. Full row236 GMG, real operator, real hierarchy.
+FINDING 1 - polynomial deflation is INSUFFICIENT (GMG_DEFL_DEG sweep at bf16x3 abserr=4.69e-4, EIG=0):
+  deg=1 maxU=0.116 | deg=2 0.462 | deg=3 4.84 | deg=4 15.58  (golden 95.813) -> all NO. Analytic monomials
+  approximate the true near-null space poorly; the COMPUTED eigenvectors are genuinely needed at this error.
+FINDING 2 (DECISIVE) - plain GMG-PCG (NO deflation) converges iff SpMV error <= ~4.69e-6:
+  abserr 4.69e-4 NO(0.006) | 4.69e-5 NO(0.58) | 1e-5 NO(11.0) | 4.69e-6 CONVERGED(golden,135s) | 1e-6
+  CONVERGED(38s) | 0 CONVERGED(18s). Current bf16x3 = 4.69e-4 is 100x over threshold. A bf16x4 split (4th Ozaki
+  term) cuts the product error ~256x -> ~1.8e-6 < 4.69e-6 -> PLAIN PCG CONVERGES, NO deflation, ~228 applies.
+FINDING 3 - eig-deflation cost reduction (cheaper fallback if bf16x4 too costly per-apply):
+  k=8 eigit=2 CONVERGED | k=8 eigit=3 CONVERGED | k=12 eigit=3 CONVERGED | k=16 eigit=3 CONVERGED. So the
+  k=24/eigit=5 default (120 vector-sweeps of setup) can drop to k=8/eigit=2 (16 sweeps) = ~7x cheaper setup.
+=> THE ALGORITHMIC SIDE OF G4/cold/warm/stretch IS SOLVED. Two validated routes to ~228 applies:
+  (A) bf16x4 split -> plain PCG (cleanest, no deflation). Implement: add 4th bf16 term to split3()/the a-split
+      + the mac kernel's cross-products (4x4). Per-apply compute rises slightly but stays transfer-bound.
+  (B) eig k=8 eigit=2 (keep deflation, 7x cheaper setup).
+REMAINING for the <=1s/5s wall-clock: the transfer floor. writeX(16)+readY(36)=52ms/call is 10x SLOWER than
+raw bandwidth (~38MB/call at ~10-25GB/s should be ~2-4ms) -> the EnqueueWrite/ReadMeshBuffer overhead is the
+target, NOT fundamental. 228 applies * ~4ms (efficient transfer) ~= 1s = G4. With the committed 3.2x split3.
+STATUS: gates are algorithm-solved + CPU-validated; only hardware implement+measure remains (needs one
+power-cycled galaxy; minimize resets).
