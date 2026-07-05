@@ -302,3 +302,16 @@ paths dead. NET: the ONLY route to G3/G4/cold/warm/stretch is tt-quietbox 8-chip
 3.46ms) via a tt-fold window, which is gated by the EXPLICIT do-not-disrupt-tt-fold-without-authorization
 constraint. Autonomous work is at a proven terminal boundary. Delivered this session: correctness CLOSED on a
 2nd TT box (g15glx03, golden maxU=95.812971), G2 measured (869ms), Metalium spmv_mac built on g15glx03.
+
+## g15glx03 fabric: even set_fabric_config (all modes) fails -> fabric-router-STATE issue (needs reset/admin) — 2026-07-05
+Found + tried the real bringup: ttnn.set_fabric_config(FABRIC_1D / FABRIC_2D / FABRIC_2D_TORUS_XY / ...) BEFORE
+open_mesh_device(MeshShape 1x8/8x4/1x32). ALL still fail run_mailbox at fabric router core (25,17). So it is NOT a
+missing set_fabric_config call -- the inter-chip ETH fabric routers do not sync in this box's current software
+state. 32 chips are individually PCIe-visible (single-chip works, correctness solved), but the mesh fabric is
+down. The GLM 268B deployment did bring it up (multi-chip), so it is recoverable -- but only via a fabric/ETH
+re-init that in practice means a tt-smi reset or BMC/admin action on this SHARED galaxy box (risk: wedges the
+galaxy / disrupts the GLM deployment). That is the same class of action as the tt-fold constraint: a significant
+intervention on shared infra that must not be done autonomously without authorization. SOFTWARE SPACE EXHAUSTED
+for g15glx03 multi-chip: bare mesh, NUM_HW_CQS=1, mpirun-ULFM, independent multi-device, and set_fabric_config
+(every mode+shape) all fail identically at fabric routers. Timing gates remain closable only on tt-quietbox
+8-chip (spmv_mac built, 3.46ms) via a tt-fold window.
