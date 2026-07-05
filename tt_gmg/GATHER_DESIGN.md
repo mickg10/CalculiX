@@ -602,3 +602,23 @@ NEXT (needs stable device): glx_reset_auto until fabric syncs, then run the 32-c
 first/last a-page index p and node range -> directly shows which read/core stalls and whether p exceeds the
 shard. Then fix the start/shard convention (most likely (1)) and re-run the RBM-deflated solve for G4/cold/warm/
 stretch. G1/G2/G3(0.740ms,exact)/G5 CLOSED; pipeline proven e2e; one gather-sharding bug from the full solve.
+
+## ROOT CAUSE (code-level): gather+32-chip-shard needs PER-DEVICE global start -> per-device programs — 2026-07-05
+Diffed spmv_mac (G3 works) vs tt_spmv (hangs) sharding:
+ - BOTH: n_local = n_out_pad/NCHIP; single MeshWorkload program over the full mesh; per-core start=0..n_local
+   set identically on ALL 32 chips.
+ - spmv_mac's G3 path is direct mac_reader (pre-gathered b) OR single-chip gather via the n_local env override
+   (spmv_mac.cpp L111: GATHER&&ntenv ? min(ntenv,n_out_pad) : n_out_pad/NCHIP). So gather+multi-chip-shard was
+   NEVER run together before tt_spmv.
+ - tt_spmv gather_reader computes the GLOBAL node from start_out_id: node0=(start_out_id+t)*1024/3 (L10-12), but
+   start_out_id is chip-LOCAL. On chip N, local tile t is global shard tile N*n_local+t, so every chip gathers
+   nodes [0,n_local) and writes them to its own shard -> wrong mapping. The per-core node ranges/x-window
+   (pc_nlo/pc_xlo) are also local-only, so on chips>0 the needed neighbors' x may fall outside the loaded
+   x-window / the assumed range -> an out-of-range NOC read that never returns => the workload hang we see.
+FIX (well-defined): give each chip its GLOBAL start offset. Single-program-over-32-chips can't; use PER-DEVICE
+MeshWorkload programs -- wl.add_program(MeshCoordinateRange(single coord), program_c) per chip c, each with
+start_out_id_base = c*n_local and its own pc_xlo/pc_nlo computed for the GLOBAL node range [c*n_local*1024/3, ..).
+This is the heterogeneous per-device approach the strategy flagged (also needed for per-chip harvesting). With
+per-device programs the gather's global node math is correct and each chip's x-window covers its real neighbors
+-> workload completes -> run RBM-deflated solve for G4/cold/warm/stretch. G3's spmv_mac already proves per-chip
+programs compile fast on the reap tree.
