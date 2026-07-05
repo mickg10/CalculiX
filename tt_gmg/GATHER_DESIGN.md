@@ -447,3 +447,21 @@ compiles + runs there, G3=3.46ms already measured, cold/warm/stretch achievable 
 session on g15glx03 CLOSED: correctness/G1/G5 (golden 95.812971 via ttnn matmul-diagonal, which uses supported
 ops) + G2 (351ms). The fast-MAC timing gates are a v0.73.1-API feature -> tt-quietbox (tt-fold-gated) is the
 right box for them; the galaxy needs a compute-kernel port. Box restored, galaxy reset clean.
+
+## g15glx03 BOTTOM OF THE STACK: fast-MAC fp32-accumulate kernel is fundamentally v0.73.1-only — 2026-07-05
+Traced the galaxy blocker to its irreducible root. The fast-MAC compute kernel (mac_compute.cpp) achieves the
+compensated bf16x3 MAC's REQUIRED true-fp32 accumulation by calling the LOW-LEVEL LLK directly:
+llk_math_eltwise_binary<ELWMUL,...,EltwiseBinaryReuseDestType::NONE>(cb_a,cb_b,0, clear_fp32_dst_acc=first) --
+NOT clearing the fp32 dst accumulator for terms after the first, so the 6*K cross-terms accumulate in fp32 (avoids
+bf16 cancellation). Fix chain on the galaxy's older tt-metal: (1) include paths compute_kernel_api/ + dataflow_api.h
+[fixed], (2) mul_tiles_init 4-arg->2-arg [fixed], (3) NOW chlkc_list.h:47/52 "chlkc_pack/chlkc_unpack has not been
+declared" -- the galaxy version's per-kernel chlkc CODE-GEN does not emit pack/unpack decls for the raw-LLK path.
+And a high-level rewrite (mul_tiles) would NOT accumulate in fp32 on this version (public mul_tiles hardcodes
+clear_fp32_dst_acc=true -> wipes the accumulator -> WRONG results for the compensated MAC). So the fast-MAC's
+fp32-accumulation kernel is a hard v0.73.1 dependency; the galaxy's older tt-metal cannot run it without either
+building v0.73.1 there (multi-hour) or a from-scratch fp32-accumulate kernel for the older LLK (uncertain it even
+exposes non-clearing fp32 accumulate). DEFINITIVE: full timing gates (G3/G4/cold/warm/stretch) need the fast-MAC
+= tt-metal v0.73.1 = tt-quietbox (G3 3.46ms measured there, one homogeneous program, cold/warm achievable),
+which is tt-fold-gated. On g15glx03 we CLOSED correctness/G1/G5 (golden 95.812971 via ttnn matmul-diagonal, which
+uses only supported high-level ops) + G2 (352ms). Box restored, galaxy reset clean. This is the exhaustive,
+irreducible technical boundary for the fast path on the galaxy.
