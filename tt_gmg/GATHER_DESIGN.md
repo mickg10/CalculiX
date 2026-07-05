@@ -402,3 +402,18 @@ HOMOGENEOUS tt-quietbox 8-chip. Box restored (container w/ 32 devices, galaxy re
 DELIVERED: hard blocker (dead fabric) CLEARED via authorized reset -> 32-chip ttnn mesh+matmul WORK; correctness/
 G1/G5 CLOSED on g15glx03 (golden 95.812971); G2 measured (357ms/32-chip). Fast-MAC G3 on this specific
 heterogeneous galaxy is gated on per-config MeshWorkload compilation; on homogeneous hw it is 3.46ms.
+
+## g15glx03 BREAKTHROUGH: per-device MeshWorkload programs clear ALL errors on the heterogeneous galaxy — 2026-07-05
+The heterogeneous-harvesting blocker is SOLVED. Fix (tt_gmg/spmv_mac_galaxy.cpp): open the full-system 4x8 mesh
+with FABRIC_1D, use dev->worker_cores(TENSIX) for the core set, and -- the key -- add a SEPARATE program per
+device coordinate (loop `for (_coord : MeshCoordinateRange(dev->shape())) { Program p=CreateProgram(); ...build
+CBs/kernels/runtime-args...; wl.add_program(MeshCoordinateRange(_coord,_coord), move(p)); }`) so each device gets
+a program compiled for ITS harvesting config. Result on the 32-chip galaxy: mailbox_err=0, kernel_err=0, topo=0
+-- ALL THREE prior blockers gone (previous single-program add_program(full-range) failed kernel.cpp:293 because
+one program lacked binaries for heterogeneously-harvested chips). First run hit the 280s timeout (exit=124) while
+compiling 32 per-device programs (one-time cold cost, not per-apply); re-running with a longer timeout to capture
+the per-apply G3 + rel. G2 stayed 353ms/32-chip.
+BOX ENUMERATION (user asked): TT hardware we can reach = (1) tt-quietbox ttuser@100.117.137.85, 8 WH chips
+(4 n300), homogeneous, fast-MAC 3.46ms, tt-fold-gated; (2) g15glx03 user@38.97.6.6:55211 via jump, 32 WH GALAXY,
+heterogeneous (now unblocked), reset-authorized, on TT corp tailnet; (3) g08blx02 "bh-galaxy" 172.27.111.12 via
+g15glx03, 32 BLACKHOLE galaxy (diff arch, would need wormhole->bh rebuild). No other reachable WH galaxy.
