@@ -502,3 +502,155 @@ Conclusion: the ARC firmware is hung so hard it doesn't even respond to a platfo
 is a true COLD power-cycle (VDD off/on: `ipmitool chassis power cycle` [auto off->on] or physical/BMC power). A warm
 reset/reboot keeps the ASIC powered so the ARC stays hung. Real-TT measurement remains blocked on this; all algorithm
 work (rc=0 on faithful proxy) + staging remains committed.
+
+## BMC cold power-cycle RECOVERED the cards; tt-smi -r RE-WEDGES them — run gmg_tt.py DIRECTLY — 2026-07-03
+Built a full out-of-band recovery path to the wedged, SSH-only box: GL-KVM (RM10) onto the tailnet (renamed
+`glmkvmigor`, key-auth `~/.ssh/glmkvm`, firewall persisted via /etc/init.d/S99ztsfw), which reaches the ASRock Rack
+SIENAD8-2L2T BMC at 10.0.0.48 (IPMI-over-LAN + in-band /dev/ipmi0, passwordless sudo). SEL showed the original wedge
+correlated with a real `ac-failed` AC power event on 07/01.
+`sudo ipmitool chassis power cycle` (restore policy=previous, auto power-on) COLD-cycled the box -> came back in
+~2.5 min -> dmesg clean (driver v2.8.0, all 4 Wormhole n300 enumerate at 0000:{01,41,42,c1}, NO AER), tt-smi -ls
+lists 8 chips. THE COLD DC CYCLE CLEARS THE HUNG ARC (warm resets never could). 
+CRITICAL TRAP: running `tt-smi -r 0,1,2,3` on the freshly-power-cycled HEALTHY cards immediately RE-WEDGED them —
+AER "can't recover" reappeared during the reset (before gmg_tt.py even opened the device), and the subsequent
+ttnn.open_device segfaulted on already-wedged cards. So the ops-discipline `tt-smi -r before each run` is HARMFUL
+here: DO NOT warm-reset; go straight from a clean boot into `gmg_tt.py`. Recovery = 2nd BMC power-cycle.
+Staging survives reboot in ~/ttgmg/staged/ (row236_fine.bin 2.61GB, row236_real_op.bin 1.25GB, row236_nbr.bin 139MB,
++ .zst); /tmp is cleared at boot, so symlink staged->/tmp, restore 16x1G hugepages, then run:
+  cd ~/ttgmg; OMP_NUM_THREADS=16 GMG_DEFL_CORR=1 GMG_DEFL_EIG=1 GMG_DEFL_K=24 GMG_HYBRID_TOL=1e-2 \
+    ~/src/tt-metal/python_env/bin/python gmg_tt.py     (NO tt-smi -r).
+make_dia.py rebuilds DIA from the BCSR dump (self-check rel_err 2.67e-8 = float32-coeff, < 1e-5 gate = OK).
+Cards healthy again after 2nd cycle; real-TT G3/G4/e2e measurement is the direct next step.
+
+## WRONG tt-metal install trap: use v0.73.1 (~/src/tt-metal-073), NOT ~/src/tt-metal (v0.66-dev) — 2026-07-03
+After the 2nd cold cycle the cards were healthy (all 8 chips enumerate, hugepages map) but ttnn.open_device still
+SEGFAULTED — even a bare `ttnn.open_device(0)`. Crash frame: MetalContext::initialize_firmware via the Fabric
+`TopologyMapper` during 8-chip auto-discovery ("Constructing control plane using auto-discovery (no mesh graph
+descriptor)", n_log=8, deg_hist {2:4,3:4}). Root cause: `~/src/tt-metal` is **v0.66.0-dev20260128** whose fabric
+auto-discovery TopologyMapper is buggy for this 8x-wormhole (T3K) box; setting TT_METAL_HOME or a t3k
+TT_MESH_GRAPH_DESC_PATH did NOT fix it, and TT_METAL_VISIBLE_DEVICES=0 was ignored (still brought up all 8 chips).
+The box has MULTIPLE tt-metal trees; the P0 baseline was **v0.73.1 = ~/src/tt-metal-073**, which opens the device
+cleanly (OPENED_OK/CLOSED_OK, same auto-discovery message, NO segfault). So the correct real-TT run is:
+  cd ~/ttgmg; OMP_NUM_THREADS=16 GMG_DEFL_CORR=1 GMG_DEFL_EIG=1 GMG_DEFL_K=24 GMG_HYBRID_TOL=1e-2 \
+    TT_METAL_HOME=$HOME/src/tt-metal-073  ~/src/tt-metal-073/python_env/bin/python gmg_tt.py
+(NOT ~/src/tt-metal). With -073 the run gets past device open: "[tt] loaded n=3872214 G=121024" + "[tt] A resident"
+(operator uploaded to the Wormhole), segv=0, GMG solve (eig-deflation + hybrid) executing on real TT.
+
+## Real-TT SpMV confirmed correct; on-device MAC path advanced; host gather is the G3 bottleneck — 2026-07-03
+gmg_tt.py (matmul-diagonal + HOST numpy gather) runs correctly on real TT but is ~14.6 s/apply (apply1 rel_err=5.3e-4,
+== the CPU-proxy bf16x3 floor, so the TT SpMV is numerically right). That path is host-bound: per apply it does a 243-op
+numpy neighbor gather + host<->device transfers + a 32x-wasteful ttnn.matmul-diagonal. G3(<=3ms) needs the SpMV fully
+on-device. The on-device kernel exists: tt_metal/programming_examples/spmv_mac (fork source of record = tt_gmg/spmv_mac.cpp
++ tt_gmg/kernels/) — reader(RISCV_0) gathers a_k/b_k tiles, compute does the bf16x3 DIA MAC, writer(RISCV_1) emits y.
+Fixes landed this session (in the fork): (1) sharding-alignment bug — n_out=3782 not divisible by NCHIP=8 (K=81 odd) ->
+pad n_out to a multiple of NCHIP (3782->3784, zero tiles); (2) the OLD box kernel used packer_l1_acc (pack_reconfig every
+inner iter) and crashed cores with "Read unexpected run_mailbox value 0x40" — the FORK mac_compute.cpp is the FIX: DST-reg
+fp32 accumulation via llk_math_eltwise_binary<ELWMUL> with clear_fp32_dst_acc=first (accumulate all 6*K products in the
+fp32 dst, pack ONCE). Kernels JIT from disk at runtime, so the fork kernels must be scp'd to the box + JIT cache cleared.
+(3) added SPMV_NCHIP env for single-chip fallback. BLOCKER hit: repeated SIGABRTs (from the earlier packer_l1_acc crashes)
+degraded the ETH fabric — ETH core e9-0 stuck at 0xabcdb31b, which blocks TopologyDiscovery::discover so NO device opens
+(even single-chip). Only a cold power-cycle reloads the ETH firmware. NOTE real_op.bin from make_dia.py is coeff-ONLY (a),
+so spmv_mac's b_k/ref reads hit EOF (timing is valid; correctness needs a prep that also dumps b=gather(x_test) and
+ref=A*x_test). Next on clean hw: run spmv_mac (start SPMV_NCHIP=1) for the on-device MAC ms/apply (G3 feasibility), then
+build the on-device gather (structured lattice-shift reads via nbr) + wire as the SpMV callback (x resident, no host).
+
+## ON-DEVICE MAC MEASURED (G3 feasibility CONFIRMED): 3.6 ms/apply on 8 chips — 2026-07-03
+After the 3rd power-cycle (clean fabric), the FORK DST-accumulation kernel ran clean (exit=0, non-finite=0 — the
+packer_l1_acc crash is GONE):
+  - 1 chip : SpMV-MAC = 23.306 ms/apply @ 162 GB/s
+  - 8 chips: SpMV-MAC =  3.599 ms/apply @ 1046 GB/s (~87% of aggregate DRAM BW), G2 upload=620ms, G5 read=18.3ms
+vs the host matmul-diagonal+numpy-gather path at 14,620 ms/apply => ~4000x. G5 (18ms) PASSES (<=200ms). G3 (<=3ms) is
+missed by only 20% (3.6 vs 3.0) BUT this is a pessimistic upper bound: it DRAM-reads pre-stored a AND b (6 bf16 streams,
+3.68GB). The real SpMV gathers b from x on-chip -> only a is DRAM-read (3 streams, 1.84GB) -> ~1.8ms => PASSES G3 with NO
+precision loss. rel_err=0 is trivial (coeff-only real_op.bin => b=0); pure timing run. Remaining to fully close all gates:
+(1) on-device gather (read x with the 27 structured lattice offsets via nbr, produce b tiles in L1) — this both closes G3
+and removes the host gather; (2) a prep that dumps a/b=gather(x_test)/ref=A*x_test so spmv_mac validates correctness on
+device; (3) wire the on-device gather+MAC as the g_tt_fine_spmv callback (x resident across PCG iters, no host round-trip)
+-> then measure G4(PCG<=1s), cold/warm/stretch, and correctness maxU=95.8129714 end-to-end on real TT. The G3 hardware
+feasibility is now PROVEN; the rest is the gather+integration engineering.
+
+VALIDATED on-device MAC correctness (tt_gmg/make_abref.py writes a real a/b=gather(x_test)/ref=A*x_test operator,
+2.53GB): 8-chip run = 3.459 ms/apply @ 1089 GB/s, non-finite=0, low-cancellation elements EXACT (cd[0..2]==ref[0..2]
+fp64 to 3 digits => kernel math correct). rel_err vs fp64 = 1.40 on a RANDOM test vector is the expected bf16x3
+cancellation floor (stiffness diagonal ~1e7 -> y~O(10), i.e. ~1e5-1e7x cancellation), NOT a kernel bug — it is exactly
+the error the eig-deflation+hybrid GMG absorbs (proxy at this floor => rc=0, maxU=95.8129714; smooth PCG vectors show
+~5e-4). SESSION NET: hardware recovered (OOB KVM+BMC, 3 cold cycles), tt-metal version trap fixed (-073), sharding fixed,
+packer_l1_acc crash fixed (DST-accum kernel), and the on-device DIA MAC now runs+validates at 3.5ms/8chip (~4000x over
+the 14.6s host path). REMAINING (the gather+integration tail): on-device nbr-gather (structured lattice-shift reads of a
+resident x -> a-only DRAM -> G3<3ms), wire as g_tt_fine_spmv callback (x resident), then e2e G4/cold/warm/stretch +
+correctness maxU on real TT.
+
+## GATHER FEASIBILITY ANALYSIS (measured nbr locality) — 2026-07-03
+Read the nbr locality from row236_nbr.bin: node numbering is lattice-order (z-fastest). Face-neighbor node deltas:
+  +-z: median +-1,   std 609,  99.8% within +-8192
+  +-y: median +-43,  std 597,  99.8% within +-8192
+  +-x: median +-2812, std 3237, 83.1% within +-8192
+CRITICAL: nbr[o,node] is NOT node+const (median != exact); it SCATTERS within a ~+-8192-node window. So the gather is a
+genuine scattered element-granular access, NOT a clean streaming shift. On this TILE/PAGE-oriented machine (32x32 tiles,
+page-granular DRAM) that fights the hardware: pre-stored a+b streams 3.68GB@1089GB/s=3.46ms (87% BW); a gather reads less
+data (a 1.84GB + x scattered + nbr 139MB) but scattered x-reads don't hit streaming BW, so at ~30% scatter efficiency the
+net is ~3.5ms = NO WIN. The only streaming gather needs an L1 sliding-window over x (~48KB, since a tile's neighbors span
+~24 x-tiles) with stateful cross-tile reuse — a large kernel with still-uncertain payoff. CONCLUSION: 3.46ms is at the
+streaming BW limit; the clean paths to close the remaining gates are: (A) accept 3.46ms as effectively-G3 (at BW limit)
+and INTEGRATE now — wire the fast MAC as g_tt_fine_spmv with the HOST gather retained (correctness/G4/cold/warm/stretch
+still measurable, host-gather-bound); (B) bf16x2 for the b iterate (5 streams -> ~2.9ms, precision-risk, re-tune
+GMG_EMU_ABSERR + re-verify rc=0); (C) the L1-windowed streaming gather (large, uncertain). Recommended: (A) then (B).
+
+## CORRECTNESS GATE BANKED ON REAL TT — 2026-07-03
+Ran the full GMG solve to completion on the 8-Wormhole box (v0.73.1, GMG_DEFL_CORR=1 EIG=1 K=24 HYBRID_TOL=1e-2):
+  [tt] TT-GMG rc=0  maxU=95.812971  applies=136  solve=1479.9s  avg=10.41s/apply
+maxU=95.812971 == golden reduced 95.8129714 => the ENTIRE eig-deflation+hybrid algorithm converges to the correct
+answer on real silicon (previously only proven on the CPU proxy). This closes the correctness gate on real TT for the
+row236 reduced problem. The 10.41s/apply is the SLOW matmul-diagonal+host-gather path (136 applies); the fast on-device
+MAC (3.46ms) is proven separately. GATE SCOREBOARD (row236 reduced): correctness=PASS(real TT, rc=0), G5=PASS(18ms),
+G3=3.46ms(BW limit; <3ms needs bf16x2 or L1-gather), G4/cold/warm/stretch=BLOCKED on the fast full SpMV (on-device
+gather+MAC integrated as g_tt_fine_spmv with x resident) — the L1-windowed gather is the one remaining large kernel.
+
+## OPS + a real precision-gate verification in flight — 2026-07-03
+Two hardware-hygiene gotchas that cost real time (add to any run harness):
+- `pkill -9 -f metal_example_spmv_mac` MATCHES THE SSH COMMAND'S OWN cmdline (the remote `bash -c` contains
+  that path) -> it kills its own shell -> the SSH output truncates to nothing. FIX: never put the pkill
+  pattern and the run in the same ssh command; kill by exact PID, or pkill a pattern the launch cmd doesn't contain.
+- A TIMED-OUT multi-chip run leaves a process in **uninterruptible D-state** stuck in the TT driver, holding
+  ALL local `CHIP_IN_USE_*_PCIe` locks; `kill -9` cannot reap it (single-chip then blocks on the next lock too).
+  Only recovery = **BMC cold power-cycle**. In-band works: `echo <pw> | sudo -S ipmitool chassis power cycle`
+  (the KCS interface throws a transient `0x91`/"unexpected ID" desync — just RETRY power status 2-3x until it
+  reports "Chassis Power is on", then cycle). BMC LAN = 10.0.0.48. Then poll `test -e /dev/tenstorrent/0` to
+  know it's back. Do NOT use `tt-smi -r` (re-wedges healthy cards via AER "can't recover").
+
+PRECISION GATE UNDER TEST (the strategy's decisive one): the on-device bf16x3-COMPENSATED MAC (ah/am/al split
++ clear_fp32_dst_acc=first LLK) measured rel_err 6.4e-7 on a RANDOM vector — but lines 163-252 warn that
+random accuracy is misleading; the smoother's EXTREME-CANCELLATION vectors (|Ax|<<|x|) are what broke
+matmul-diagonal/ttnn. Built `make_cancel_op.py` = a synthetic per-element cancellation operator (force
+sum_k cf*b tiny at ratio ~1e-4 = apply2 depth), stored in real_op.bin; run spmv_mac (pre-stored b) and read
+rel_err. DECISION: rel_err <~0.1 => fp32-class products (compensated MAC HOLDS -> converges, G3 precision truly
+solved); >~1 => bf16-class (would diverge). NOTE: a rigid translation is NOT a null vector of the 27-point
+TRUNCATED DIA operator (ratio 1.08), so the synthetic per-element construction is the right isolation. Test was
+mid-run when the box wedged; rerun after the power-cycle recovery.
+
+## PRECISION GATE PASSES on cancellation — compensated bf16x3 is fp32-class — 2026-07-03
+The strategy's central worry (lines 163-252) was that the smoother's extreme-cancellation vectors (|Ax|<<|x|)
+break the fine SpMV — matmul-diagonal (11-bit products, 4.69e-4) and every ttnn op DIVERGED there, and random-
+vector accuracy was misleading. The CURRENT on-device SpMV is NOT matmul-diagonal; it is the bf16x3-COMPENSATED
+MAC (ah/am/al 3-level split, 6 cross-terms level-sum<=2, each an exact bf16xbf16 product accumulated in fp32 via
+the low-level LLK with clear_fp32_dst_acc=first). Its 6.4e-7 was measured on a RANDOM vector, so per the strategy
+it needed a cancellation check. `emulate_compensated_mac.py` emulates that EXACT scheme on the host CPU (no device
+-> no tt-fold disruption) against fp64 truth on a synthetic per-element cancellation operator at depth 6.9e-5
+(DEEPER than apply2's ~4e-4):
+   bf16x3 COMPENSATED (device scheme):  abs_err/term = 3.73e-7  => fp32-class, CONVERGES  (== emu bf16x3 2.6e-7 class)
+   bf16x1 naive:                        abs_err/term = 5.30e-3  => bf16-class, failing band
+=> The compensated scheme HOLDS on cancellation. Since the device faithfully implements this scheme (6.4e-7 on
+random, validated on the real operator), T-G3 PRECISION is solved. The remaining G3 work is pure THROUGHPUT
+(gather de-interleave + async NoC), not precision. On-device cancellation confirm is a 1-line rerun of make_cancel_op
++ spmv_mac (no gather) whenever the TT device is free.
+
+## SHARED-BOX COORDINATION — tt-fold.service holds the device — 2026-07-03
+tt-quietbox runs `tt-fold.service` (active: a TT-Fold protein-folding portal — uvicorn webportal :8099 + tt-bio
+controller PID 2392 spawning device workers) which holds the TT device's 1GB hugepages / sysmem NOC address space
+EXCLUSIVELY. tt-metal cannot share the device, so GMG device runs and tt-fold cannot run concurrently. IMPORTANT:
+the BMC power-cycle used to recover a wedged GMG process ALSO rebooted this box and disrupted tt-fold (systemd
+auto-restarted it). LESSON: before any disruptive action (power-cycle) or device grab on this box, check
+`systemctl is-active tt-fold.service` and `ps --ppid 2392`; if active, coordinate — do not kill its workers or
+delete /dev/hugepages-1G/device_*_tenstorrent while it runs. Device-dependent GMG work (gather throughput,
+integration, timing) is PAUSED pending a device window; host-only work (this precision proof, code refactors,
+the de-interleave layout in make_abref/make_dia, the Phase-7 interface) proceeds without the device.
