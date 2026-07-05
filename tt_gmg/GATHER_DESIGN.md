@@ -666,3 +666,18 @@ with the real reap-ported fast-MAC gather SpMV on 32 chips; 3.2x per-apply optim
       overlap.
   Both are the strategy's "multi-week engineering" (lines 96, 306, 345). ALSO REQUIRED: a healthy device (BMC
   power-cycle g15glx03, or use a different galaxy) -- iterative optimization needs reliable hardware.
+
+## Device fault CONFIRMED via tt-smi: ARC2_FW_VERSION=0x0, unclearable without BMC — 2026-07-05
+tt-smi -s on g15glx03: ARC0/1/3_FW_VERSION=0x2240000 but ARC2_FW_VERSION=0x0 (firmware not loaded) +
+DDR_STATUS=0x1222222 (one channel anomalous). Kernel (nbr=4096) and all row236 dumps verified INTACT (correct
+sizes) -- so the deterministic wrong SpMV (maxU=74.88) is HARDWARE, not code/data. Tried BOTH -glx_reset (full
+6U tray reset) AND -glx_reset_auto: neither reloads ARC2 (stays 0x0). Per the standing constraint, a hung ARC
+clears ONLY via BMC cold power-cycle; tt-smi -r is forbidden (re-wedges healthy cards). No BMC access for
+g15glx03. => The degraded chip is stuck until a BMC power-cycle (user/physical action).
+TO CLOSE G4/cold/warm/stretch, two independent things are needed, both beyond this session:
+  (A) HEALTHY DEVICE: BMC cold power-cycle g15glx03, OR a second galaxy. The golden-maxU convergence proves the
+      code works on healthy hardware; it degraded across ~12 back-to-back runs.
+  (B) MULTI-WEEK OPTIMIZATION (strategy §96/§306/§345): cut applies-per-iter (bf16 needs eig-deflation ->
+      ~4290 SpMV calls vs G4's 228; needs a cheaper near-null basis / fewer smoother sweeps) AND cut the
+      per-call transfer floor (writeX 16 + readY 36 = 52ms -> resident-x / per-chip x-window / bf16 output /
+      overlap). The 3.2x split3 parallelization (committed) is the first of these.
