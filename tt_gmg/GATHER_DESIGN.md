@@ -578,3 +578,27 @@ on-device-execution hang. NEXT (focused, bounded): instrument INSIDE gather_read
 known-core marker before each noc_async_read_barrier) to find which read/loop stalls; verify xwin runtime args
 + per-node index math vs v0.73.1; or run tt_spmv at NCHIP=1 (single chip, no mesh replicate) to bisect
 mesh-replicate vs gather-algorithm. The clean win is one on-device-gather bug away.
+
+## Deep gather-code analysis + NCHIP=1 bisect (fabric-flaky) — 2026-07-05
+NCHIP=1 clean bisect was inconclusive: aborted in init with "Fabric Router Sync: Timeout 10000ms Device 24"
+(the original router-firmware wall) -> device fabric now flaky; needs a clean glx_reset_auto + retry to test.
+Code analysis of the gather path (ruling candidates in/out):
+ - x-window CBs ARE sized correctly: MakeCB(c_2/c_3/c_4 = max_xnt, c_5 = max_npg) >= per-core xnt/npg (tt_spmv
+   L136-137); so cb_reserve_back(cb_xh,xwin_ntiles) does NOT deadlock on size.
+ - a-reads use the SAME sharded TensorAccessor(Aah) as mac_reader, which works at G3 (0.740ms) -> sharded a
+   DRAM read over fabric is proven; not the hang.
+ - x-gather reads XH[s] from L1 (local, always returns) -> even an out-of-window s gives WRONG data, not a hang.
+ - nbr page fixed to 4096 (verified).
+=> Remaining suspects for the workload-never-completes hang, in priority order:
+   (1) 32-chip single-program sharding: all chips run the SAME per-core runtime args (start/npc/pc_xlo/pc_xnt/
+       pc_nlo/pc_nn from split_work_to_cores on n_local=n_out_pad/NCHIP). If start_out_id is used as a
+       GLOBAL index in a-accessor but the shard expects LOCAL (or vice-versa), a-page p=(start+t)*K+k can
+       exceed the chip's a-shard -> out-of-range DRAM read hangs. mac_reader(G3) may have used a different
+       start convention -> compare spmv_mac vs tt_spmv per-core start/shard math directly.
+   (2) reap-tree noc_async_read_page / TensorAccessor::get_noc_addr page semantics vs v0.73.1 for the gather's
+       indexed reads.
+NEXT (needs stable device): glx_reset_auto until fabric syncs, then run the 32-chip apply with in-kernel DPRINT
+(TT_METAL_DPRINT_CORES) emitting a marker before each noc_async_read_barrier in gather_reader + printing the
+first/last a-page index p and node range -> directly shows which read/core stalls and whether p exceeds the
+shard. Then fix the start/shard convention (most likely (1)) and re-run the RBM-deflated solve for G4/cold/warm/
+stretch. G1/G2/G3(0.740ms,exact)/G5 CLOSED; pipeline proven e2e; one gather-sharding bug from the full solve.
