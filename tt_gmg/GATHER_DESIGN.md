@@ -483,3 +483,19 @@ achievable (one homogeneous program) -- gated ONLY by the explicit do-not-disrup
 g15glx03 this session CLOSED: correctness/G1/G5 (golden 95.812971 via ttnn matmul-diagonal = supported ops) +
 G2 (352ms/32-chip), after cracking the (authorized-reset) fabric that was the original wall. Full timing gates
 (G3/G4/cold/warm/stretch) require v0.73.1 = tt-quietbox. Box restored, galaxy reset clean.
+
+## *** G3 CLOSED ON THE GALAXY *** fast-MAC runs on g15glx03 reap tree: 0.740 ms/apply, exact — 2026-07-05
+BREAKTHROUGH. The fast-MAC SpMV now RUNS on the 32-chip Wormhole galaxy (g15glx03) via the reap_268b tt-metal
+tree, ported through the full kernel-API adaptation chain:
+  SpMV-MAC(metalium): 0.740 ms/apply   5123 GB/s   rel_err=0.000e+00   (n_out=3782 K=81)   exit=0
+  G2 upload=349.3ms   G5 output(7MB)=33.3ms   chlkc=0 kern=0 mbox=0
+GATE STATUS on g15glx03 galaxy: G3 (SpMV<=3ms) = 0.740ms => CLOSED (4x under). G5 (output<=0.2s)=33.3ms =>
+CLOSED. rel_err=0 => correctness on the fast-MAC path EXACT. G2 upload=349ms (gate 0.3s, slightly over -
+tightenable). The reap-tree galaxy port (tt_gmg/kernels/*_galaxy.cpp): build vs the reap tree (mounted /reaptt,
+comprehensive -I incl all tt-metalium dirs + third_party + nlohmann + -std=c++20), spmv_mac.cpp fabric include
+-> tt-metalium/experimental/fabric/fabric.hpp, kernels use api/compute/ + api/dataflow/ includes (reap JIT
+convention), 2-arg mul_tiles_init (reap 3-arg w/ default call_line; fp32 accumulation via mac_term raw LLK which
+reap codegen DOES handle -> chlkc=0), TensorAccessor gets the 3rd page_size arg (bf16 tile TB=2048, fp32 out
+4096). Full-system MeshShape(4,8) + FABRIC_1D + worker_cores. Remaining: G4 (PCG<=1s), cold/warm/stretch -- wire
+this fast SpMV into the GMG PCG loop (tt_spmv.cpp persistent + run_tt_spmv.py) on the reap tree; with 0.740ms/
+apply * ~136 applies ~= 100ms SpMV, G4<=1s is very achievable.
