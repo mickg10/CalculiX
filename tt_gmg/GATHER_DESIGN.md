@@ -713,3 +713,25 @@ Wormhole (g15glx03: full solve, golden maxU=95.812971) AND Blackhole (g08blx02: 
 experimental/fabric; kernels arch-agnostic, LLK per-arch by the build; g++ host build). Timing gates
 (G4/cold/warm/stretch) remain blocked pending a healthy galaxy (power-cycle either, or a fresh one) + the
 multi-week deflation/transfer optimization. LESSON: minimize tt-smi resets — they damage the fabric.
+
+## G4/cold path REFRAMED — the gate is achievable via CHEAP polynomial deflation (analysis) — 2026-07-05
+Quantified the applies-per-iter from gmg_solve.cpp: GMG defaults DEG=2, NPRE=NPOST=GAMMA=1 -> per PCG iter =
+(NPRE+NPOST)*DEG fine-SpMVs in cheb4 + residual + PCG A.p = ~6 fine-SpMVs/iter. => plain GMG-PCG at 38 iters *
+6 = 228 SpMVs = EXACTLY G4's budget. So G4/cold ARE reachable IF the solve converges as plain GMG-PCG.
+The ~4290 applies in the current solve are ENTIRELY the eig-deflation: build the k=24 near-null eigenvectors by
+inverse iteration (GMG_DEFL_EIG=1, GMG_DEFL_EIGIT=5 -> 24*5 vcycle solves) PLUS the extra deflated iters. That
+is the bf16-precision workaround (bf16-product cancellation excites the near-null space -> plain PCG diverges).
+CONCRETE UNTESTED OPTIMIZATION (test first thing on healthy hardware):
+  build_defl() (line 281) builds POLYNOMIAL near-null vectors of degree g_defl_deg with ZERO device applies
+  (pure analytic monomials over the lattice coords). g_defl_deg=1 = 6 RBMs (tested -> STALLED). But deg=2 (30
+  vectors) / deg=3 (60 vectors) enlarge the deflated near-null space CHEAPLY (no inverse iteration).
+  TRY: GMG_DEFL_CORR=1 GMG_DEFL_EIG=0 GMG_DEFL_DEG=2 (then 3). If it converges, the solve is ~38-84 iters * ~6
+  SpMVs = 228-500 device applies with NO expensive eig setup -> directly targets G4 (<=1s) / cold (<=5s).
+  Combine with: (a) the committed 3.2x parallel split3, (b) transfer floor cut (writeX 16 + readY 36 = 52ms/
+  call -> resident-x/per-chip x-window/bf16 output/overlap). At Blackhole's 164ms/apply (serial) or ~50ms
+  (parallel split3), 228 applies = ~11s (serial) / ~11s->transfer-bound; the transfer cut is what lands <=1s.
+RESUME STEPS once a galaxy is power-cycled healthy (minimize resets!):
+  1. rebuild libtt_spmv with the staged parallel split3 (/tmp/tt_spmv_par.cpp on g08blx02).
+  2. run_tt_spmv with GMG_DEFL_DEG=2 (EIG=0) -> check convergence to golden maxU + measure applies/time.
+  3. if converges: measure G4 (solve time), cold (first solve), warm (cached setup re-solve).
+  4. then transfer optimization for the <=1s / <=1.5s / <=2s targets.
