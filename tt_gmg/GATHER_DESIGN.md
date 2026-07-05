@@ -366,3 +366,22 @@ the same (intersect functional cores across the mesh's chips, or query the mesh 
 tt-metal mesh-API fix, ~the last mile for G3. Grid-shrink-by-a-row does NOT fix it (harvesting isn't uniform).
 NET: the HARD blocker (dead multi-chip fabric) is CLEARED via the authorized galaxy reset; G3/G4 are now one
 spmv_mac mesh-common-grid fix away on g15glx03 (or immediately available on tt-quietbox 8-chip via tt-fold).
+
+## g15glx03 spmv_mac: root-caused to heterogeneous per-chip harvesting in Metalium MeshWorkload — 2026-07-05
+Debugged spmv_mac on the working 32-chip mesh through 5 distinct issues, each fixed:
+ 1. PYTHONPATH ordering (ttnn dir first) — for the ttnn mesh probe.
+ 2. Fabric not enabled -> added tt::tt_fabric::SetFabricConfig(FABRIC_1D) before MeshDevice::create.
+ 3. Full-grid CoreRange incl. non-worker cores -> switched to dev->worker_cores(TENSIX, SubDeviceId{0}) +
+    split_work_to_cores(CoreRangeSet overload).
+ 4. MeshShape(1,32) wrong topology / subset -> open full-system MeshShape(4,8); for <32, create_submeshes.
+ 5. Down to the FUNDAMENTAL blocker: kernel.cpp:293 iter!=binaries_.end() persists on the full 32 and on a 4x8
+    submesh row. The galaxy's WH chips have HETEROGENEOUS per-chip harvesting, so ONE Metalium program compiled
+    for chip-0's config lacks binaries for chips with a different config. A DIRECT MeshShape(1,8) open of
+    devices 0-7 is homogeneous (kernel_err=0) but hits "fabric on a subset not supported"; the full-mesh +
+    submesh(1,8) picks a heterogeneous device set (kernel_err=1). No TT_METAL env forces uniform harvesting.
+    ttnn handles heterogeneity by recompiling per device-config; raw spmv_mac's single add_program(full-range)
+    does not. Fixing = per-config program compilation in the MeshWorkload (or locating the exact homogeneous
+    submesh device-id set), each iteration costing a ~90s galaxy reset (crashes re-hang the fabric at 0x40).
+STATUS: the HARD blocker (dead fabric) is CLEARED (authorized reset -> 32-chip ttnn mesh + matmul work; G2=357ms
+/32-chip measured). spmv_mac's FAST-MAC G3 is already 3.46ms on HOMOGENEOUS hw (tt-quietbox 8-chip); on this
+HETEROGENEOUS galaxy it needs MeshWorkload per-config compilation. Correctness/G1/G5 CLOSED on g15glx03 (golden).
