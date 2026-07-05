@@ -385,3 +385,20 @@ Debugged spmv_mac on the working 32-chip mesh through 5 distinct issues, each fi
 STATUS: the HARD blocker (dead fabric) is CLEARED (authorized reset -> 32-chip ttnn mesh + matmul work; G2=357ms
 /32-chip measured). spmv_mac's FAST-MAC G3 is already 3.46ms on HOMOGENEOUS hw (tt-quietbox 8-chip); on this
 HETEROGENEOUS galaxy it needs MeshWorkload per-config compilation. Correctness/G1/G5 CLOSED on g15glx03 (golden).
+
+## g15glx03 spmv_mac: exhaustive -- device-limiting also breaks (topology mapper); needs per-config MeshWorkload — 2026-07-05
+Final angle tried: limit the container to 8 homogeneous devices (0-7) so they ARE the whole system (avoids both
+heterogeneity AND the fabric-subset restriction). Result: mailbox_err=0 AND kernel_err=0 (both hard blockers
+gone!), but new error topology_mapper.cpp:504 n_log<=n_phys -- for ANY NCHIP incl. 1. The 8 devices' ETH links
+still reference the now-invisible other 24 chips, so the mesh topology mapper can't build a consistent graph.
+Dead end. FULL matrix of attempts on the heterogeneous galaxy:
+  - full 32 (FABRIC_1D): kernel_err (heterogeneous harvesting).
+  - 8-subset (FABRIC_1D): kernel_err=0 but "fabric on subset unsupported".
+  - full+submesh(1,8): kernel_err (submesh row heterogeneous).
+  - 8 devices, DISABLED fabric: kernel_err=0 + mbox=0 but topology_mapper n_log<=n_phys (ETH to missing chips).
+The ONLY clean fixes are (a) MeshWorkload per-device-config compilation (what ttnn does internally; deep raw-
+Metalium surgery, ~90s reset per iteration) or (b) homogeneous hardware. spmv_mac's fast-MAC already = 3.46ms on
+HOMOGENEOUS tt-quietbox 8-chip. Box restored (container w/ 32 devices, galaxy reset clean).
+DELIVERED: hard blocker (dead fabric) CLEARED via authorized reset -> 32-chip ttnn mesh+matmul WORK; correctness/
+G1/G5 CLOSED on g15glx03 (golden 95.812971); G2 measured (357ms/32-chip). Fast-MAC G3 on this specific
+heterogeneous galaxy is gated on per-config MeshWorkload compilation; on homogeneous hw it is 3.46ms.
