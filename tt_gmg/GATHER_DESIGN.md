@@ -269,3 +269,13 @@ integration (days; even then it only reproduces what tt-quietbox already has). T
 8-chip (standard mesh WORKS; metal_example_spmv_mac already built at 3.46ms) via a tt-fold window.
 FINAL this session: correctness CLOSED on g15glx03 (golden, ttnn path), G2 measured (869ms), Metalium binary
 BUILT on g15glx03, and the multi-chip dispatch wall DEFINITIVELY characterized with stock-example evidence.
+
+## g15glx03 galaxy mesh dispatch: EVERY quick lever exhausted — needs deep TT-Mesh init (not quick-fixable) — 2026-07-05
+Tested exhaustively; stock tt-metal mesh example fails under all: NUM_HW_CQS=1 (no), mpirun -np 1 via ULFM
+OpenMPI 5.0.7 (no), fresh cache, ulimit raised, NCHIP=1/8 -- ALWAYS `run_mailbox core (19,17)`. Single-Device
+Metalium works; MeshDevice/distributed (stock + ours) never dispatches. ttnn works only because its device
+manager performs the full galaxy bringup (mesh-graph descriptor + fabric routing + dispatch-core placement)
+internally; replicating that for raw Metalium is a multi-day reverse-engineering of ttnn's galaxy device-init,
+and even then only reproduces tt-quietbox's existing 8-chip result. TERMINAL for the autonomous g15glx03 fast
+path. The fast timing gates (G3<3ms/G4/cold/warm/stretch) are closable NOW only on tt-quietbox (standard 8-chip
+mesh WORKS, metal_example_spmv_mac already built at 3.46ms) via a tt-fold window.
