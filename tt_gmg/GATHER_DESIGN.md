@@ -417,3 +417,17 @@ BOX ENUMERATION (user asked): TT hardware we can reach = (1) tt-quietbox ttuser@
 (4 n300), homogeneous, fast-MAC 3.46ms, tt-fold-gated; (2) g15glx03 user@38.97.6.6:55211 via jump, 32 WH GALAXY,
 heterogeneous (now unblocked), reset-authorized, on TT corp tailnet; (3) g08blx02 "bh-galaxy" 172.27.111.12 via
 g15glx03, 32 BLACKHOLE galaxy (diff arch, would need wormhole->bh rebuild). No other reachable WH galaxy.
+
+## g15glx03 REAL root cause: kernel include-path version mismatch (NOT just heterogeneity) — 2026-07-05
+Diagnosed the true blocker. The spmv_mac kernels were written for tt-quietbox's tt-metal (v0.73.1), which uses
+the unified include paths `api/compute/eltwise_binary.h` and `api/dataflow/dataflow_api.h`. The galaxy's flash-tree
+tt-metal uses the OLDER convention: `compute_kernel_api/eltwise_binary.h` and bare `dataflow_api.h`. So the
+compute kernel silently FAILED to compile ("trisc2 build failed ... eltwise_binary.h: No such file") -> no
+binary -> the `kernel.cpp:293 iter!=binaries_.end()` dispatch failure we chased for hours. FIX PART 1 (include
+paths, applied to all 4 kernels: mac_compute/mac_reader/mac_writer/gather_reader): api/compute/->compute_kernel_api/,
+api/dataflow/dataflow_api.h->dataflow_api.h. With that, build_fail=0 (kernels compile). FIX PART 2: single-program
+still hit kernel.cpp:293 -> heterogeneous per-chip harvesting IS also real, so per-device MeshWorkload programs
+(one add_program per MeshCoordinate) are needed so each chip gets a binary for ITS config. The WINNING combo
+(fixed includes + per-device programs) was never tested together before (the earlier per-device run timed out
+*because* of the broken include, retrying the failed compile forever). Now building+running that combo. Lesson:
+porting Metalium kernels across tt-metal versions requires fixing compute_kernel_api/dataflow include paths.
