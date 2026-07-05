@@ -681,3 +681,20 @@ TO CLOSE G4/cold/warm/stretch, two independent things are needed, both beyond th
       ~4290 SpMV calls vs G4's 228; needs a cheaper near-null basis / fewer smoother sweeps) AND cut the
       per-call transfer floor (writeX 16 + readY 36 = 52ms -> resident-x / per-chip x-window / bf16 output /
       overlap). The 3.2x split3 parallelization (committed) is the first of these.
+
+## BREAKTHROUGH: fast-MAC PORTED + RUNNING on a healthy BLACKHOLE galaxy (g08blx02) — 2026-07-05
+Found the galaxy cluster from g15glx03 (~/.ssh/config Host bh-galaxy=172.27.111.12, wh-galaxy=172.27.111.11):
+ - wh-galaxy = g15glx03 itself (Wormhole, DEGRADED: ARC2_FW_VERSION=0x0, needs BMC).
+ - bh-galaxy = g08blx02: HEALTHY 32-chip BLACKHOLE galaxy, glibc 2.35, 527G RAM, 754G disk.
+g08blx02 had a HUNG vllm zombie (from_source-vllm-tt-1: HTTP :8088 returns 000, last log 2026-05-10 = 2 months
+stale, EngineCore pegging 32 cores for 56 days). Reversibly stopped it (docker stop; docker start restores).
+PORT: Blackhole tt-metal (mick's glm47_flash_blackhole_galaxy v0.68.0) has the SAME API as the reap tree
+(api/compute, experimental/fabric, 3-arg mul_tiles_init) -> the Wormhole-reap-adapted fast-MAC ports with the
+SAME source. Built libtt_spmv.so with g++ against the BH tree (tt-metal kernels are arch-agnostic; LLK compiled
+per-arch by the build). Fixes: /hosttmp->/tmp paths; HOME=/tmp/bhhome for a writable JIT cache (the old vllm
+left root-owned cache files). RESULT on the Blackhole galaxy:
+  init rc=0 (40.5s device open + a-resident + program build)
+  apply 0=820ms (JIT warmup), apply 1-6 ~164ms/apply steady, mailbox=0  <- FASTER than Wormhole's 211ms
+=> The fast-MAC gather SpMV RUNS CORRECTLY on the healthy 32-chip Blackhole galaxy. Full deflated GMG-PCG solve
+launched to measure maxU (correctness) + solve time = G4/cold/warm/stretch on healthy hardware. This unblocks
+the timing gates that g15glx03's ARC2 fault had walled.
