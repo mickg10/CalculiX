@@ -622,3 +622,27 @@ This is the heterogeneous per-device approach the strategy flagged (also needed 
 per-device programs the gather's global node math is correct and each chip's x-window covers its real neighbors
 -> workload completes -> run RBM-deflated solve for G4/cold/warm/stretch. G3's spmv_mac already proves per-chip
 programs compile fast on the reap tree.
+
+## *** FULL TT-GMG SOLVE CONVERGES with GOLDEN maxU on the galaxy *** — 2026-07-05
+Root correction: the earlier "gather hangs" were DEVICE FLAKINESS, not a bug. On a freshly-reset STABLE device
+the microbenchmark ran 12 clean applies (postRead x12, exit=0, ~220ms/apply steady, first 827ms w/ JIT warmup),
+and the full RBM+eig deflated GMG-PCG solve CONVERGED:
+  [tt-gmg] PCG iters=84 rel=8.84e-07 true_rel=1.13e-06 maxU=95.8129713 solve=830.87s
+  [tt] TT-GMG rc=0 maxU=95.812971 applies=136
+=> maxU=95.812971 = GOLDEN, true_rel=1.13e-6 -> the reap-ported fast-MAC GATHER SpMV (libtt_spmv.so, on-device
+   gather-by-nbr from replicated x, bf16x3 fp32-accumulate MAC) is NUMERICALLY CORRECT in the full solve on 32
+   chips. This supersedes G1's ttnn-matmul-diagonal correctness with the ACTUAL fast-MAC. The 32-chip
+   single-program sharding is correct (converging residual proves it); my per-device "correctness bug" concern
+   (commit e99246c) was wrong -- keep it only as a perf note, not a correctness fix.
+TIMING (the whole G4 story is now purely transfer-bound, quantified):
+  - device compute per SpMV = 0.740ms (G3).
+  - per tt_spmv CALL wall = ~220ms (host split3->bf16x3, EnqueueWriteMeshBuffer x replicated to 32 chips,
+    EnqueueMeshWorkload, EnqueueReadMeshBuffer y, CPU reassemble). 300x the device compute.
+  - eig-deflation phase ~25s/iter (deflation correction issues ~100 applies/iter); plain GMG-PCG phase after
+    the hybrid switch ran 45 iters in 6.77s (~0.15s/iter, ~1 fine apply/iter).
+GATES: G1/G2/G3/G5 CLOSED + CORRECTNESS re-proven with the real fast-MAC. G4(228 SpMVs<=1s)/cold(<=5s)/warm
+(<=1.5s)/stretch(<=2s) need the per-CALL wall cut 220ms->~4ms. TARGET OPTIMIZATIONS (strategy's "resident x,
+on-device gather"): (1) upload only each chip's x-WINDOW instead of full-x replicate to all 32 chips (biggest
+win); (2) vectorize/drop the CPU split3+reassemble over n=3.87M; (3) skip eig-deflation (GMG_DEFL_EIG) -> plain
+GMG-PCG is far cheaper per iter; (4) overlap write/compute/read. Next: profile the 220ms breakdown, then cut x
+transfer.
