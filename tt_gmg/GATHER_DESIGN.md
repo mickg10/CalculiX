@@ -559,3 +559,22 @@ mac_reader (host-side pre-gather b, like spmv_mac) to confirm the read completes
 the culprit; then fix gather_reader's on-device indexed reads (verify page_size/addressing vs v0.73.1) or fold
 the gather into the resident-x on-device smoother. GATES: G1/G2/G3(MAC,exact)/G5 CLOSED; pipeline proven e2e;
 G4/cold/warm/stretch blocked on this one on-device gather-workload completion bug.
+
+## nbr page-size bug FOUND+FIXED (2048->4096) but gather-workload STILL hangs -> deeper gather issue — 2026-07-05
+Root-caused one real reap-port bug: my blanket regex added TensorAccessor page_size=TB(2048) to EVERY gather_
+reader accessor, but the fork's original uses TWO pages -- TB=2048 for a/x (bf16 tile) and NBTB=4096 for nbr
+(int32 tile, MakeBuf ebytes=4, 1024 int32/page). So the Nbr accessor was mis-paged 2048 vs 4096. Fixed:
+gather_reader_galaxy.cpp Nbr accessor -> 4096. a/x correctly stay TB=2048 (x is "page=1024 bf16"=2048B; matches
+mac_reader which works at G3). VERIFIED the edit applied (before: TB, after: 4096) with all pages now correct.
+BUT the first gather-apply STILL hangs identically (preWriteX/preWorkload/preRead print, postRead never; the
+gather+MAC workload never completes; mailbox=0). => The page sizes are NOT the (only) cause. The remaining hang
+is deeper in gather_reader's on-device gather algorithm as reap-ported: the x-window staging (xwin_tile_lo/
+xwin_ntiles runtime args + noc read of x pages into L1, then gather within-window with DRAM fallback), the
+sharded-a vs replicated-x addressing, or the per-node index math (nbr_base/slice_int_lo) under the persistent
+re-enqueued 32-chip MeshWorkload. A core is stuck on a NOC read that never returns (no mailbox error).
+GATES: G1/G2/G3(0.740ms MAC, exact)/G5 CLOSED on the galaxy; TT-GMG pipeline proven end-to-end (fabric, reap
+port, GMG rebuilt glibc-2.35, wiring, deflation). G4/cold/warm/stretch blocked on this single gather_reader
+on-device-execution hang. NEXT (focused, bounded): instrument INSIDE gather_reader (write a sentinel to c / a
+known-core marker before each noc_async_read_barrier) to find which read/loop stalls; verify xwin runtime args
++ per-node index math vs v0.73.1; or run tt_spmv at NCHIP=1 (single chip, no mesh replicate) to bisect
+mesh-replicate vs gather-algorithm. The clean win is one on-device-gather bug away.
