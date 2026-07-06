@@ -300,7 +300,16 @@ static void deflate_rbm(int n,double*v){ for(auto&z:g_Z){ double d=0; for(int i=
 // Fine-smoother SpMV dispatch: TT 8-chip bf16x3 (lv==0, if hooked & size matches) > bf16 emulation > exact double.
 // The hook falling back on any nonzero return keeps the solve correct even if a TT apply fails mid-run.
 static inline void smoo_spmv(const Level&L,const double*x,double*y,int lv,bool emu){
-    if(g_tt_fine_spmv && g_hybrid_active && lv==0 && (long)L.B.nb*3==g_tt_fine_n){ if(g_tt_fine_spmv(x,y)==0) return; }
+    if(g_tt_fine_spmv && g_hybrid_active && lv==0 && (long)L.B.nb*3==g_tt_fine_n){
+        static int g_ttv=-1; if(g_ttv<0) g_ttv=(getenv("GMG_TT_VERIFY")&&atoi(getenv("GMG_TT_VERIFY"))>0)?1:0;
+        if(g_ttv){ static int vc=0; if(vc<4){ int n=L.B.nb*3; std::vector<double> yt(n), yc(n);
+            int rc=g_tt_fine_spmv(x,yt.data()); bspmv(L.B,x,yc.data());
+            double dn=0,cn=0; int nw=0,ilo=-1; double dmax=0;
+            for(int i=0;i<n;i++){ double d=yt[i]-yc[i]; dn+=d*d; cn+=yc[i]*yc[i];
+                if(std::fabs(d)>1e-2*std::max(1.0,std::fabs(yc[i]))){ nw++; if(ilo<0)ilo=i; } if(std::fabs(d)>dmax){dmax=std::fabs(d);} }
+            fprintf(stderr,"[TT_VERIFY] call=%d rc=%d rel=%.4e nwrong=%d/%d firstbad_node=%d dmax=%.3e (yt=%.4g yc=%.4g @0)\n",
+                    vc,rc,std::sqrt(dn/std::max(cn,1e-30)),nw,n,ilo/3,dmax,yt[0],yc[0]); vc++; } }
+        if(g_tt_fine_spmv(x,y)==0) return; }
     if(emu) bspmv_emu(L.B,x,y); else bspmv(L.B,x,y);
     if(g_emu_mbits>0 && lv==0){ int n=L.B.nb*3; for(int i=0;i<n;i++) y[i]=round_mbits(y[i],g_emu_mbits); }  // probe fine-SpMV precision
     if(g_emu_abserr>0.0 && g_hybrid_active && lv==0){   // emulate bf16-PRODUCT absolute error: DETERMINISTIC (fixed per-DOF sign so the

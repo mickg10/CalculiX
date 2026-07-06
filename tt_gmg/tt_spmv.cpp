@@ -178,9 +178,12 @@ extern "C" int tt_spmv(const double* x, double* y) {
     distributed::EnqueueWriteMeshBuffer(cq, K->xh, K->xhd, true);
     distributed::EnqueueWriteMeshBuffer(cq, K->xm, K->xmd, true);
     distributed::EnqueueWriteMeshBuffer(cq, K->xl, K->xld, true);
-    distributed::EnqueueMeshWorkload(cq, K->wl, false);
-    std::vector<float> cd;
-    distributed::EnqueueReadMeshBuffer(cq, cd, K->c, true);           // fp32 output, VSCALE-scaled
+    distributed::Finish(cq);                                         // SYNC: guarantee x is fully propagated to ALL 32 chips
+    distributed::EnqueueMeshWorkload(cq, K->wl, true);               // over the fabric BEFORE the gather workload reads it.
+    distributed::Finish(cq);                                        // BLOCKING workload + Finish: workload fully done on all
+    std::vector<float> cd;                                          // chips before the c read. Fixes the mesh-write/gather
+    distributed::EnqueueReadMeshBuffer(cq, cd, K->c, true);         // race (degraded 27,25 link lagged fabric propagation
+                                                                    // -> stale x for tiles>=1024 -> deterministic-wrong SpMV).
     const double inv = 1.0 / (double)K->VSCALE;
     { const uint32_t NT = 16; const uint32_t cds_ = (uint32_t)cd.size(); std::vector<std::thread> thr_; const uint32_t ch_ = (n + NT - 1) / NT;
       for (uint32_t t_ = 0; t_ < NT; t_++) thr_.emplace_back([&, t_]() {

@@ -808,3 +808,19 @@ outputs/nodes are wrong); (2) if gather-b != mac-b, diff the JIT-emitted gather 
 build (nbr window args, page math, chip-local start offset in the 32-chip shard); (3) pin the good cache. Once
 gather-b == mac-b, the full solve converges and G4/cold/warm/stretch are measured (algorithm CPU-validated:
 bf16x4/eig-k8 -> ~228 applies; transfer 64->~4ms).
+
+## ROOT CAUSE FOUND via TT_VERIFY instrumentation: mesh x-write sync race + fix — 2026-07-05
+Added GMG_TT_VERIFY to gmg_solve.cpp: on the first fine-SpMV calls, compute BOTH the on-device gather (yt) and
+the exact CPU bspmv (yc) and log ||yt-yc||/||yc||. Ran on the BMC-recovered galaxy (first mesh open). Result:
+  call0 (x=0): rel=0 OK
+  call1: rel~1 but only 16/3872214 wrong -> ESSENTIALLY CORRECT (gather CAN produce right output)
+  call2: rel=8.6e5, 3804125/3872214 (98%) wrong, dmax=2354, firstbad_node=1024 (EXACTLY tile-1 boundary)
+  call3: 99.7% wrong, firstbad_node=1024
+=> The gather is correct for the first ~2 calls then corrupts, with a CLEAN tile-1024 boundary. That is the
+signature of a MESH x-WRITE / FABRIC-PROPAGATION RACE: EnqueueWriteMeshBuffer(blocking=true) returns before x is
+fully propagated to all 32 chips over the fabric, so the (non-blocking) gather workload reads STALE x for
+tiles>=1024. The golden solve worked because a clean fabric propagated in time; the reset-degraded 27,25 link now
+lags -> stale x -> deterministic-wrong SpMV (74.88037) -> PCG stall. THIS EXPLAINS why serial+k24 (golden config)
+also stalled and why the value was byte-identical across galaxies: it's a sync race, not the split3/deflation/dumps.
+FIX (tt_spmv.cpp): distributed::Finish(cq) after the 3 x-writes (force full fabric propagation) + blocking
+EnqueueMeshWorkload + Finish after (workload fully done before the c read). Testing now on the recovered galaxy.
