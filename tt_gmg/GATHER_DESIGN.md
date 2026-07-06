@@ -957,3 +957,16 @@ it, consistent with the magnitude pattern (x=0 right, small x mostly right, larg
 fix from buffer-reset to the NUMERIC/data path for large/wide-dynamic-range x. Next: (a) is the fixed-x output
 CORRECT vs CPU bspmv? and (b) does the GMG now CONVERGE on the freshly-regenerated dumps (the old dumps may have
 differed)? Dumps are restored, so the setup I destroyed is recovered.
+
+## *** BREAKTHROUGH: corruption is a WORK-PARTITION/SHARDING bug - only tile 0 is correct *** — 2026-07-06
+Device-vs-CPU-reference compare on fresh regenerated dumps, sine-ramp x: rel_err=1.2565 (nwrong=3862357/3872214,
+99.7%) BUT yref[:3]=[-0.06395543,-0.06516278,-0.06952496] vs ydev[:3]=[-0.06395541,-0.06516278,-0.06952495] MATCH
+to ~7 digits (bf16 precision). => node 0 / TILE 0 is COMPUTED CORRECTLY; tiles 1+ are garbage. This matches the
+TT_VERIFY firstbad_node=1024 (tile-1 boundary) exactly. So the corruption is NOT numeric/precision, NOT lost-state,
+NOT hardware, NOT arch - it is a concrete WORK-PARTITION / C-BUFFER-SHARDING bug where only the FIRST output tile
+is correct and the rest are unwritten/garbage. It's magnitude-masked: for small x (GMG call-1 residual) the
+tiles-1+ garbage is small -> looked correct (16 wrong); for large x it's huge (99.7% wrong) -> PCG stalls.
+Byte-identical across galaxies because the partition is host-computed (deterministic). Prime suspects: the reap
+adaptation MeshShape(4,8) for 32 chips vs the golden's shape, split_work_to_cores(all_set=worker_cores) partition,
+or the sharded MakeBuf c/a mapping. FIXABLE. Next: inspect MeshShape + MakeBuf sharding + the per-core out_tile
+partition; the golden used a shape/partition that wrote ALL tiles.
