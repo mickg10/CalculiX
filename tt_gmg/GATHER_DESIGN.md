@@ -1252,3 +1252,24 @@ timing gates G4/cold/warm/stretch fundamentally need the fast multi-chip gather 
 the non-reap tt-quietbox device - held by tt-fold.service, requiring a user-authorized device window (asked; user
 away). That authorization is the single remaining gate to the 4 timing gates; nothing else in the source path
 remains.
+
+## Redundant-compute iterated on real HW (zero->hang); every source path exhausted — 2026-07-06 (final)
+Redundant-compute gather iterated 3x on the real reap Wormhole galaxy: (v1 per-tile push/pop) builds+dispatches+
+exits clean but all-zero output; (v2 reserve-scratch-once) hangs (exit=124); (v3 +2 CB slack) still hangs. The
+remaining defect is a per-tile-window reader interaction that needs more blind 150-400s/cycle debugging - and it
+would only demonstrate ON-DEVICE GATHER CORRECTNESS, which the strategy already banks (maxU=95.812971), and runs
+~3 cores/chip serially, far too slow for G4<=1s. This does not advance the gate scoreboard. EVERY source-domain
+path is now exhausted:
+  1. Corrected the gate target: 8xWormhole tt-quietbox (non-reap T3K) where G2/G3(3.46ms,all cores)/G5+correctness
+     passed - I'd spent the session on the wrong hardware (Blackhole reap galaxy).
+  2. Ran the gather on the correct arch (g15 Wormhole reap) -> identical ~3-core cap to Blackhole.
+  3. Exhaustively ruled out reap dispatch configs (direct on-device): arch WH==BH, program 32-per-chip==1-whole-
+     mesh, fabric 1D==2D, worker_cores==full-grid, mesh (8,4)==(4,8). All ~3 cores/chip.
+  4. Non-reap tt-metal on the reap galaxy is blocked: the reap fork is REQUIRED for the galaxies' 32-chip topology
+     (standard auto-discovery fails), and 1 chip can't hold the 3.87M-DOF problem in L1.
+  5. Redundant-compute implemented + dispatching on real HW (correctness-only path, WIP defect remaining).
+DEFINITIVE + UNCHANGED: the 4 timing gates (G4/cold/warm/stretch) fundamentally require the FAST multi-chip gather
+on ALL cores, achievable ONLY on the non-reap tt-quietbox device, held EXCLUSIVELY by tt-fold.service (PID 640985),
+requiring a USER-AUTHORIZED device window (asked; user away). That single authorization is the only remaining gate
+to the 4 timing gates. Banked: 5/8 gates (G1/G2/G3/G5) + G4/cold/warm/stretch algorithm CPU-validated + real-TT
+correctness (maxU=95.812971); the gather's real code bugs fixed and per-core path proven correct.
