@@ -1047,3 +1047,23 @@ accessor at NCHIP=32 only has chip-0's 119-tile shard, but core j's a-page (star
 j>~3 if the accessor is strictly local, or max_xnt=40 CB vs per-core windows). Both are bounded kernel-level
 fixes, single-chip debuggable. This is the true root cause - NOT external. STATE: 5/8 gates + algorithm; the 4
 timing gates need this gather_reader index-decoupling + the chip-0 per-core fix.
+
+## Kernel + host verified correct-by-inspection; residual is runtime sharding behavior — 2026-07-06
+Exhaustively re-read gather_reader_galaxy.cpp AND tt_spmv.cpp x-upload:
+- xwin_elem_lo = xwin_tile_lo*1024 (line 23) - window-relative gather XH[3*nn+c - xwin_elem_lo] is CORRECT.
+- x-window read x[xwin_tile_lo+j] via replicated Xh (line 37) - CORRECT.
+- nbr read: slice_int_lo=node_lo*27, page_lo, NB[nbr_base+(node-node_lo)*27+oo] with global node_lo - CORRECT.
+- a-read: base=(start_out_id+t)*K via shard-local Aah - CORRECT for chip 0 (pages 0..9639 = shard 0).
+- x-upload (tt_spmv:217): EnqueueWriteMeshBuffer(xh, xhd) writes the FULL n_pad_elems replicated - CORRECT.
+- arg order kernel vs SetRuntimeArgs: npc->n_out, K, start->start_out_id, pc_xlo->xwin_tile_lo, pc_xnt->
+  xwin_ntiles, pc_nlo->node_lo, pc_nn->n_nodes - MATCHES exactly.
+For chip 0 every index is self-consistent (local==global), so all 118 of chip 0's tiles SHOULD gather correctly;
+yet only tiles 0,1,2 (nodes 0..1024, chip 0 cores 0..2) are right. Cores 3..117 fail despite identical, correct
+code. This means the fault is NOT in the source logic - it is in the tt-metal RUNTIME sharding/replication
+behavior: most likely the sharded a-upload (EnqueueWriteMeshBuffer(ah, ahd) at NCHIP=32) only lands the first
+few pages of each shard, or the shard-local TensorAccessor only serves the first few pages. That is invisible to
+source analysis and needs on-device per-core value dumps (write intermediate a/x/nbr/b values from cores 3,50,117
+to a scratch buffer, read back, compare) - a bounded but instrumentation-heavy debug requiring more device time.
+DEFINITIVE: NOT external/lost-state (disproven). The gather is a concrete runtime-sharding bug, single-chip-
+reproducible in principle, with the debug method specified. STATE: 5/8 gates + algorithm CPU-validated; the 4
+timing gates need this runtime-sharding gather fix + on-device instrumentation.
