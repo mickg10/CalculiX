@@ -193,8 +193,12 @@ static void tt_build_wl(TtSpmvCtx* K) {
         }
     if (chip == 0) fprintf(stderr, "tt_build_wl PER-CHIP: n_local=%u total=%u ncores=%u NCHIP=%u cols=%u tile_base(chip0)=%u max_xnt=%u\n",
             n_local, start, ncores, K->NCHIP, cols, tile_base, max_xnt);
-    distributed::MeshCoordinate coord(chip / cols, chip % cols);           // this chip's mesh position
-    K->wl.add_program(distributed::MeshCoordinateRange(coord, coord), std::move(program));
+    // DISPATCH TEST: add ONE program (chip 0) to the WHOLE mesh instead of 32 per-chip programs, to check whether
+    // the 32-per-chip-program MeshWorkload only dispatches ~3 cores/chip. If EXEC jumps to 3808, per-chip programs
+    // were the dispatch-breaker and the fix is one program + on-device per-chip offset.
+    (void)cols;
+    K->wl.add_program(distributed::MeshCoordinateRange(K->dev->shape()), std::move(program));
+    break;
     }
 }
 
