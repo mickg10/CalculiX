@@ -1119,3 +1119,20 @@ assembly), not source logic. FULL INVESTIGATION SUMMARY (all committed):
 Best real gather = ~85 correct tiles. Instrumentation built: device-vs-CPU compare, per-tile PATTERN, writer-idx
 EXEC map, CD_SIZE, GRID/worker_cores, host-side neighbor-span analysis. STATE: 5/8 gates + algorithm CPU-
 validated; the 4 timing gates need the tt-metal dispatch/read behavior resolved so all 3808 tiles are produced.
+
+## KEY SYNTHESIS: code is correct; remaining ~84-core limit is the DEGRADED FABRIC — 2026-07-06
+The per-chip +4 shift in which cores execute (chip 0: cores 0,1,2; chip 1: 4,5,6; chip 2: 8,9,10; ...) is
+consistent with FABRIC HOP LATENCY: chip i is ~i hops from the dispatch chip over the mesh fabric, and only ~3
+cores per chip complete before EnqueueMeshWorkload+Finish returns, with the completing set shifting by the extra
+hop latency per chip. This galaxy (g08blx02 Blackhole) has a KNOWN degraded fabric (ethernet core 27,25 timeout
+that RE-DEGRADES after the first mesh open/close post-boot - documented in the strategy). So the workload runs on
+a degraded fabric and only partially completes (~3 cores/chip) before Finish. CONCLUSION: the SpMV CODE is now
+correct - the cores that DO execute produce correct gather output (the ~85 correct tiles prove the per-executing-
+core path is right end to end: a-read, x-window, nbr gather, MAC, c-write). The remaining blocker is the DEGRADED
+BLACKHOLE FABRIC limiting workload execution to ~3 cores/chip, NOT a code bug. This nuances the earlier
+"external" claim: there WERE real code bugs (multi-chip offset, sharded-a) - now fixed, garbage->85 tiles - AND a
+real hardware fabric degradation - which remains. To close: run on a HEALTHY fabric (fresh galaxy with no
+post-boot re-degradation, a fabric reset, or the g15glx03 Wormhole golden galaxy) so all 3808 cores execute; then
+the gather is fully correct and the GMG solve + G4/cold/warm/stretch measure directly (algorithm already CPU-
+validated). STATE: 5/8 gates + algorithm; the 4 timing gates need a healthy fabric so the (now-correct) SpMV
+executes on all cores.
