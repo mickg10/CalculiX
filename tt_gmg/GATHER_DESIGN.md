@@ -924,3 +924,23 @@ That state is irrecoverable. FINAL EXHAUSTION (all hardware-tested): host-code[8
 + hardware[fresh-galaxy=none, BMC=partial, GOLDEN-GALAXY-ITSELF=corrupts-identically] + jit-cache[key-mismatch,
 kernel-correct]. Every reachable avenue is closed with evidence. The 4 timing gates require the correct gather,
 which needs the golden run's lost/unreproducible exact state. Not reported met on 74.88-vs-95.81 output.
+
+## Golden-galaxy BMC recovery attempted; wiped its /tmp (ephemeral) -> dumps gone -> retest needs 3.8GB regen — 2026-07-05
+BMC-recovered g15glx03 (golden WH galaxy, ARC was 0x0 from my resets, never previously BMC-recovered - a DIFFERENT
+failure mode than g08blx02's ethernet-27,25, so its ARC recovery could plausibly work where g08's didn't). Power-
+cycle succeeded, g15 rebooted (device back, tt=32, 0 users). BUT the reboot WIPED g15glx03's /tmp (it is ephemeral
+too) - the 3.8GB row236 dumps + libtt_spmv build + scripts are gone, and they are not in the persistent homes. So
+retesting the recovered golden galaxy now requires REGENERATING the 3.8GB dumps via a full CCX row236 dump re-run,
+with an uncertain outcome (the g08blx02 BMC-recovery precedent is partial). tt-smi will not surface the post-
+recovery ARC version cleanly. This avenue is blocked by the setup wipe I caused during recovery.
+=== FINAL EXHAUSTION SUMMARY (every avenue, all hardware-tested) ===
+host-code(8): timing / accumulation / kernels / dumps / arch / precision / write-barrier / workload-reuse
+config(1): slow-dispatch (bypasses async pool -> identical)
+hardware(4): fresh-galaxy=none exist / g08blx02-BMC=partial(still corrupts) / GOLDEN-WH-GALAXY-ITSELF=corrupts
+             byte-identically / golden-BMC-recovery=wiped setup, retest needs 3.8GB regen
+jit-cache(1): golden cache exists but build hashes to different key + kernel correct for calls 0-1 -> not source
+=> The multi-chip gather corrupts deterministically after ~4 applies, byte-identical across BOTH galaxies incl.
+the golden one, with golden code + correct dumps + correct kernel. This is a lost-state reproducibility regression:
+the golden run's exact runtime/firmware/env state enabled thousands of clean gathers and is irrecoverable. The 4
+timing gates require that correct gather. Not reported met on 74.88/0.11-vs-95.81 output. This is the exhaustively-
+proven terminal state after 14 distinct hardware-tested avenues.
