@@ -181,12 +181,11 @@ static void tt_build_wl(TtSpmvCtx* K) {
     uint32_t start = 0, ci = 0;
     for (auto [grp, npc] : {std::make_pair(gA, nA1), std::make_pair(gB, nB1)})
         for (const auto& cr : grp.ranges()) for (const auto& cc : cr) {
-            uint32_t g_start = tile_base + start;                          // GLOBAL out-tile: the sharded a/c TensorAccessors
             SetRuntimeArgs(program, reader, cc, {(uint32_t)K->ah->address(),(uint32_t)K->am->address(),(uint32_t)K->al->address(),
                 (uint32_t)K->xh->address(),(uint32_t)K->xm->address(),(uint32_t)K->xl->address(),(uint32_t)K->nbrbuf->address(),
-                npc, K->K, g_start, pc_xlo[ci], pc_xnt[ci], pc_nlo[ci], pc_nn[ci]});  // are indexed by GLOBAL tile; pc_nlo=GLOBAL node
+                npc, K->K, start, pc_xlo[ci], pc_xnt[ci], pc_nlo[ci], pc_nn[ci]});   // start=LOCAL (a/c shard-local accessor); pc_nlo=GLOBAL (replicated nbr/x)
             SetRuntimeArgs(program, compute, cc, {npc, K->K});
-            SetRuntimeArgs(program, writer, cc, {(uint32_t)K->c->address(), npc, g_start});
+            SetRuntimeArgs(program, writer, cc, {(uint32_t)K->c->address(), npc, start});
             start += npc; ci++;
         }
     if (chip == 0) fprintf(stderr, "tt_build_wl PER-CHIP: n_local=%u total=%u ncores=%u NCHIP=%u cols=%u tile_base(chip0)=%u max_xnt=%u\n",

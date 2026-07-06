@@ -1000,3 +1000,18 @@ sharding design bug. FIX: give each chip its GLOBAL node offset - either per-dev
 per mesh-coordinate with chip-specific pc_nlo/pc_xlo/pc_nn base), or replicate a + compute-all-write-own-shard.
 The golden run must have used a per-chip-correct offset (or single-chip / replicated compute); the sharded-compute
 port dropped the per-chip base. This is the concrete engineering fix the timing gates need.
+
+## Per-chip fix: nbr/x global offset CONFIRMED correct direction (partial); a/c is shard-local — 2026-07-06
+Implemented per-chip programs (add_program per mesh coordinate) with per-chip tile_base=chip*n_local.
+- pc_nlo/pc_xlo GLOBAL (for replicated nbr/x): improved gather 9857->48954 correct elements, rel_err 1.2565->
+  1.0104. CONFIRMS the per-chip-global-node-offset root cause is real and the direction is correct.
+- Then tried g_start=tile_base+start for the a/c out-tile too (hypothesizing global sharded accessors): made it
+  WORSE (rel_err=nan, out-of-bounds) -> the sharded a/c TensorAccessors are SHARD-LOCAL (local `start` correct).
+  Reverted. So the correct design is: a/c indexed by LOCAL start (shard-local), nbr/x by GLOBAL pc_nlo (replicated).
+Residual: with that design, still only ~48/3808 output tiles correct (~1.5 per chip). The per-chip offset is
+necessary but not sufficient - a second sharding detail remains (candidates: the per-chip x-window pc_xlo is a
+global index into the REPLICATED x but the reader's CB/window logic may still assume a local base; or the
+ShardedBufferConfig ROW_MAJOR shard<->mesh-coordinate mapping vs my add_program coord order; or the a-shard tile
+base). This is now a bounded, concrete multi-chip-sharding debug - NOT external/lost-state (that earlier
+conclusion was WRONG). Correct SpMV is a fixable code change away. STATE: 5/8 gates + algorithm closed; the 4
+timing gates need this residual sharding fix, whose direction is confirmed and whose surface is now small.
