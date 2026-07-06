@@ -130,19 +130,29 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
 }
 
 // Rebuild the program+workload fresh from the resident buffers (CreateKernel hits the JIT cache -> cheap).
+// FIX: a and c are SHARDED (chip i owns global output tiles [i*n_local..], addressed by LOCAL `start` via the
+// shard), but nbr and x are REPLICATED (full on every chip). So the nbr/x node indices (pc_nlo/pc_xlo) must be
+// GLOBAL = chip*n_local offset + local. The old code used one shared program with LOCAL pc_nlo for all chips, so
+// only chip 0 (offset 0) was correct and chips 1..N-1 gathered chip-0's window against their own a-shard ->
+// garbage. Build a per-chip program with tile_base = chip*n_local and add it to that chip's mesh coordinate.
 static void tt_build_wl(TtSpmvCtx* K) {
-    Program program = CreateProgram();
     const uint32_t NBn = K->NBn_v; const std::vector<int32_t>& nmin = K->nmin_v; const std::vector<int32_t>& nmax = K->nmax_v;
     auto grid = K->dev->compute_with_storage_grid_size();
+    uint32_t n_local = K->n_out_pad / K->NCHIP;
+    uint32_t cols = (K->NCHIP == 32) ? 8u : K->NCHIP;     // mesh columns (MeshShape(4,8) for 32, else (1,NCHIP))
+    K->wl = distributed::MeshWorkload();
+    for (uint32_t chip = 0; chip < K->NCHIP; chip++) {
+    Program program = CreateProgram();
+    const uint32_t tile_base = chip * n_local;            // GLOBAL output-tile base for this chip's shard
     CoreRangeSet all_set(CoreRange({0,0},{grid.x-1,grid.y-1}));
     MakeCB(program, all_set, tt::CBIndex::c_0, 3); MakeCB(program, all_set, tt::CBIndex::c_1, 3);
     MakeCB(program, all_set, tt::CBIndex::c_16, 8, tt::DataFormat::Float32);
-    uint32_t n_local = K->n_out_pad / K->NCHIP;
     auto [ncores, cores, gA, gB, nA1, nB1] = tt::tt_metal::split_work_to_cores(grid, n_local, true);
     std::vector<uint32_t> pc_xlo, pc_xnt, pc_nlo, pc_nn; uint32_t s = 0, max_xnt = 1, max_npg = 1;
     for (auto [grp, npc] : {std::make_pair(gA, nA1), std::make_pair(gB, nB1)})
         for (const auto& cr : grp.ranges()) for (const auto& cc : cr) { (void)cc;
-            uint32_t nlo = (s*1024)/3, nhi = ((s+npc)*1024-1)/3; if (nhi >= NBn) nhi = NBn-1;
+            uint32_t g_s = tile_base + s;                                   // GLOBAL tile index for nbr/x lookup
+            uint32_t nlo = (g_s*1024)/3, nhi = ((g_s+npc)*1024-1)/3; if (nhi >= NBn) nhi = NBn-1;
             int32_t emin = INT32_MAX, emax = -1;
             for (uint32_t nd = nlo; nd <= nhi; nd++) { if (nmin[nd] < emin) emin = nmin[nd]; if (nmax[nd] > emax) emax = nmax[nd]; }
             if (emax < 0) { emin = 0; emax = 0; }
@@ -170,15 +180,16 @@ static void tt_build_wl(TtSpmvCtx* K) {
         for (const auto& cr : grp.ranges()) for (const auto& cc : cr) {
             SetRuntimeArgs(program, reader, cc, {(uint32_t)K->ah->address(),(uint32_t)K->am->address(),(uint32_t)K->al->address(),
                 (uint32_t)K->xh->address(),(uint32_t)K->xm->address(),(uint32_t)K->xl->address(),(uint32_t)K->nbrbuf->address(),
-                npc, K->K, start, pc_xlo[ci], pc_xnt[ci], pc_nlo[ci], pc_nn[ci]});
+                npc, K->K, start, pc_xlo[ci], pc_xnt[ci], pc_nlo[ci], pc_nn[ci]});   // start=LOCAL (a/c shard), pc_nlo=GLOBAL (nbr/x)
             SetRuntimeArgs(program, compute, cc, {npc, K->K});
             SetRuntimeArgs(program, writer, cc, {(uint32_t)K->c->address(), npc, start});
             start += npc; ci++;
         }
-    fprintf(stderr, "tt_build_wl PARTITION: n_local=%u total_assigned_tiles(start)=%u ncores=%u n_out_pad=%u NCHIP=%u max_xnt=%u\n",
-            n_local, start, ncores, K->n_out_pad, K->NCHIP, max_xnt);   // DIAG: total_assigned must == n_local, else partition drops tiles
-    K->wl = distributed::MeshWorkload();
-    K->wl.add_program(distributed::MeshCoordinateRange(K->dev->shape()), std::move(program));
+    if (chip == 0) fprintf(stderr, "tt_build_wl PER-CHIP: n_local=%u total=%u ncores=%u NCHIP=%u cols=%u tile_base(chip0)=%u max_xnt=%u\n",
+            n_local, start, ncores, K->NCHIP, cols, tile_base, max_xnt);
+    distributed::MeshCoordinate coord(chip / cols, chip % cols);           // this chip's mesh position
+    K->wl.add_program(distributed::MeshCoordinateRange(coord, coord), std::move(program));
+    }
 }
 
 // one PCG fine-SpMV: y = A x. x/y are the fp64 solver vectors (length n). On-device gather+MAC; a resident.
