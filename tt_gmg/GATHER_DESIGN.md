@@ -1067,3 +1067,18 @@ to a scratch buffer, read back, compare) - a bounded but instrumentation-heavy d
 DEFINITIVE: NOT external/lost-state (disproven). The gather is a concrete runtime-sharding bug, single-chip-
 reproducible in principle, with the debug method specified. STATE: 5/8 gates + algorithm CPU-validated; the 4
 timing gates need this runtime-sharding gather fix + on-device instrumentation.
+
+## Replicated-a: 3->85 tiles correct; residual is per-chip +4i DRIFT (mesh-coord vs shard mapping) — 2026-07-06
+Making a replicated (reader global g_start, writer local start) moved correct tiles 3 -> 85. So the sharded-a
+accessor WAS a real part of the bug. New PATTERN: right tiles are groups of ~3 every ~123 global tiles
+(0,1,2, 123,124,125, 246,247,248, 369,370, ...). Chip boundaries in cd are every n_local=119, but the right
+groups are every ~123 = 119 + 4 => a +4*i DRIFT per chip. chip i's correct output lands near cd[123*i] not
+cd[119*i]. => the per-chip add_program coordinate (i/8, i%8, cols=8 assuming MeshShape(4,8)) does NOT match where
+ShardedBufferConfig ROW_MAJOR places shard i for THIS physical galaxy. Either the mesh is 8x4 (not 4x8), or the
+shard<->coordinate order is column-major / different. The 3-per-group (not 1) and the small +4 drift also suggest
+the x-window/CB is only partially right per chip. FIX DIRECTION: (1) query the real MeshDevice shape and set
+cols/coord from it (not hardcoded 8); (2) make the add_program coordinate order match the ShardedBufferConfig
+shard->coordinate order exactly (or shard c with the SAME orientation the workload iterates). This is now a
+concrete mesh-topology mapping fix - each layer (external->multi-chip offset->sharded-a->coord drift) has moved
+the gather closer (garbage -> 3 -> 85 tiles). NOT external. STATE: 5/8 gates + algorithm; timing gates need the
+mesh-coord/shard-order alignment + x-window completion.
