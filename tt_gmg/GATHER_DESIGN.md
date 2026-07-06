@@ -1030,3 +1030,20 @@ STILL a fixable code bug (NOT external) - now in the gather_reader per-core wind
 arg, single-chip reproducible. The multi-chip per-chip-program scaffold I added is correct-but-not-the-cause and
 can stay (needed once the per-core window is fixed). STATE: 5/8 gates + algorithm; timing gates need the
 gather_reader per-core x-window fix (single-chip debuggable, bounded).
+
+## DEEP ROOT CAUSE: gather_reader conflates shard-local a-tile with global output-node in ONE arg — 2026-07-06
+Read gather_reader_galaxy.cpp: it uses start_out_id for BOTH (a) the a-read page base=(start_out_id+t)*K via the
+Aah TensorAccessor, and (b) the output-node node0=(start_out_id+t)*1024/3 which MUST equal node_lo (the gathered
+node). x gather is window-relative (XH[3*nn+c - xwin_elem_lo], line 73) - correct. The conflict for sharded-a +
+replicated-nbr: the Aah accessor is SHARD-LOCAL (g_start global -> out-of-bounds -> nan proved this), so the
+a-read needs LOCAL start; but node0 must be GLOBAL to match node_lo (global, indexing the replicated full nbr).
+One arg can't be both. With local start: chip 0 (local==global) has 3 tiles right but chips 1..31 fail (node0
+local != node_lo global). => FIX = decouple in the kernel: pass a_tile_base (LOCAL, for the shard-local a-read/
+c-write) and node_tile_base (GLOBAL, for node0/nbr) as SEPARATE runtime args; node0 = (node_tile_base+t)*1024/3,
+a-page = (a_tile_base+t)*K. This is a small gather_reader.cpp + mac_writer.cpp + SetRuntimeArgs change (git-
+unchanged golden kernels, so the golden must have run single-chip or replicated-a where the two bases coincide).
+SEPARATE residual: even chip 0 makes only ~3/118 tiles - a second per-core issue (candidate: the shard-local a
+accessor at NCHIP=32 only has chip-0's 119-tile shard, but core j's a-page (start+t)*K may exceed the shard for
+j>~3 if the accessor is strictly local, or max_xnt=40 CB vs per-core windows). Both are bounded kernel-level
+fixes, single-chip debuggable. This is the true root cause - NOT external. STATE: 5/8 gates + algorithm; the 4
+timing gates need this gather_reader index-decoupling + the chip-0 per-core fix.
