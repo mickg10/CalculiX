@@ -1212,3 +1212,23 @@ validated; the on-device gather's real code bugs fixed (multi-chip offset, shard
 and the per-executing-core path proven correct end to end. The remaining blocker is a hardware/runtime dispatch
 cap on this specific galaxy, fully isolated and documented, with the redundant-compute correctness path and the
 per-tile-window design both specified for a runtime that dispatches all cores.
+
+## CORRECTED HARDWARE + EXHAUSTIVE reap-runtime dispatch cap (all configs ruled out) — 2026-07-06
+Re-read TT_GMG_STRATEGY.md (the actual gate authority): the gates are for the 8xWORMHOLE tt-quietbox (T3K,
+non-reap), where G2/G3(3.46ms, all cores, non-finite=0)/G5 + correctness (maxU=95.812971) PASSED (strategy
+lines 557-606). I had spent this session on the WRONG hardware - g08blx02 is BLACKHOLE, a REAP galaxy. Found the
+built Wormhole tt-metal on g15glx03 (glm47_reap_268b) and ran the gather there = the CORRECT architecture, device
+free. Result: BOTH reap galaxies (g15 Wormhole AND g08 Blackhole) give the IDENTICAL rel_err=1.43, 85/3781 tiles
+at the 123k pattern, ~3 cores/chip. Exhaustively ruled out on the reap galaxies (direct on-device): architecture
+(WH==BH), program structure (32-per-chip==1-whole-mesh), fabric (FABRIC_1D==FABRIC_2D), worker_cores-vs-full-grid,
+mesh topology (reap WORKLOG confirms Mesh(8,4); tested (8,4)==(4,8)). ALL 84-85 tiles. => the ~3-cores/chip cap is
+a fundamental REAP-RUNTIME MeshWorkload dispatch property (glm47 reap fork v0.73.1), present on every reap galaxy
+regardless of config. The non-reap standard tt-metal on tt-quietbox dispatches all cores (G3 proven). But the reap
+fork is REQUIRED for the reap galaxies' multi-chip topology (standard auto-discovery fails on them), and a single
+chip can't hold the problem in L1 - so the fast multi-chip gather is only achievable on the non-reap tt-quietbox.
+DEFINITIVE: closing G4/cold/warm/stretch requires the tt-quietbox 8xWormhole device (non-reap, all cores, G3-
+proven). It is held EXCLUSIVELY by tt-fold.service (python PID 640985), which the security rules + strategy
+(lines 648+, "PAUSED pending a device window") forbid me from disrupting without explicit user authorization. I
+asked; the user is away. DONE + VERIFIED: 5/8 gates + G4/cold/warm/stretch algorithm CPU-validated + correctness
+banked on real TT; the on-device gather's real code bugs fixed and per-core path proven correct. The last blocker
+is a user-authorized tt-fold device window on tt-quietbox - the exact next action, waiting only on authorization.
