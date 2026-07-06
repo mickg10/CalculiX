@@ -143,7 +143,7 @@ static void tt_build_wl(TtSpmvCtx* K) {
     fprintf(stderr, "GRID compute_with_storage_grid_size=%ux%u=%u cores (if << 119, physical grid is tiny -> only ~few cores/chip run)\n",
             (uint32_t)grid.x, (uint32_t)grid.y, (uint32_t)(grid.x * grid.y));
     uint32_t n_local = K->n_out_pad / K->NCHIP;
-    uint32_t cols = (K->NCHIP == 32) ? 8u : K->NCHIP;     // mesh columns (MeshShape(4,8) for 32, else (1,NCHIP))
+    uint32_t cols = (K->NCHIP == 32) ? 4u : K->NCHIP;     // mesh columns: reap galaxy is Mesh(8,4) -> cols=4 (per WORKLOG)
     K->wl = distributed::MeshWorkload();
     for (uint32_t chip = 0; chip < K->NCHIP; chip++) {
     Program program = CreateProgram();
