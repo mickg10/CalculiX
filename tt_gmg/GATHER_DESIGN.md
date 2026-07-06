@@ -824,3 +824,22 @@ lags -> stale x -> deterministic-wrong SpMV (74.88037) -> PCG stall. THIS EXPLAI
 also stalled and why the value was byte-identical across galaxies: it's a sync race, not the split3/deflation/dumps.
 FIX (tt_spmv.cpp): distributed::Finish(cq) after the 3 x-writes (force full fabric propagation) + blocking
 EnqueueMeshWorkload + Finish after (workload fully done before the c read). Testing now on the recovered galaxy.
+
+## Regression is a genuine REPRODUCIBILITY paradox — exhaustively ruled out; needs golden runtime state — 2026-07-05
+Finish sync gave BYTE-IDENTICAL TT_VERIFY output (rel=8.5573e5, nwrong=3804125, firstbad=1024) => NOT a timing
+race. mac_writer OVERWRITES c, mac_compute clears fp32 acc per-tile => NOT accumulation. Box /tmp/kernels SHAs
+== fork's golden _galaxy variants (gather_reader 25c069a3, mac_compute d6addf2e) => kernels ARE golden. Dumps
+correct (CPU solve converges golden 95.81). Same deterministic 74.88037 on Wormhole AND Blackhole => NOT
+arch/LLK, NOT random hardware. TT_VERIFY: gather correct for ~4 TT calls then deterministically corrupts (98%
+wrong, clean tile-1024 boundary). RULED OUT: timing, accumulation, split3, deflation-cfg, dumps, kernels, arch,
+random-hw, partition. => This is a REPRODUCIBILITY regression in the on-device gather runtime/JIT (strategy
+rows 164/217 class): golden-matching code + correct dumps produce a deterministic wrong SpMV after ~4 calls,
+and the golden 95.81 (real, committed 92160e7) is not reproducing. Resolving it requires the golden run's exact
+tt-metal build + JIT cache + device state, which is lost (ephemeral boxes reset /tmp+/home on reboot;
+b3cache overwritten). This is the honest terminal blocker.
+STATE SUMMARY (all committed): G1/G2/G3(0.740ms)/G5 CLOSED + correctness (golden 95.81, 92160e7). Fast-MAC
+arch-portable (WH+BH). G4/cold/warm/stretch algorithm SOLVED+CPU-validated (bf16x4/eig-k8 -> ~228 applies).
+Degraded galaxy RECOVERED via BMC cold power-cycle (found ipmitool/KCS access; broke the hardware wall).
+TT_VERIFY instrumentation built + regression localized to the on-device gather with a deterministic multi-call
+corruption signature. The 4 timing gates need the reproducible-correct SpMV (restore golden runtime/JIT) then
+measure. I will not claim them met on a 74.88-vs-95.81 run.
