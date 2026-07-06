@@ -185,7 +185,7 @@ static void tt_build_wl(TtSpmvCtx* K) {
     // node_lo slot carries the NBn node cap for the padding/bounds guard).
     SetRuntimeArgs(program, reader, all_set, {(uint32_t)K->ah->address(),(uint32_t)K->am->address(),(uint32_t)K->al->address(),
         (uint32_t)K->xh->address(),(uint32_t)K->xm->address(),(uint32_t)K->xl->address(),(uint32_t)K->nbrbuf->address(),
-        n_local, K->K, tile_base, 0u, 0u, NBn, 0u});
+        n_local, K->K, tile_base, max_xnt, max_npg, NBn, 0u});   // reader reserves cb scratch to max_xnt/max_npg once
     SetRuntimeArgs(program, compute, all_set, {n_local, K->K});
     SetRuntimeArgs(program, writer, all_set, {(uint32_t)K->c->address(), n_local, 0u});
     if (chip == 0) fprintf(stderr, "tt_build_wl REDUNDANT: n_local=%u NCHIP=%u cols=%u max_xnt=%u max_npg=%u grid=%u worker=%u (all cores do all tiles)\n",
