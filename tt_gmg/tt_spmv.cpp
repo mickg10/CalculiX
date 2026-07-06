@@ -73,7 +73,12 @@ struct TtSpmvCtx {
     uint32_t n = 0, n_out = 0, n_out_pad = 0, K = 0, NCHIP = 8, tile_elems = 1024;
     float VSCALE = 1e6f;
     std::vector<bfloat16> xhd, xmd, xld;                 // scratch bf16x3 x planes (row-major, per apply)
+    std::vector<int32_t> nmin_v, nmax_v; uint32_t NBn_v = 0;  // sharding inputs, kept for per-apply workload rebuild
 };
+// Build a FRESH program+workload from the resident buffers. Some tt-metal builds accumulate state when the SAME
+// MeshWorkload is re-enqueued across calls (gather corrupts deterministically after ~4 applies). Rebuilding per
+// apply (CreateKernel hits the JIT cache, so it's cheap) sidesteps that. Same body as the original init build.
+static void tt_build_wl(TtSpmvCtx* K);
 static TtSpmvCtx* g_ctx = nullptr;
 
 extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, const char* x_path) {
@@ -116,6 +121,18 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
     distributed::EnqueueWriteMeshBuffer(cq, K->nbrbuf, nbr2, true);
     K->xhd.assign(n_pad_elems, bfloat16(0.f)); K->xmd.assign(n_pad_elems, bfloat16(0.f)); K->xld.assign(n_pad_elems, bfloat16(0.f));
 
+    K->nmin_v = std::move(nmin); K->nmax_v = std::move(nmax); K->NBn_v = NBn;  // keep sharding inputs for rebuild
+    (void)program;                                                              // build moved into tt_build_wl
+    tt_build_wl(K);                                                             // build the initial workload
+    g_ctx = K;
+    fprintf(stderr, "tt_spmv_init: OK n=%u n_out=%u(pad %u) K=%u NCHIP=%u\n", K->n, K->n_out, K->n_out_pad, K->K, K->NCHIP);
+    return 0;
+}
+
+// Rebuild the program+workload fresh from the resident buffers (CreateKernel hits the JIT cache -> cheap).
+static void tt_build_wl(TtSpmvCtx* K) {
+    Program program = CreateProgram();
+    const uint32_t NBn = K->NBn_v; const std::vector<int32_t>& nmin = K->nmin_v; const std::vector<int32_t>& nmax = K->nmax_v;
     auto grid = K->dev->compute_with_storage_grid_size();
     CoreRangeSet all_set(CoreRange({0,0},{grid.x-1,grid.y-1}));
     MakeCB(program, all_set, tt::CBIndex::c_0, 3); MakeCB(program, all_set, tt::CBIndex::c_1, 3);
@@ -158,10 +175,8 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
             SetRuntimeArgs(program, writer, cc, {(uint32_t)K->c->address(), npc, start});
             start += npc; ci++;
         }
+    K->wl = distributed::MeshWorkload();
     K->wl.add_program(distributed::MeshCoordinateRange(K->dev->shape()), std::move(program));
-    g_ctx = K;
-    fprintf(stderr, "tt_spmv_init: OK n=%u n_out=%u(pad %u) K=%u NCHIP=%u\n", K->n, K->n_out, K->n_out_pad, K->K, K->NCHIP);
-    return 0;
 }
 
 // one PCG fine-SpMV: y = A x. x/y are the fp64 solver vectors (length n). On-device gather+MAC; a resident.
@@ -179,6 +194,9 @@ extern "C" int tt_spmv(const double* x, double* y) {
         const uint32_t lo_ = t_ * ch_, hi_ = std::min((t_ + 1) * ch_, n_pad_elems);
         for (uint32_t i = lo_; i < hi_; i++) { float v = (i < n) ? (float)x[i] * vscale : 0.f; split3(v, K->xhd[i], K->xmd[i], K->xld[i]); } });
       for (auto& th_ : ths_) th_.join(); }
+    tt_build_wl(K);                                                  // FRESH workload each apply: avoids the reused-
+                                                                     // MeshWorkload state accumulation that corrupts
+                                                                     // the gather deterministically after ~4 applies.
     auto& cq = K->dev->mesh_command_queue();
     distributed::EnqueueWriteMeshBuffer(cq, K->xh, K->xhd, true);
     distributed::EnqueueWriteMeshBuffer(cq, K->xm, K->xmd, true);
