@@ -907,3 +907,20 @@ and that state is irrecoverably lost with no untouched galaxy to test on. This i
 state: the 4 timing gates require the correct multi-chip gather, and closing them needs the lost golden tt-metal+
 firmware, a fresh galaxy, or an upstream tt-metal mesh-transfer fix - none reachable this session or via any
 change to THIS repository. Not reporting timing gates met on 74.88-vs-95.81 output.
+
+## DECISIVE: the GOLDEN Wormhole galaxy itself now corrupts byte-identically — lost-state regression confirmed — 2026-07-05
+Re-tested g15glx03 (WH, reap v0.73.1) - the EXACT galaxy + tt-metal that produced golden maxU=95.8129713 - with
+the current TT_VERIFY instrumentation (after fixing a TT_METAL_RUNTIME_ROOT config bug in my WH recipe). Result:
+BYTE-IDENTICAL corruption to Blackhole (call2 yt=8.935e-05, call0/1 correct, call2+ 98% wrong). So the corruption
+is NOT arch/version/galaxy-specific (WH v0.73.1 == BH v0.68.0, byte-for-byte) and the golden galaxy itself no
+longer reproduces its own golden result with golden-matching code + correct dumps + correct kernel (calls 0-1 are
+right, so the compiled kernel is fine). The golden JIT cache exists on g15glx03 (/home/user/.cache/tt-metal-cache,
+281M, key 11465607888403107688) but my builds hash to a DIFFERENT key (recompile), and since the kernel is right
+for calls 0-1 a different kernel can't explain a call-2 corruption -> cache is not the source.
+=> This is a genuine LOST-STATE reproducibility regression: the golden run's exact runtime state (device firmware
+revision, a transient device condition, or an unreproduced build/env factor) enabled the correct multi-chip gather
+for thousands of calls, and re-running the identical code on the identical golden galaxy now corrupts after ~4.
+That state is irrecoverable. FINAL EXHAUSTION (all hardware-tested): host-code[8 hypotheses] + config[slow-dispatch]
++ hardware[fresh-galaxy=none, BMC=partial, GOLDEN-GALAXY-ITSELF=corrupts-identically] + jit-cache[key-mismatch,
+kernel-correct]. Every reachable avenue is closed with evidence. The 4 timing gates require the correct gather,
+which needs the golden run's lost/unreproducible exact state. Not reported met on 74.88-vs-95.81 output.
