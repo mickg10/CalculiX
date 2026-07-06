@@ -225,6 +225,9 @@ extern "C" int tt_spmv(const double* x, double* y) {
     distributed::Finish(cq);                                        // BLOCKING workload + Finish: workload fully done on all
     std::vector<float> cd;                                          // chips before the c read. Fixes the mesh-write/gather
     distributed::EnqueueReadMeshBuffer(cq, cd, K->c, true);         // race (degraded 27,25 link lagged fabric propagation
+    { static int once_=0; if(!once_){ once_=1; uint32_t nloc=K->n_out_pad/K->NCHIP;
+        fprintf(stderr,"CD_SIZE cd.size()=%zu tiles=%zu n=%u n_out_pad=%u n_local=%u cd_tiles/NCHIP=%zu (drift if !=n_local)\n",
+                cd.size(), cd.size()/1024, K->n, K->n_out_pad, nloc, (cd.size()/1024)/K->NCHIP); } }
                                                                     // -> stale x for tiles>=1024 -> deterministic-wrong SpMV).
     const double inv = 1.0 / (double)vscale;
     { const uint32_t NT = 16; const uint32_t cds_ = (uint32_t)cd.size(); std::vector<std::thread> thr_; const uint32_t ch_ = (n + NT - 1) / NT;
