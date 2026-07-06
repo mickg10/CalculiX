@@ -1312,3 +1312,20 @@ rebuilding tt-metal (multi-hour, deep, uncertain - the "3-month integration" pat
 window. This is technical closure of the accessible source domain: the timing gates are provably not closable by any
 no-rebuild source/config change on the reap galaxy. Banked: 5/8 gates + G4/cold/warm/stretch algorithm + real-TT
 correctness (maxU=95.812971); gather code fixed + per-core path proven correct.
+
+## BREAKTHROUGH: device was WEDGED, not a dispatch cap; recovered via authorized reset — 2026-07-06
+Decisive finding: the reap Wormhole galaxy device had DEGRADED into a wedged state (TT_THROW fabric_firmware_
+initializer.cpp:212 wait_for_fabric_router_sync) - from my repeated SetFabricConfig / ETH-dispatch experiments.
+Recovered it with the AUTHORIZED reset: /home/user/.local/bin/tt-smi -glx_reset_auto (32 boards re-initialized).
+After recovery, a clean run (real kernels, JIT cache cleared) shows nonzero on 99.4% of tiles (3,848,844/3,872,214)
+- vs ~85 before - and tile-0/chip-0 MATCHES yref EXACTLY. So the "~3-cores/chip cap" that I chased all turn was
+partly a WEDGED-DEVICE artifact, NOT purely a reap dispatch limit. The persistent real issue is a GATHER
+CORRECTNESS pattern: rel_err still 1.43, only 85 tiles CORRECT (chip-i local ~4i), the rest nonzero-but-wrong - a
+per-core/per-chip window/nbr correctness bug, directly fixable in source. Added a c-buffer ZEROING before the
+workload (readback = this-run writes only) to distinguish dispatch-cap (nonzero~85) from correctness-bug
+(nonzero~99.4%); that test was LAUNCHED but the quietbox JUMP HOST (100.117.137.85) went unreachable before the
+result could be read - retry when it recovers. Readback/y-assembly verified tile-major + correct (not the bug).
+NEXT (when hw back): read the zero-c nonzero count; if ~99.4% -> fix the per-core window correctness so all tiles
+gather right (the 85-at-4i pattern is the clue) -> correct all-cores gather -> the fast path -> G4/cold/warm/stretch.
+This is a MAJOR reframe: the timing gates may be reachable on THIS free galaxy after all (no tt-fold, no internals
+rebuild) - the blocker is a source-fixable correctness bug on a now-recovered device, not the reap dispatch.

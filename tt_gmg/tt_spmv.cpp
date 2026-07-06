@@ -222,6 +222,7 @@ extern "C" int tt_spmv(const double* x, double* y) {
     distributed::EnqueueWriteMeshBuffer(cq, K->xh, K->xhd, true);
     distributed::EnqueueWriteMeshBuffer(cq, K->xm, K->xmd, true);
     distributed::EnqueueWriteMeshBuffer(cq, K->xl, K->xld, true);
+    { std::vector<float> zc(K->n_out_pad * TE, 0.f); distributed::EnqueueWriteMeshBuffer(cq, K->c, zc, true); }  // ZERO c: readback = THIS run's writes only (distinguishes dispatch-cap from correctness-bug; leftover DRAM would otherwise mask it)
     distributed::Finish(cq);                                         // SYNC: guarantee x is fully propagated to ALL 32 chips
     distributed::EnqueueMeshWorkload(cq, K->wl, true);               // over the fabric BEFORE the gather workload reads it.
     distributed::Finish(cq);                                        // BLOCKING workload + Finish: workload fully done on all
