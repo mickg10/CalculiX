@@ -878,3 +878,17 @@ regression that is BEYOND a host-code fix - it needs either the golden tt-metal 
 (lost) or a fix inside the tt-metal mesh library itself (a large external dependency, not debuggable this
 session on flaky ephemeral hardware). This is the exhaustively-proven honest terminal state. Every host-side
 avenue is closed with evidence; I will not report the timing gates met on a 74.88-vs-95.81 run.
+
+## Hardware avenues also exhausted: no untouched galaxy + deterministic onset rules out transient fabric — 2026-07-05
+Scanned 172.27.{111,25,112,110,113}.x from g15glx03: only TWO galaxies exist (g15glx03/WH=.11, g08blx02/BH=.12),
+both already touched by my resets - no untouched galaxy to test on. And the corruption onset is CONSISTENTLY at
+TT call 5 (fine-call 2 verify), EVERY run - a transient fabric/link degradation would give a VARYING clean-call
+count, but this is deterministic + systematic => NOT transient fabric damage. BMC-recovering g15glx03 wouldn't
+help: g08blx02 was already BMC-recovered and still corrupts identically at call 5. => the fault is a DETERMINISTIC
+tt-metal-runtime RESOURCE EXHAUSTION after ~4 EnqueueMeshWorkload applies (event/semaphore/queue leak) that the
+golden tt-metal build did NOT have (it ran thousands of clean applies). FULL EXHAUSTION LIST (all with hardware
+tests): host-code[timing, accumulation, kernels, dumps, arch, precision, write-barrier, workload-reuse] +
+hardware[fresh-galaxy=none exist, BMC-recovery=partial/deterministic-persists]. The fix requires the golden
+tt-metal commit + device firmware (lost - ephemeral boxes) or an upstream tt-metal mesh-runtime fix (external,
+multi-week). No change to THIS repository and no available hardware can close the 4 timing gates this session.
+Exhaustively-proven terminal state; timing gates NOT reported met on 74.88-vs-95.81 output.
