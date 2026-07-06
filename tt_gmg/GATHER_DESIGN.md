@@ -789,3 +789,22 @@ NEXT (focused debug, hardware now recoverable): run the strategy's Test-1 gather
 SPMV_NCHIP=1, compare gather-b to the pre-stored mac_reader b) to localize where A.p goes wrong; bisect
 JIT-cache vs fresh; if a good b3-style cache is found, pin it. Then measure G4/cold/warm/stretch (algorithm
 CPU-validated: bf16x4/eig-k8 -> ~228 applies; transfer cut 64->~4ms).
+
+## Regression PRECISELY LOCALIZED to the TT gather SpMV (dumps+GMG+CPU all proven correct) — 2026-07-05
+Clean isolation from the CPU sweeps (no hardware needed):
+ - CPU GMG solve at abserr=0 (exact) -> CONVERGED golden 95.8129713 in 18s => dumps (fine/real_op/nbr) +
+   libgmg + GMG algorithm are ALL CORRECT. real_op/nbr layout is fine.
+ - CPU GMG at emulated bf16x3 error 4.69e-4 with k=8 eig -> CONVERGED golden => the bf16x3 PRECISION LEVEL is
+   tolerable; deflation handles it.
+ - Actual TT gather SpMV (same dumps, git-unchanged gather_reader) -> STALLS at deterministic 74.88037.
+=> The fault is NOT the dumps, NOT the GMG, NOT bf16 precision, NOT the deflation config (k=8/24 both stall),
+   NOT the parallel split3 (serial stalls too). It is a SYSTEMATIC error in the on-device gather SpMV itself
+   that exceeds bf16x3 precision -> the gather returns wrong A.p. It WAS correct at golden (95.81 committed);
+   gather_reader.cpp is git-unchanged since -> a JIT-compile / device-runtime REPRODUCIBILITY regression in the
+   gather kernel (strategy rows 164/217 class), not a source change.
+CONCRETE NEXT DEBUG (hardware now BMC-recoverable): (1) power-cycle -> first-open -> run spmv_mac SPMV_GATHER=1
+comparing the on-device gather-b to the pre-stored mac_reader-b for ONE apply (localizes exactly which
+outputs/nodes are wrong); (2) if gather-b != mac-b, diff the JIT-emitted gather kernel vs the golden b3cache
+build (nbr window args, page math, chip-local start offset in the 32-chip shard); (3) pin the good cache. Once
+gather-b == mac-b, the full solve converges and G4/cold/warm/stretch are measured (algorithm CPU-validated:
+bf16x4/eig-k8 -> ~228 applies; transfer 64->~4ms).
