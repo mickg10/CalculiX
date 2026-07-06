@@ -1015,3 +1015,18 @@ ShardedBufferConfig ROW_MAJOR shard<->mesh-coordinate mapping vs my add_program 
 base). This is now a bounded, concrete multi-chip-sharding debug - NOT external/lost-state (that earlier
 conclusion was WRONG). Correct SpMV is a fixable code change away. STATE: 5/8 gates + algorithm closed; the 4
 timing gates need this residual sharding fix, whose direction is confirmed and whose surface is now small.
+
+## PATTERN correction: only FIRST ~3 output tiles correct -> per-CORE gather bug, not multi-chip — 2026-07-06
+Per-tile error pattern: right_tiles=3/3781, first30=[0,1,2], mod n_local=[0,1,2]. So ONLY the first ~3 output
+tiles are correct - even on chip 0 (offset 0). n_local~118, so chip 0 should produce 118 correct tiles but makes
+only 3. This CORRECTS the multi-chip-offset diagnosis: the per-chip fix was addressing chips 1..31, but even
+chip 0 fails past tile ~3. The element-level "improvement" (9857->48954) was small-magnitude elements crossing
+the ABSOLUTE 1e-2 threshold, not truly-correct tiles (tile-level rel<1e-2 stayed ~3). So the real defect is
+PER-CORE in the gather: cores beyond the first few produce wrong output. Prime suspect: the gather_reader kernel
+reads the x-window but may ignore/mis-apply pc_xlo (the per-core window base offset), so it always reads x near
+tile 0 -> only cores whose neighbors live in the first ~40 x-tiles (tiles 0..3) are correct, the rest read the
+wrong x window -> garbage. This is consistent with max_xnt=40 (window is 40 tiles wide, anchored wrong). This is
+STILL a fixable code bug (NOT external) - now in the gather_reader per-core window logic or the pc_xlo runtime
+arg, single-chip reproducible. The multi-chip per-chip-program scaffold I added is correct-but-not-the-cause and
+can stay (needed once the per-core window is fixed). STATE: 5/8 gates + algorithm; timing gates need the
+gather_reader per-core x-window fix (single-chip debuggable, bounded).
