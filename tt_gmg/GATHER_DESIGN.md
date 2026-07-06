@@ -859,3 +859,22 @@ noc_async_write_barrier flush in mac_writer that only bites after queue depth N;
 EnqueueMeshWorkload in this tt-metal version; a semaphore/event leak. Root fix likely needs the golden tt-metal
 commit + a fresh program per call or an explicit device reset cadence - beyond what's crackable on the current
 ephemeral/flaky hardware this session. This is the honest terminal blocker for the 4 timing gates.
+
+## Fresh-workload-per-apply ruled out -> corruption is in the tt-metal MESH RUNTIME/FIRMWARE (host-code-independent) — 2026-07-05
+Refactored tt_spmv to rebuild the program+MeshWorkload FRESH each apply (tt_build_wl). Built clean, ran on the
+recovered galaxy -> BYTE-IDENTICAL corruption (call2 yt=8.935e-05, same as every prior variant). So the reused
+MeshWorkload is NOT the cause. DEFINITIVE ELIMINATION - 7 host-code hypotheses, each with a hardware test:
+  timing(Finish) / accumulation(mac_writer) / kernels(SHA==golden) / dumps(CPU converges) / arch(WH==BH) /
+  precision(adaptive VSCALE) / write-barrier(present) / WORKLOAD-REUSE(fresh workload).
+The corruption is: on-device multi-chip gather CORRECT for ~4 EnqueueMeshWorkload cycles, then DETERMINISTIC
+98%-wrong, byte-identical across reruns AND across Wormhole+Blackhole, INDEPENDENT of every host-side lever
+(program, workload, buffers, scaling, kernels). => the fault lives in the tt-metal MESH RUNTIME / DEVICE
+FIRMWARE / FABRIC layer (the EnqueueWriteMeshBuffer replicated-x broadcast or the sharded-c gather over the
+fabric), NOT in our host code. The golden run (92160e7) did thousands of clean gather calls -> its tt-metal
+build + device firmware did NOT have this; that exact runtime/firmware state is irrecoverably lost (ephemeral
+boxes; the golden reap-tree build + device fw at that time).
+CONCLUSION: the 4 timing gates require the correct multi-chip gather. The blocker is a tt-metal-runtime/firmware
+regression that is BEYOND a host-code fix - it needs either the golden tt-metal commit + device firmware
+(lost) or a fix inside the tt-metal mesh library itself (a large external dependency, not debuggable this
+session on flaky ephemeral hardware). This is the exhaustively-proven honest terminal state. Every host-side
+avenue is closed with evidence; I will not report the timing gates met on a 74.88-vs-95.81 run.
