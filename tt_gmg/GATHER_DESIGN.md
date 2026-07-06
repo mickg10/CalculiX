@@ -1153,3 +1153,24 @@ mailbox/semaphore, kernel launch, or reap harvesting) or the g15glx03 Wormhole g
 code bugs fixed (multi-chip offset, sharded-a: garbage->85 correct tiles, per-core gather path proven correct);
 remaining blocker = reap-runtime ~3-cores/chip dispatch cap, isolated but not source-fixable. 5/8 gates +
 algorithm CPU-validated; 4 timing gates need the dispatch cap resolved so all cores run the (correct) SpMV.
+
+## Output must be sharded; workarounds for the ~3-core cap hit L1/chip-dependent limits — 2026-07-06
+Tried replicated c to isolate chip-0 execution: tt-metal TT_FATAL - "Can only read a Sharded MeshBuffer from a
+MeshDevice or a Replicated MeshBuffer from a Unit-Mesh" (mesh_command_queue_base.cpp:216). So on a multi-chip
+mesh the OUTPUT c MUST be sharded (reverted). Two workarounds for the ~3-cores/chip dispatch cap, both blocked:
+(1) Redundant compute - make EVERY core compute all n_local=119 tiles (last-writer-wins is benign since all cores
+    produce identical correct output, so the ~3 running cores would fill the whole shard). BLOCKED: each core's
+    x-window must then cover all 119 tiles' neighbors (span 69 tiles) + the full nbr slice (~288 pages -> 1.2MB
+    CB), overflowing the 1.5MB L1. Would need a per-tile window restage in the kernel (a real kernel rewrite).
+(2) Target only the ~3 running cores with many tiles each. BLOCKED: the running cores differ per chip (local 4i:
+    chip0->0,1,2; chip1->4,5,6; ...), so no fixed small core set hits the running cores on every chip.
+COMPLETE final diagnosis (all committed, forensic trail in this file): the corruption was NOT external/lost-state
+(disproven). Real code bugs found+fixed: multi-chip node offset (per-chip global offset) and sharded-a accessor
+(replicated a) - moved the gather garbage -> 85 correct tiles, and the per-executing-core path (a-read, x-window,
+nbr gather, bf16x3 MAC, sharded c-write) is proven correct end to end. Remaining blocker: this reap-runtime +
+tt-metal build's MeshWorkload dispatches only ~3 of 119 assigned cores per chip (ruled out: grid size 12x10=120,
+partition 119, CB/L1 fit, program structure 32==1, fabric 1D==2D, even chip0 with 0 hops caps at 3). Closing the
+timing gates requires resolving that dispatch cap - via tt-metal/reap internals (dispatch mailbox/semaphore/kernel
+launch), a per-tile-window kernel rewrite to enable the redundant-compute workaround within L1, or the g15glx03
+Wormhole golden galaxy. FINAL STATE: 5/8 gates + G4/cold/warm/stretch algorithm CPU-validated; the 4 hardware
+timing gates need the reap dispatch cap resolved so the (correct) SpMV runs on all cores.

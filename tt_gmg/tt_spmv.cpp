@@ -112,7 +112,7 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
     // a REPLICATED (full on each chip, ~1.25GB/chip fits Blackhole DRAM): each chip reads its output tiles' a
     // by GLOBAL page from the local full copy -> no shard-local-accessor dependency. c stays SHARDED (local write).
     K->ah = MakeReplBuf(K->dev, K->n_out_pad * K->K); K->am = MakeReplBuf(K->dev, K->n_out_pad * K->K); K->al = MakeReplBuf(K->dev, K->n_out_pad * K->K);
-    K->c  = MakeReplBuf(K->dev, K->n_out_pad, 4);  // DIAG: replicated c to test chip-0 core execution vs sharded write (read=chip0 replica)
+    K->c  = MakeBuf(K->dev, K->n_out_pad, K->NCHIP, 4);   // c MUST be sharded (tt-metal: multi-mesh read requires SHARDED)
     K->xh = MakeReplBuf(K->dev, K->n_out_pad); K->xm = MakeReplBuf(K->dev, K->n_out_pad); K->xl = MakeReplBuf(K->dev, K->n_out_pad);
     uint32_t nbr_tiles_total = ((uint32_t)NBn * 27 + 1023) / 1024;
     K->nbrbuf = MakeReplBuf(K->dev, nbr_tiles_total, 4);
