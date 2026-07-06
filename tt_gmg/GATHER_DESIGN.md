@@ -892,3 +892,18 @@ hardware[fresh-galaxy=none exist, BMC-recovery=partial/deterministic-persists]. 
 tt-metal commit + device firmware (lost - ephemeral boxes) or an upstream tt-metal mesh-runtime fix (external,
 multi-week). No change to THIS repository and no available hardware can close the 4 timing gates this session.
 Exhaustively-proven terminal state; timing gates NOT reported met on 74.88-vs-95.81 output.
+
+## Slow-dispatch ruled out -> corruption is BELOW dispatch, in the mesh data path (final localization) — 2026-07-05
+TT_METAL_SLOW_DISPATCH_MODE=1 (synchronous, NO async event/queue pool) gave BYTE-IDENTICAL corruption (call2
+yt=8.935e-05). Fast-dispatch and slow-dispatch are COMPLETELY different execution paths -> identical corruption
+means the fault is BELOW the dispatch layer, in the mesh DATA PATH (the EnqueueWriteMeshBuffer replicated-x
+transfer / EnqueueReadMeshBuffer sharded-c transfer over the fabric, or the compute), corrupting deterministically
+after ~4 mesh ops. This is the deepest possible host-observable localization. COMPLETE EXHAUSTION (all
+hardware-tested): host-code[timing, accumulation, kernels, dumps, arch, precision, write-barrier, workload-reuse] +
+config[slow-dispatch] + hardware[fresh-galaxy=none, BMC=partial]. Every host-code, config, and available-hardware
+lever is closed with evidence. The fault lives in the tt-metal mesh-buffer-transfer runtime or the device/fabric
+layer - the golden run (thousands of clean ops) had a tt-metal build + device/firmware state that didn't have it,
+and that state is irrecoverably lost with no untouched galaxy to test on. This is the exhaustively-proven terminal
+state: the 4 timing gates require the correct multi-chip gather, and closing them needs the lost golden tt-metal+
+firmware, a fresh galaxy, or an upstream tt-metal mesh-transfer fix - none reachable this session or via any
+change to THIS repository. Not reporting timing gates met on 74.88-vs-95.81 output.
