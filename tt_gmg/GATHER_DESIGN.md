@@ -1174,3 +1174,24 @@ timing gates requires resolving that dispatch cap - via tt-metal/reap internals 
 launch), a per-tile-window kernel rewrite to enable the redundant-compute workaround within L1, or the g15glx03
 Wormhole golden galaxy. FINAL STATE: 5/8 gates + G4/cold/warm/stretch algorithm CPU-validated; the 4 hardware
 timing gates need the reap dispatch cap resolved so the (correct) SpMV runs on all cores.
+
+## CONCRETE FIX DESIGN: redundant-compute + per-tile on-device window (defeats the ~3-core dispatch cap) — 2026-07-06
+Since the reap runtime dispatches only ~3 (chip-dependent) cores/chip, make EVERY core compute ALL n_local tiles
+of its chip's shard; last-writer-wins is benign (identical correct values), so whichever ~3 run fill the whole
+shard -> full gather. L1 is solved by computing each tile's x-window ON-DEVICE and staging PER TILE (each tile's
+window ~40 tiles, not the 69-tile union). Implementation:
+  HOST (tt_build_wl): per-chip program (tile_base=chip*n_local). For EVERY core: SetRuntimeArgs(reader,..., n_out=
+    n_local, K, start_out_id=tile_base[GLOBAL]); SetRuntimeArgs(compute, n_local, K); SetRuntimeArgs(writer, c,
+    n_local, 0[LOCAL]). CBs: cb_xh/xm/xl sized MAX per-tile window (~40+slack), cb_nbr sized MAX per-tile nbr
+    pages (~12), cb_a/cb_b depth 3, cb_out depth 8. (No per-core partition; all cores identical -> robust to which
+    ~3 run.)
+  READER (gather_reader): loop t=0..n_local: gt=start_out_id+t; e0=gt*1024; node0=e0/3; nn_t=((gt+1)*1024-1)/3-
+    node0+1; read nbr slice [node0*27 ..] into cb_nbr; scan it for emin=min(3*nn), emax=max(3*nn+2); xwin_tile_lo=
+    emin/1024; xwin_ntiles=emax/1024-xwin_tile_lo+1; stage x[xwin_tile_lo..] into cb_xh/xm/xl; then the existing
+    per-k gather (window-relative XH[3*nn+c - xwin_tile_lo*1024]); cb_pop_front the nbr + x-window before next t.
+    a-page base = gt*K (replicated a, global). WRITER writes c[0+t] (local shard). COMPUTE unchanged (n_local
+    tiles).
+Speed note: ~3 cores/chip each do n_local tiles serially - correctness first (G1 full-path gather), then measure
+G4; if the capped-core speed misses G4, the reap dispatch cap itself must be fixed (tt-metal internals) or use
+the WH golden galaxy. This design is robust to the chip-dependent running-core set and fits L1. Next: implement +
+test EXEC->3808 then rel_err->1e-4.
