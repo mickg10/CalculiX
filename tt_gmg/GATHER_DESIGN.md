@@ -1102,3 +1102,20 @@ external(WRONG) -> multi-chip node offset (fixed, per-chip programs) -> sharded-
 Best real gather state = ~85 correct tiles. Reverted both temp diagnostics (writer-idx, one-program). STATE:
 5/8 gates + algorithm; timing gates need the reap-galaxy core-dispatch/grid mapping resolved so all 3808 output
 tiles are produced.
+
+## GRID is FULL (12x10=120), partition COMPLETE (119), yet ~84 execute -> tt-metal dispatch behavior — 2026-07-06
+compute_with_storage_grid_size = 12x10 = 120 cores/chip; all_set.num_cores=120; ncores(split)=119; n_local=119
+(1 tile/core). So the physical grid is FULL, the partition assigns all 119 tiles to 119 distinct cores, and the
+CBs fit (~285KB/core << 1.5MB L1). Yet only ~84 total (~2.6/chip) cores produce output. This rules OUT: grid too
+small, partition dropping tiles, CB/L1 overflow, program-count (same 84 for 32-per-chip and one-program). What
+remains is a tt-metal MeshWorkload dispatch/execution property on THIS reap-adapted galaxy: only ~3 of 119
+assigned cores per chip actually run the kernel to completion, and/or the sharded-c EnqueueReadMeshBuffer
+assembles with a 123-tile stride (chip i's data appears at cd[123i] not cd[119i]). Both need tt-metal internals
+debugging (per-physical-core execution map via get_absolute_logical_x/y in the writer; the sharded read
+assembly), not source logic. FULL INVESTIGATION SUMMARY (all committed):
+  external/lost-state (WRONG - disproven) -> multi-chip node offset (per-chip programs) -> sharded-a accessor
+  (replicated a: 3->85 tiles) -> only ~84 cores execute regardless of program structure -> grid full/partition
+  complete, so it's tt-metal dispatch/execution + 123-stride read.
+Best real gather = ~85 correct tiles. Instrumentation built: device-vs-CPU compare, per-tile PATTERN, writer-idx
+EXEC map, CD_SIZE, GRID/worker_cores, host-side neighbor-span analysis. STATE: 5/8 gates + algorithm CPU-
+validated; the 4 timing gates need the tt-metal dispatch/read behavior resolved so all 3808 tiles are produced.
