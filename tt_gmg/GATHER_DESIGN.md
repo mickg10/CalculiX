@@ -1082,3 +1082,23 @@ shard->coordinate order exactly (or shard c with the SAME orientation the worklo
 concrete mesh-topology mapping fix - each layer (external->multi-chip offset->sharded-a->coord drift) has moved
 the gather closer (garbage -> 3 -> 85 tiles). NOT external. STATE: 5/8 gates + algorithm; timing gates need the
 mesh-coord/shard-order alignment + x-window completion.
+
+## DECISIVE: only ~84/3808 cores produce output, INDEPENDENT of program structure — 2026-07-06
+Instrumented mac_writer to emit each core's LOCAL out-tile index (bypassing gather), so the host readback counts
+EXACTLY which cores executed+wrote. Result: constant_tiles = 84/3808, at a stable pattern (global tiles ~123k,
+groups of ~3, executed-mod-4 evenly [21,21,21,21]). CRITICAL: the SAME 84 appears whether I use 32 per-chip
+programs OR one program on the whole mesh. So the deficit is NOT the program count / MeshWorkload dispatch
+structure and NOT the gather logic (which is correct for the ~84 that run). CD_SIZE confirms the c-buffer is
+exactly 3808 tiles, 119/shard, no padding. So the ~84 cores land their writes across the buffer at a fixed 123k
+stride (= chip i's local tiles ~4i), and the other ~3700 tiles are never written. This is a deep tt-metal
+runtime/reap-galaxy behavior: either only ~2.6 Tensix cores per chip actually execute the kernel (despite
+split_work_to_cores reporting ncores=119, so the harvested/reap physical grid may be far smaller than the logical
+grid), or the sharded-c NOC writes only land for a fixed core subset. This is NOT resolvable by source analysis
+and NOT external-to-the-code in the "lost state" sense - it is a concrete runtime dispatch/core-mapping property
+of this galaxy that needs: (1) print the actual compute_with_storage_grid_size() per chip, (2) query worker_cores
+count, (3) a 1-tile-per-core sweep to map which physical cores run. Layered summary of the whole investigation:
+external(WRONG) -> multi-chip node offset (fixed, per-chip programs) -> sharded-a accessor (fixed, replicated a:
+3->85 tiles) -> now: only ~84 cores execute regardless of program structure (physical grid / core-dispatch).
+Best real gather state = ~85 correct tiles. Reverted both temp diagnostics (writer-idx, one-program). STATE:
+5/8 gates + algorithm; timing gates need the reap-galaxy core-dispatch/grid mapping resolved so all 3808 output
+tiles are produced.

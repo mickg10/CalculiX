@@ -14,8 +14,6 @@ void kernel_main() {
     for (uint32_t t = 0; t < n_out; ++t) {
         cb_wait_front(cb_out, 1);
         const uint32_t r = get_read_ptr(cb_out);
-        // DIAG (temporary): overwrite output tile with LOCAL out-tile index so host readback shows which cores ran.
-        { volatile float* fp = (volatile float*)r; for (uint32_t i = 0; i < 1024; ++i) fp[i] = (float)(start_out_id + t); }
         noc_async_write_page(start_out_id + t, c, r);
         noc_async_write_barrier();
         cb_pop_front(cb_out, 1);
