@@ -175,6 +175,8 @@ static void tt_build_wl(TtSpmvCtx* K) {
             SetRuntimeArgs(program, writer, cc, {(uint32_t)K->c->address(), npc, start});
             start += npc; ci++;
         }
+    fprintf(stderr, "tt_build_wl PARTITION: n_local=%u total_assigned_tiles(start)=%u ncores=%u n_out_pad=%u NCHIP=%u max_xnt=%u\n",
+            n_local, start, ncores, K->n_out_pad, K->NCHIP, max_xnt);   // DIAG: total_assigned must == n_local, else partition drops tiles
     K->wl = distributed::MeshWorkload();
     K->wl.add_program(distributed::MeshCoordinateRange(K->dev->shape()), std::move(program));
 }
