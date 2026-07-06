@@ -140,6 +140,8 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
 static void tt_build_wl(TtSpmvCtx* K) {
     const uint32_t NBn = K->NBn_v; const std::vector<int32_t>& nmin = K->nmin_v; const std::vector<int32_t>& nmax = K->nmax_v;
     auto grid = K->dev->compute_with_storage_grid_size();
+    fprintf(stderr, "GRID compute_with_storage_grid_size=%ux%u=%u cores (if << 119, physical grid is tiny -> only ~few cores/chip run)\n",
+            (uint32_t)grid.x, (uint32_t)grid.y, (uint32_t)(grid.x * grid.y));
     uint32_t n_local = K->n_out_pad / K->NCHIP;
     uint32_t cols = (K->NCHIP == 32) ? 8u : K->NCHIP;     // mesh columns (MeshShape(4,8) for 32, else (1,NCHIP))
     K->wl = distributed::MeshWorkload();
@@ -191,8 +193,8 @@ static void tt_build_wl(TtSpmvCtx* K) {
             SetRuntimeArgs(program, writer, cc, {(uint32_t)K->c->address(), npc, start});   // start=LOCAL (sharded c shard-local write)
             start += npc; ci++;
         }
-    if (chip == 0) fprintf(stderr, "tt_build_wl PER-CHIP: n_local=%u total=%u ncores=%u NCHIP=%u cols=%u tile_base(chip0)=%u max_xnt=%u\n",
-            n_local, start, ncores, K->NCHIP, cols, tile_base, max_xnt);
+    if (chip == 0) fprintf(stderr, "tt_build_wl PER-CHIP: n_local=%u total=%u ncores(split)=%u all_set.num_cores=%u NCHIP=%u cols=%u tile_base0=%u max_xnt=%u\n",
+            n_local, start, ncores, (uint32_t)all_set.num_cores(), K->NCHIP, cols, tile_base, max_xnt);
     distributed::MeshCoordinate coord(chip / cols, chip % cols);           // this chip's mesh position
     K->wl.add_program(distributed::MeshCoordinateRange(coord, coord), std::move(program));
     }
