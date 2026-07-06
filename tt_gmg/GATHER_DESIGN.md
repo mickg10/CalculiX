@@ -970,3 +970,16 @@ Byte-identical across galaxies because the partition is host-computed (determini
 adaptation MeshShape(4,8) for 32 chips vs the golden's shape, split_work_to_cores(all_set=worker_cores) partition,
 or the sharded MakeBuf c/a mapping. FIXABLE. Next: inspect MeshShape + MakeBuf sharding + the per-core out_tile
 partition; the golden used a shape/partition that wrote ALL tiles.
+
+## Partition is COMPLETE (119/119) -> bug is in shard-mapping / per-core compute, NOT external — 2026-07-06
+Instrumented tt_build_wl: "PARTITION: n_local=119 total_assigned=119 ncores=119 n_out_pad=3808 NCHIP=32 max_xnt=40".
+So split_work_to_cores(worker_cores) assigns ALL 119 per-chip tiles (1 tile/core, 119 cores) - the partition is
+NOT dropping tiles. Yet device-vs-CPU shows only ~10 of 3808 output tiles correct (node0 exact, 99.7% wrong). So
+the defect is DOWNSTREAM of the partition: the multi-chip SHARD MAPPING (a-upload / c-read across the 4x8 mesh),
+the per-core compute, or a make_dia a-layout vs gather_reader mismatch. This is a concrete, deterministic,
+HOST-SIDE code bug - it definitively DISPROVES my earlier "external/lost-state/hardware" conclusion (which was
+wrong). The gather deterministically computes a small fixed subset of tiles correctly and garbage elsewhere,
+identically on every galaxy because the whole pipeline (dumps, partition, shard config) is host-deterministic.
+FIXABLE. Exact next step: run the same device-vs-CPU compare at SPMV_NCHIP=1 (single chip, no sharding) - if it's
+correct, the bug is the multi-chip shard config (ShardedBufferConfig global/shard shape vs MeshShape(4,8) mapping);
+then fix the shard mapping. This is the corrected, accurate diagnosis after the breakthrough.
