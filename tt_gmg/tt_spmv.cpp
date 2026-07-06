@@ -109,7 +109,9 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
     K->dev = distributed::MeshDevice::create(distributed::MeshDeviceConfig(distributed::MeshShape(1, K->NCHIP)));
     auto& cq = K->dev->mesh_command_queue();
     Program program = CreateProgram();
-    K->ah = MakeBuf(K->dev, K->n_out_pad * K->K, K->NCHIP); K->am = MakeBuf(K->dev, K->n_out_pad * K->K, K->NCHIP); K->al = MakeBuf(K->dev, K->n_out_pad * K->K, K->NCHIP);
+    // a REPLICATED (full on each chip, ~1.25GB/chip fits Blackhole DRAM): each chip reads its output tiles' a
+    // by GLOBAL page from the local full copy -> no shard-local-accessor dependency. c stays SHARDED (local write).
+    K->ah = MakeReplBuf(K->dev, K->n_out_pad * K->K); K->am = MakeReplBuf(K->dev, K->n_out_pad * K->K); K->al = MakeReplBuf(K->dev, K->n_out_pad * K->K);
     K->c  = MakeBuf(K->dev, K->n_out_pad, K->NCHIP, 4);
     K->xh = MakeReplBuf(K->dev, K->n_out_pad); K->xm = MakeReplBuf(K->dev, K->n_out_pad); K->xl = MakeReplBuf(K->dev, K->n_out_pad);
     uint32_t nbr_tiles_total = ((uint32_t)NBn * 27 + 1023) / 1024;
@@ -181,11 +183,12 @@ static void tt_build_wl(TtSpmvCtx* K) {
     uint32_t start = 0, ci = 0;
     for (auto [grp, npc] : {std::make_pair(gA, nA1), std::make_pair(gB, nB1)})
         for (const auto& cr : grp.ranges()) for (const auto& cc : cr) {
+            uint32_t g_start = tile_base + start;                          // GLOBAL out-tile for replicated a-read + global node0
             SetRuntimeArgs(program, reader, cc, {(uint32_t)K->ah->address(),(uint32_t)K->am->address(),(uint32_t)K->al->address(),
                 (uint32_t)K->xh->address(),(uint32_t)K->xm->address(),(uint32_t)K->xl->address(),(uint32_t)K->nbrbuf->address(),
-                npc, K->K, start, pc_xlo[ci], pc_xnt[ci], pc_nlo[ci], pc_nn[ci]});   // start=LOCAL (a/c shard-local accessor); pc_nlo=GLOBAL (replicated nbr/x)
+                npc, K->K, g_start, pc_xlo[ci], pc_xnt[ci], pc_nlo[ci], pc_nn[ci]});  // g_start=GLOBAL (replicated a + node0); pc_nlo=GLOBAL (replicated nbr/x)
             SetRuntimeArgs(program, compute, cc, {npc, K->K});
-            SetRuntimeArgs(program, writer, cc, {(uint32_t)K->c->address(), npc, start});
+            SetRuntimeArgs(program, writer, cc, {(uint32_t)K->c->address(), npc, start});   // start=LOCAL (sharded c shard-local write)
             start += npc; ci++;
         }
     if (chip == 0) fprintf(stderr, "tt_build_wl PER-CHIP: n_local=%u total=%u ncores=%u NCHIP=%u cols=%u tile_base(chip0)=%u max_xnt=%u\n",
