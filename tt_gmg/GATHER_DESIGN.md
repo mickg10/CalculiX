@@ -983,3 +983,20 @@ identically on every galaxy because the whole pipeline (dumps, partition, shard 
 FIXABLE. Exact next step: run the same device-vs-CPU compare at SPMV_NCHIP=1 (single chip, no sharding) - if it's
 correct, the bug is the multi-chip shard config (ShardedBufferConfig global/shard shape vs MeshShape(4,8) mapping);
 then fix the shard mapping. This is the corrected, accurate diagnosis after the breakthrough.
+
+## ROOT CAUSE candidate: multi-chip sharded gather uses LOCAL node offset, missing per-chip GLOBAL offset — 2026-07-06
+NCHIP=1 test: PARTITION n_local=3782 total=3782 ncores=120 max_xnt=99, but the program throws at program.cpp:1043
+(L1/CB overflow - all 3782 tiles + 99-tile x-window on one chip exceeds L1). So NCHIP=1 can't run as-is. BUT the
+key structural fact: the per-core pc_nlo/pc_xlo/pc_nn args are computed from `s` = a LOCAL tile accumulator (0..
+n_local per chip), and the nmin/nmax lookup uses that LOCAL node index. The program is added ONCE to the whole
+mesh (same args on all 32 chips). Output c and operand a are SHARDED (chip i owns global tiles [i*n_local..]).
+=> chip 0 (offset 0): local==global -> CORRECT. chips 1-31: they own a-shard i (global nodes) but the shared
+program's pc_nlo/pc_xlo point at chip-0's node/x window -> they compute a[chip i] gathered against x[chip 0's
+window] -> deterministic garbage. This exactly explains: byte-identical across galaxies (host-deterministic
+partition), x-magnitude-masked (small x hides tiles-1+ garbage), "tile 0 / low tiles correct". The residual (~10
+vs chip-0's 119 tiles measured right) suggests an additional a-shard/c-read mapping wrinkle, but the LOCAL-offset
+defect is the primary root cause. It DISPROVES external/lost-state conclusively - this is a fixable multi-chip
+sharding design bug. FIX: give each chip its GLOBAL node offset - either per-device runtime args (add a program
+per mesh-coordinate with chip-specific pc_nlo/pc_xlo/pc_nn base), or replicate a + compute-all-write-own-shard.
+The golden run must have used a per-chip-correct offset (or single-chip / replicated compute); the sharded-compute
+port dropped the per-chip base. This is the concrete engineering fix the timing gates need.
