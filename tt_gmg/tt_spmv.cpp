@@ -168,11 +168,16 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
 extern "C" int tt_spmv(const double* x, double* y) {
     TtSpmvCtx* K = g_ctx; if (!K) return 1;
     const uint32_t n = K->n, TE = K->tile_elems, n_pad_elems = K->n_out_pad * TE;
-    // parallel split3: this loop over ~3.9M elems is the dominant per-apply cost (141ms serial -> ~9ms/16 threads)
+    // ADAPTIVE per-call scale: the fixed VSCALE=1e6 assumes a fixed |x| range, but the PCG's vectors (smoother
+    // input, residual, A.p) vary in magnitude by orders of magnitude across calls. A fixed scale drives x into a
+    // bad bf16x3/compensated-MAC precision regime for some magnitudes -> deterministic wrong SpMV after the first
+    // few (small) calls. Rescale each call so max|x| maps to a fixed sweet-spot target; unscale y by the same.
+    double xmax_ = 0.0; for (uint32_t i = 0; i < n; i++) { double a_ = std::fabs(x[i]); if (a_ > xmax_) xmax_ = a_; }
+    const float vscale = (xmax_ > 0.0) ? (float)(1.0e3 / xmax_) : K->VSCALE;   // scaled max|x| ~ 1e3 (bf16x3 sweet spot)
     { const uint32_t NT = 16; std::vector<std::thread> ths_; const uint32_t ch_ = (n_pad_elems + NT - 1) / NT;
       for (uint32_t t_ = 0; t_ < NT; t_++) ths_.emplace_back([&, t_]() {
         const uint32_t lo_ = t_ * ch_, hi_ = std::min((t_ + 1) * ch_, n_pad_elems);
-        for (uint32_t i = lo_; i < hi_; i++) { float v = (i < n) ? (float)x[i] * K->VSCALE : 0.f; split3(v, K->xhd[i], K->xmd[i], K->xld[i]); } });
+        for (uint32_t i = lo_; i < hi_; i++) { float v = (i < n) ? (float)x[i] * vscale : 0.f; split3(v, K->xhd[i], K->xmd[i], K->xld[i]); } });
       for (auto& th_ : ths_) th_.join(); }
     auto& cq = K->dev->mesh_command_queue();
     distributed::EnqueueWriteMeshBuffer(cq, K->xh, K->xhd, true);
@@ -184,7 +189,7 @@ extern "C" int tt_spmv(const double* x, double* y) {
     std::vector<float> cd;                                          // chips before the c read. Fixes the mesh-write/gather
     distributed::EnqueueReadMeshBuffer(cq, cd, K->c, true);         // race (degraded 27,25 link lagged fabric propagation
                                                                     // -> stale x for tiles>=1024 -> deterministic-wrong SpMV).
-    const double inv = 1.0 / (double)K->VSCALE;
+    const double inv = 1.0 / (double)vscale;
     { const uint32_t NT = 16; const uint32_t cds_ = (uint32_t)cd.size(); std::vector<std::thread> thr_; const uint32_t ch_ = (n + NT - 1) / NT;
       for (uint32_t t_ = 0; t_ < NT; t_++) thr_.emplace_back([&, t_]() {
         const uint32_t lo_ = t_ * ch_, hi_ = std::min((t_ + 1) * ch_, n);
