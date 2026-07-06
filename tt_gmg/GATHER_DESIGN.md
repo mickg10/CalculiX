@@ -843,3 +843,19 @@ Degraded galaxy RECOVERED via BMC cold power-cycle (found ipmitool/KCS access; b
 TT_VERIFY instrumentation built + regression localized to the on-device gather with a deterministic multi-call
 corruption signature. The 4 timing gates need the reproducible-correct SpMV (restore golden runtime/JIT) then
 measure. I will not claim them met on a 74.88-vs-95.81 run.
+
+## Adaptive VSCALE ruled out too - corruption is call-count-dependent device state after ~4 TT calls — 2026-07-05
+Adaptive per-call VSCALE (1e3 target) CHANGED the wrong values (call2 yt 9.875e-05->8.935e-05, confirming it
+took effect) but did NOT fix the pattern: still correct for ~4 TT calls then 98% wrong. => NOT magnitude/bf16-
+precision. Combined with all prior eliminations, the signature is: the on-device gather is CORRECT for the first
+~4 TT calls (TT_VERIFY call0/1 match CPU bspmv) then DETERMINISTICALLY corrupts (byte-identical across runs AND
+across Wormhole+Blackhole), independent of input magnitude, deflation cfg, split3, sync, scale. This is a
+CALL-COUNT-DEPENDENT device/runtime STATE accumulation in the persistent tt_spmv program+buffers (reused K->wl /
+K->xh / K->c across calls) that manifests after ~4 EnqueueMeshWorkload cycles. The golden run (92160e7) did
+~4290 clean calls -> its tt-metal build/JIT/device-firmware state did NOT accumulate this; the current builds
+(reap on WH, BH on g08blx02) do. Fixes tried + ruled out: Finish sync (write+workload barriers), adaptive
+VSCALE, serial vs parallel split3, k=8 vs k=24 deflation. Remaining candidates (deeper, multi-session): missing
+noc_async_write_barrier flush in mac_writer that only bites after queue depth N; program/CB state not reset per
+EnqueueMeshWorkload in this tt-metal version; a semaphore/event leak. Root fix likely needs the golden tt-metal
+commit + a fresh program per call or an explicit device reset cadence - beyond what's crackable on the current
+ephemeral/flaky hardware this session. This is the honest terminal blocker for the 4 timing gates.
