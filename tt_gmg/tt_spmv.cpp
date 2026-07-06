@@ -152,14 +152,17 @@ static void tt_build_wl(TtSpmvCtx* K) {
     for (auto [grp, npc] : {std::make_pair(gA, nA1), std::make_pair(gB, nB1)})
         for (const auto& cr : grp.ranges()) for (const auto& cc : cr) { (void)cc;
             uint32_t g_s = tile_base + s;                                   // GLOBAL tile index for nbr/x lookup
-            uint32_t nlo = (g_s*1024)/3, nhi = ((g_s+npc)*1024-1)/3; if (nhi >= NBn) nhi = NBn-1;
+            uint32_t nlo = (g_s*1024)/3, nhi = ((g_s+npc)*1024-1)/3;
+            if (nlo >= NBn) { nlo = 0; nhi = 0; }                           // padding tile beyond n_out: harmless gather (output ignored)
+            else if (nhi >= NBn) nhi = NBn-1;
+            uint32_t nn = (nhi >= nlo) ? (nhi - nlo + 1) : 1;               // guard uint32 underflow for padding tiles
             int32_t emin = INT32_MAX, emax = -1;
             for (uint32_t nd = nlo; nd <= nhi; nd++) { if (nmin[nd] < emin) emin = nmin[nd]; if (nmax[nd] > emax) emax = nmax[nd]; }
             if (emax < 0) { emin = 0; emax = 0; }
             uint32_t tlo = (uint32_t)emin/1024, tnt = (uint32_t)emax/1024 - tlo + 1;
-            pc_xlo.push_back(tlo); pc_xnt.push_back(tnt); pc_nlo.push_back(nlo); pc_nn.push_back(nhi-nlo+1);
+            pc_xlo.push_back(tlo); pc_xnt.push_back(tnt); pc_nlo.push_back(nlo); pc_nn.push_back(nn);
             if (tnt > max_xnt) max_xnt = tnt;
-            uint32_t sil = nlo*27, plo = sil/1024, npg = (sil + (nhi-nlo+1)*27 + 1023)/1024 - plo; if (npg > max_npg) max_npg = npg;
+            uint32_t sil = nlo*27, plo = sil/1024, npg = (sil + nn*27 + 1023)/1024 - plo; if (npg > max_npg) max_npg = npg;
             s += npc;
         }
     MakeCB(program, all_set, tt::CBIndex::c_2, max_xnt); MakeCB(program, all_set, tt::CBIndex::c_3, max_xnt);
