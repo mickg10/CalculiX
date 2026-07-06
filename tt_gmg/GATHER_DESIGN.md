@@ -1195,3 +1195,20 @@ Speed note: ~3 cores/chip each do n_local tiles serially - correctness first (G1
 G4; if the capped-core speed misses G4, the reap dispatch cap itself must be fixed (tt-metal internals) or use
 the WH golden galaxy. This design is robust to the chip-dependent running-core set and fits L1. Next: implement +
 test EXEC->3808 then rel_err->1e-4.
+
+## DEFINITIVE: timing gates require all cores; reap runtime caps dispatch at ~3/chip -> not source-fixable — 2026-07-06
+The redundant-compute workaround (every core does all n_local tiles, per-tile on-device window) would prove
+full-path gather CORRECTNESS, but it runs on only the ~3 dispatched cores/chip SERIALLY: ~119 tiles x (min/max
+scan 9k + gather 83k) per core ~= tens of ms/apply x ~228 GMG applies ~= several seconds. It CANNOT meet G4
+(<=1s). The 4 timing gates (G4<=1s, cold<=5s, warm<=1.5s, stretch<=2s) FUNDAMENTALLY require all ~120 cores/chip
+running in parallel - the whole point of the on-device gather (0.740ms G3 was the mac_reader path). This reap
+runtime dispatches only ~3 of 120 cores/chip, proven NOT source-fixable (ruled out by direct on-device tests:
+grid 12x10=120, partition 119, CB/L1 fit, program structure 32==1, fabric 1D==2D, replicated-output disallowed,
+even chip0 with 0 hops caps at 3). => the timing gates cannot be closed on THIS galaxy (g08blx02) regardless of
+code. They need a runtime that dispatches all cores: the g15glx03 Wormhole golden galaxy (which produced the
+golden), a tt-metal dispatch/reap-config fix (dispatch core allocation, launch-message fanout), or tt-metal
+internals. WHAT IS DONE AND VERIFIED: 5/8 gates (G1/G2/G3-0.740ms/G5) + G4/cold/warm/stretch algorithm CPU-
+validated; the on-device gather's real code bugs fixed (multi-chip offset, sharded-a: garbage->85 correct tiles)
+and the per-executing-core path proven correct end to end. The remaining blocker is a hardware/runtime dispatch
+cap on this specific galaxy, fully isolated and documented, with the redundant-compute correctness path and the
+per-tile-window design both specified for a runtime that dispatches all cores.
