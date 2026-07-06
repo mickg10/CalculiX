@@ -165,8 +165,9 @@ static void tt_build_wl(TtSpmvCtx* K) {
         uint32_t tnt = (uint32_t)emax/1024 - (uint32_t)emin/1024 + 1; if (tnt > max_xnt) max_xnt = tnt;
         uint32_t sil = nlo*27, plo = sil/1024, npg = (sil + nn*27 + 1023)/1024 - plo; if (npg > max_npg) max_npg = npg;
     }
-    MakeCB(program, all_set, tt::CBIndex::c_2, max_xnt); MakeCB(program, all_set, tt::CBIndex::c_3, max_xnt);
-    MakeCB(program, all_set, tt::CBIndex::c_4, max_xnt); MakeCB(program, all_set, tt::CBIndex::c_5, max_npg, tt::DataFormat::Float32);
+    // +2 slack so the reader's reserve-once of max_xnt/max_npg leaves headroom (a ring CB can't reserve all N).
+    MakeCB(program, all_set, tt::CBIndex::c_2, max_xnt+2); MakeCB(program, all_set, tt::CBIndex::c_3, max_xnt+2);
+    MakeCB(program, all_set, tt::CBIndex::c_4, max_xnt+2); MakeCB(program, all_set, tt::CBIndex::c_5, max_npg+2, tt::DataFormat::Float32);
     std::vector<uint32_t> r_ct = {(uint32_t)tt::CBIndex::c_0,(uint32_t)tt::CBIndex::c_1,(uint32_t)tt::CBIndex::c_2,(uint32_t)tt::CBIndex::c_3,(uint32_t)tt::CBIndex::c_4,(uint32_t)tt::CBIndex::c_5};
     TensorAccessorArgs(*K->ah).append_to(r_ct); TensorAccessorArgs(*K->am).append_to(r_ct); TensorAccessorArgs(*K->al).append_to(r_ct);
     TensorAccessorArgs(*K->xh).append_to(r_ct); TensorAccessorArgs(*K->xm).append_to(r_ct); TensorAccessorArgs(*K->xl).append_to(r_ct);
