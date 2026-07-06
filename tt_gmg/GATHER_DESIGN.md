@@ -1136,3 +1136,20 @@ post-boot re-degradation, a fabric reset, or the g15glx03 Wormhole golden galaxy
 the gather is fully correct and the GMG solve + G4/cold/warm/stretch measure directly (algorithm already CPU-
 validated). STATE: 5/8 gates + algorithm; the 4 timing gates need a healthy fabric so the (now-correct) SpMV
 executes on all cores.
+
+## FABRIC_2D == FABRIC_1D (both 84 EXEC): fabric config ruled out; even chip 0 runs ~3/119 cores — 2026-07-06
+Tried SetFabricConfig(FABRIC_2D) instead of FABRIC_1D: EXEC = 84/3808, IDENTICAL to FABRIC_1D. So the dispatch
+fabric config is NOT the cause (though FABRIC_2D throws on mesh close - a separate issue). CRITICAL refinement:
+chip 0's constant tiles are at cd[1],cd[2] (local 1,2) - so even CHIP 0, which is dispatch-local with ZERO fabric
+hops, runs only ~2-3 of its 119 assigned cores. This kills the fabric-hop-latency hypothesis for chip 0 and
+means the limit is a fundamental ~3-cores-per-chip MeshWorkload dispatch/execution property of this reap-runtime
+(reap v0.73.1) + tt-metal build, NOT the fabric, NOT the multi-chip span. RULED OUT by direct on-device tests:
+grid size (12x10=120 full), partition (119 assigned 1-tile-each), CB/L1 fit (~330KB/core << 1.5MB), program
+structure (32 per-chip == 1 whole-mesh == 84), fabric config (1D == 2D == 84). The golden G3 (0.740ms) validated
+the mac_reader (pre-stored b) path, NOT the full-grid on-device gather - so the gather's full-grid dispatch was
+never actually exercised at scale before, and this ~3-core cap is a real, previously-unhit reap-runtime property.
+To resolve needs tt-metal/reap internals (why EnqueueMeshWorkload runs only ~3 of 119 cores/chip: dispatch
+mailbox/semaphore, kernel launch, or reap harvesting) or the g15glx03 Wormhole golden galaxy. FINAL STATE: real
+code bugs fixed (multi-chip offset, sharded-a: garbage->85 correct tiles, per-core gather path proven correct);
+remaining blocker = reap-runtime ~3-cores/chip dispatch cap, isolated but not source-fixable. 5/8 gates +
+algorithm CPU-validated; 4 timing gates need the dispatch cap resolved so all cores run the (correct) SpMV.
