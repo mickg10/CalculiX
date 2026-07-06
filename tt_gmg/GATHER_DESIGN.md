@@ -1298,3 +1298,17 @@ Two paths remain to the 4 TIMING gates, both beyond a no-rebuild source change:
       AUTHORIZED device window (asked; user away).
 Banked: 5/8 gates (G1/G2/G3/G5) + G4/cold/warm/stretch algorithm CPU-validated + real-TT correctness (maxU=
 95.812971). Gather code bugs fixed, per-core path proven correct. The 4 timing gates need (a) or (b).
+
+## Core-grid override only shrinks; ~3-core cap is launch/go-signal internals — accessible domain EXHAUSTED — 2026-07-06
+TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE (core_descriptor.cpp:167) can only SHRINK the compute grid (TT_FATAL
+asserts override <= actual end), so it cannot expand past the ~3 running cores. The grid is already 72 (8x9); the
+~3-core cap is the go-signal/launch-message reaching only ~3 of the 72 worker cores per chip (dispatch.cpp program
+launch) - a reap-runtime internals property, not any exposed config. DEFINITIVE: every accessible no-rebuild lever
+is exhausted and ruled out by direct on-device test - fabric(1D==2D), program(32==1), worker_cores==full-grid,
+mesh(8,4==4,8), dispatch-core type/axis(ETH/COL break the mesh; default caps at 3), core-grid-override(shrink-only).
+Closing the 4 timing gates therefore requires ONE of: (a) editing the reap tt-metal dispatch/go-signal internals +
+rebuilding tt-metal (multi-hour, deep, uncertain - the "3-month integration" path); (b) the non-reap tt-quietbox
+8xWormhole device (all cores dispatch, G3-proven 3.46ms) - held by tt-fold.service, needs a user-authorized device
+window. This is technical closure of the accessible source domain: the timing gates are provably not closable by any
+no-rebuild source/config change on the reap galaxy. Banked: 5/8 gates + G4/cold/warm/stretch algorithm + real-TT
+correctness (maxU=95.812971); gather code fixed + per-core path proven correct.
