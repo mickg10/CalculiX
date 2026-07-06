@@ -770,3 +770,22 @@ the strategy predicted). Microbenchmark: init rc=0, ~64ms/apply (parallel split3
 164ms), mailbox=0. Full solve now running (parallel split3 + CPU-validated cheap eig k=8/eigit=2) to measure
 maxU + G4/cold. LESSON APPLIED: no tt-smi reset before the solve (they degrade the fabric); reuse the working
 post-power-cycle fabric.
+
+## Galaxy RECOVERED (BMC); SpMV correctness REGRESSED to deterministic 74.88037 (reproducibility) — 2026-07-05
+BMC RECOVERY (worked): ipmitool chassis power cycle on idle g08blx02 cleared the ethernet 27,25 fault that no
+tt-smi reset could. NOTE: g08blx02 resets to a base image on reboot (ephemeral /home AND /tmp) -> must re-xfer
+4GB dumps + rebuild each boot. Fabric flakiness after recovery: only the FIRST mesh open after boot succeeds;
+the open/close cycle re-degrades 27,25 -> the solve must be the first open (retries/microbenchmark burn it).
+Achieved solve-past-init on the recovered galaxy.
+BUT: SpMV now returns a DETERMINISTIC WRONG result. rel stuck constant, maxU=74.8803761 (Blackhole, serial
+split3, k=24/eigit=5 = EXACT golden config) == 74.8803759 (g15glx03 degraded). Byte-identical wrong value on
+TWO different galaxies/arches => this is CODE/config/runtime, NOT hardware. But: gather_reader.cpp is
+git-UNCHANGED since the golden commit 92160e7 (nbr page NBTB=4096 in both); serial tt_spmv unchanged; same
+standard dumps (no deint variants exist); parallel split3 ruled out (serial also stalls); k=8 ruled out (k=24
+also stalls); CPU polynomial/eig sweeps all converge. => the regression is a JIT-cache / multithreaded-runtime
+REPRODUCIBILITY issue (cf. strategy rows 164/217: byte-identical decks giving different results under
+multithreaded Spooles) - the golden 95.81 solve was real+committed but is not reproducing on a fresh JIT/cache.
+NEXT (focused debug, hardware now recoverable): run the strategy's Test-1 gather verification (SPMV_GATHER=1
+SPMV_NCHIP=1, compare gather-b to the pre-stored mac_reader b) to localize where A.p goes wrong; bisect
+JIT-cache vs fresh; if a good b3-style cache is found, pin it. Then measure G4/cold/warm/stretch (algorithm
+CPU-validated: bf16x4/eig-k8 -> ~228 applies; transfer cut 64->~4ms).
