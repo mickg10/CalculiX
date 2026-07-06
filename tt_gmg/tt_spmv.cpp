@@ -151,23 +151,26 @@ static void tt_build_wl(TtSpmvCtx* K) {
     CoreRangeSet all_set(CoreRange({0,0},{grid.x-1,grid.y-1}));
     MakeCB(program, all_set, tt::CBIndex::c_0, 3); MakeCB(program, all_set, tt::CBIndex::c_1, 3);
     MakeCB(program, all_set, tt::CBIndex::c_16, 8, tt::DataFormat::Float32);
-    CoreRangeSet cores = all_set;   // (reap sed rewrites all_set -> worker_cores; keep a name for CreateKernel)
-    // per-TILE max x-window + nbr pages over this chip's n_local tiles (redundant: each core does all tiles, so
-    // the reader stages+pops ONE tile's window/nbr at a time -> CBs sized to the per-tile max, not the union).
-    uint32_t max_xnt = 1, max_npg = 1;
-    for (uint32_t lt = 0; lt < n_local; lt++) {
-        uint32_t gt = tile_base + lt, nlo = (gt*1024)/3, nhi;
-        if (nlo >= NBn) { nlo = (NBn>342)?(NBn-342):0; nhi = NBn-1; } else { nhi = nlo + 341; if (nhi >= NBn) nhi = NBn-1; }
-        uint32_t nn = (nhi>=nlo)?(nhi-nlo+1):1;
-        int32_t emin = INT32_MAX, emax = -1;
-        for (uint32_t nd = nlo; nd <= nhi; nd++) { if (nmin[nd] < emin) emin = nmin[nd]; if (nmax[nd] > emax) emax = nmax[nd]; }
-        if (emax < 0) { emin = 0; emax = 0; }
-        uint32_t tnt = (uint32_t)emax/1024 - (uint32_t)emin/1024 + 1; if (tnt > max_xnt) max_xnt = tnt;
-        uint32_t sil = nlo*27, plo = sil/1024, npg = (sil + nn*27 + 1023)/1024 - plo; if (npg > max_npg) max_npg = npg;
-    }
-    // +2 slack so the reader's reserve-once of max_xnt/max_npg leaves headroom (a ring CB can't reserve all N).
-    MakeCB(program, all_set, tt::CBIndex::c_2, max_xnt+2); MakeCB(program, all_set, tt::CBIndex::c_3, max_xnt+2);
-    MakeCB(program, all_set, tt::CBIndex::c_4, max_xnt+2); MakeCB(program, all_set, tt::CBIndex::c_5, max_npg+2, tt::DataFormat::Float32);
+    auto [ncores, cores, gA, gB, nA1, nB1] = tt::tt_metal::split_work_to_cores(grid, n_local, true);
+    std::vector<uint32_t> pc_xlo, pc_xnt, pc_nlo, pc_nn; uint32_t s = 0, max_xnt = 1, max_npg = 1;
+    for (auto [grp, npc] : {std::make_pair(gA, nA1), std::make_pair(gB, nB1)})
+        for (const auto& cr : grp.ranges()) for (const auto& cc : cr) { (void)cc;
+            uint32_t g_s = tile_base + s;                                   // GLOBAL tile index for nbr/x lookup
+            uint32_t nlo = (g_s*1024)/3, nhi = ((g_s+npc)*1024-1)/3;
+            if (nlo >= NBn) { nlo = 0; nhi = 0; }                           // padding tile beyond n_out: harmless gather (output ignored)
+            else if (nhi >= NBn) nhi = NBn-1;
+            uint32_t nn = (nhi >= nlo) ? (nhi - nlo + 1) : 1;               // guard uint32 underflow for padding tiles
+            int32_t emin = INT32_MAX, emax = -1;
+            for (uint32_t nd = nlo; nd <= nhi; nd++) { if (nmin[nd] < emin) emin = nmin[nd]; if (nmax[nd] > emax) emax = nmax[nd]; }
+            if (emax < 0) { emin = 0; emax = 0; }
+            uint32_t tlo = (uint32_t)emin/1024, tnt = (uint32_t)emax/1024 - tlo + 1;
+            pc_xlo.push_back(tlo); pc_xnt.push_back(tnt); pc_nlo.push_back(nlo); pc_nn.push_back(nn);
+            if (tnt > max_xnt) max_xnt = tnt;
+            uint32_t sil = nlo*27, plo = sil/1024, npg = (sil + nn*27 + 1023)/1024 - plo; if (npg > max_npg) max_npg = npg;
+            s += npc;
+        }
+    MakeCB(program, all_set, tt::CBIndex::c_2, max_xnt); MakeCB(program, all_set, tt::CBIndex::c_3, max_xnt);
+    MakeCB(program, all_set, tt::CBIndex::c_4, max_xnt); MakeCB(program, all_set, tt::CBIndex::c_5, max_npg, tt::DataFormat::Float32);
     std::vector<uint32_t> r_ct = {(uint32_t)tt::CBIndex::c_0,(uint32_t)tt::CBIndex::c_1,(uint32_t)tt::CBIndex::c_2,(uint32_t)tt::CBIndex::c_3,(uint32_t)tt::CBIndex::c_4,(uint32_t)tt::CBIndex::c_5};
     TensorAccessorArgs(*K->ah).append_to(r_ct); TensorAccessorArgs(*K->am).append_to(r_ct); TensorAccessorArgs(*K->al).append_to(r_ct);
     TensorAccessorArgs(*K->xh).append_to(r_ct); TensorAccessorArgs(*K->xm).append_to(r_ct); TensorAccessorArgs(*K->xl).append_to(r_ct);
@@ -179,18 +182,19 @@ static void tt_build_wl(TtSpmvCtx* K) {
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default, .compile_args = w_ct});
     auto compute = CreateKernel(program, "tt_metal/programming_examples/spmv_mac/kernels/mac_compute.cpp", cores,
         ComputeConfig{.math_fidelity = MathFidelity::HiFi4, .fp32_dest_acc_en = true, .math_approx_mode = false, .compile_args = {}});
-    // REDUNDANT: every core gets IDENTICAL args and computes ALL n_local tiles. Whichever cores the reap runtime
-    // actually dispatches each fill the whole shard (last-writer-wins is benign - identical values). reader
-    // start_out_id=tile_base (GLOBAL, for replicated a + global node0); writer start=0 (LOCAL sharded c). The
-    // reader computes each tile's x-window ON-DEVICE from nbr, so the old per-tile window args are unused (the
-    // node_lo slot carries the NBn node cap for the padding/bounds guard).
-    SetRuntimeArgs(program, reader, all_set, {(uint32_t)K->ah->address(),(uint32_t)K->am->address(),(uint32_t)K->al->address(),
-        (uint32_t)K->xh->address(),(uint32_t)K->xm->address(),(uint32_t)K->xl->address(),(uint32_t)K->nbrbuf->address(),
-        n_local, K->K, tile_base, max_xnt, max_npg, NBn, 0u});   // reader reserves cb scratch to max_xnt/max_npg once
-    SetRuntimeArgs(program, compute, all_set, {n_local, K->K});
-    SetRuntimeArgs(program, writer, all_set, {(uint32_t)K->c->address(), n_local, 0u});
-    if (chip == 0) fprintf(stderr, "tt_build_wl REDUNDANT: n_local=%u NCHIP=%u cols=%u max_xnt=%u max_npg=%u grid=%u worker=%u (all cores do all tiles)\n",
-            n_local, K->NCHIP, cols, max_xnt, max_npg, (uint32_t)(grid.x*grid.y), (uint32_t)all_set.num_cores());
+    uint32_t start = 0, ci = 0;
+    for (auto [grp, npc] : {std::make_pair(gA, nA1), std::make_pair(gB, nB1)})
+        for (const auto& cr : grp.ranges()) for (const auto& cc : cr) {
+            uint32_t g_start = tile_base + start;                          // GLOBAL out-tile for replicated a-read + global node0
+            SetRuntimeArgs(program, reader, cc, {(uint32_t)K->ah->address(),(uint32_t)K->am->address(),(uint32_t)K->al->address(),
+                (uint32_t)K->xh->address(),(uint32_t)K->xm->address(),(uint32_t)K->xl->address(),(uint32_t)K->nbrbuf->address(),
+                npc, K->K, g_start, pc_xlo[ci], pc_xnt[ci], pc_nlo[ci], pc_nn[ci]});  // g_start=GLOBAL (replicated a + node0); pc_nlo=GLOBAL (replicated nbr/x)
+            SetRuntimeArgs(program, compute, cc, {npc, K->K});
+            SetRuntimeArgs(program, writer, cc, {(uint32_t)K->c->address(), npc, start});   // start=LOCAL (sharded c shard-local write)
+            start += npc; ci++;
+        }
+    if (chip == 0) fprintf(stderr, "tt_build_wl PER-CHIP: n_local=%u total=%u ncores(split)=%u all_set.num_cores=%u NCHIP=%u cols=%u tile_base0=%u max_xnt=%u\n",
+            n_local, start, ncores, (uint32_t)all_set.num_cores(), K->NCHIP, cols, tile_base, max_xnt);
     distributed::MeshCoordinate coord(chip / cols, chip % cols);           // this chip's mesh position
     K->wl.add_program(distributed::MeshCoordinateRange(coord, coord), std::move(program));
     }

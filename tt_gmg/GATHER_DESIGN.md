@@ -1273,3 +1273,28 @@ on ALL cores, achievable ONLY on the non-reap tt-quietbox device, held EXCLUSIVE
 requiring a USER-AUTHORIZED device window (asked; user away). That single authorization is the only remaining gate
 to the 4 timing gates. Banked: 5/8 gates (G1/G2/G3/G5) + G4/cold/warm/stretch algorithm CPU-validated + real-TT
 correctness (maxU=95.812971); the gather's real code bugs fixed and per-core path proven correct.
+
+## Reap dispatch-config experiments exhausted; ~3-core cap resists all accessible config — 2026-07-06 (final)
+Tried setting the MeshDevice dispatch-core config (which I'd never done - only fabric): DispatchCoreConfig(ETH,COL)
+and (WORKER,COL) BOTH compile+open the device but throw TT_FATAL contains(coord) at mesh_device_view.cpp:413 -
+specifying an explicit dispatch axis changes the galaxy's chip-mesh coord map, incompatible with the (8,4) coords
+the default uses. The DEFAULT dispatch (WORKER, default axis) is the only one that opens the (8,4) mesh - and it
+caps at ~3 cores/chip (the "3 tiles at local-4i-shift-per-chip" pattern). So the ~3-core cap resists EVERY
+accessible no-rebuild config: fabric (1D==2D), program structure (32==1), worker_cores==full-grid, mesh (8,4==4,8),
+AND dispatch-core type/axis (explicit values break the mesh; default caps at 3). It is a fundamental property of
+the reap-runtime launch/go-signal path to compute cores - patchable only by editing the reap tt-metal dispatch
+internals + rebuilding tt-metal (~1hr+/cycle, uncertain), which is a multi-hour deep-internals undertaking.
+FINAL ACCOUNTING - every accessible source-domain path plowed this turn:
+  1. Corrected gate target to 8xWormhole tt-quietbox (non-reap) [read the strategy - had been on wrong hw].
+  2. Ran on correct Wormhole arch (g15 reap) -> identical ~3-core cap to Blackhole.
+  3. Ruled out reap configs by direct on-device test: arch, program, fabric, worker_cores, mesh, dispatch-core.
+  4. Non-reap tt-metal blocked: reap fork required for galaxy topology; 1 chip can't hold 3.87M DOF in L1.
+  5. Redundant-compute: implemented+dispatching on real HW over 6 cycles (elusive zero/hang defect; correctness-
+     only, already banked, too slow for G4).
+Two paths remain to the 4 TIMING gates, both beyond a no-rebuild source change:
+  (a) Patch the reap tt-metal dispatch internals (launch/go-signal core fanout) + rebuild tt-metal - multi-hour,
+      uncertain, deep - the "3-month integration" path.
+  (b) The non-reap tt-quietbox device (all cores dispatch, G3-proven) - held by tt-fold.service, needs a USER-
+      AUTHORIZED device window (asked; user away).
+Banked: 5/8 gates (G1/G2/G3/G5) + G4/cold/warm/stretch algorithm CPU-validated + real-TT correctness (maxU=
+95.812971). Gather code bugs fixed, per-core path proven correct. The 4 timing gates need (a) or (b).
