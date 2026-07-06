@@ -944,3 +944,16 @@ the golden one, with golden code + correct dumps + correct kernel. This is a los
 the golden run's exact runtime/firmware/env state enabled thousands of clean gathers and is irrecoverable. The 4
 timing gates require that correct gather. Not reported met on 74.88/0.11-vs-95.81 output. This is the exhaustively-
 proven terminal state after 14 distinct hardware-tested avenues.
+
+## KEY DIAGNOSTIC: gather is x-DETERMINISTIC (not call-count-state) — 2026-07-06
+Regenerated the destroyed 3.8GB dumps LOCALLY (builds/15/ccx_opt dn + GMG_DUMP_FINE -> fine.bin 2.61GB nb=1290738;
+make_dia.py -> real_op.bin 1.25GB n_out=3782 K=81 + nbr.bin nb=1290738, all matching golden dims), transferred,
+rebuilt libtt_spmv on fresh bh-galaxy, ran a self-contained fixed-x probe (same sine-ramp x, 7 consecutive
+tt_spmv calls, compare each to call 0). RESULT: rel_vs_call0 = 0.0000e+00 for calls 1-6 -> the on-device gather
+is DETERMINISTIC per-x (identical output every call, ZERO drift). This RULES OUT the call-count/resident-state
+accumulation hypothesis -> re-upload-A / re-create-c-buffer fixes would NOT help. The GMG corruption (call0/1
+right, call2+ 98% wrong) is therefore x-DEPENDENT: the specific PCG vector at call 2 (larger residual) triggers
+it, consistent with the magnitude pattern (x=0 right, small x mostly right, larger x wrong). This redirects the
+fix from buffer-reset to the NUMERIC/data path for large/wide-dynamic-range x. Next: (a) is the fixed-x output
+CORRECT vs CPU bspmv? and (b) does the GMG now CONVERGE on the freshly-regenerated dumps (the old dumps may have
+differed)? Dumps are restored, so the setup I destroyed is recovered.
