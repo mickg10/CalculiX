@@ -1329,3 +1329,24 @@ NEXT (when hw back): read the zero-c nonzero count; if ~99.4% -> fix the per-cor
 gather right (the 85-at-4i pattern is the clue) -> correct all-cores gather -> the fast path -> G4/cold/warm/stretch.
 This is a MAJOR reframe: the timing gates may be reachable on THIS free galaxy after all (no tt-fold, no internals
 rebuild) - the blocker is a source-fixable correctness bug on a now-recovered device, not the reap dispatch.
+
+## Correctness-bug analysis (offline, ready to apply when hw returns) — 2026-07-06
+Access blocked: quietbox jump host (100.117.137.85, Tailscale) is DOWN (100% packet loss); g15glx03 (38.97.6.6:55211)
+is UP (ping 56ms) but rejects my local keys - the authorized key is ON the down quietbox. No alternate route.
+The 85-correct-tiles pattern decoded (global -> chip,local): 0,1,2=chip0 L0-2; 123-125=chip1 L4-6; 246-248=chip2
+L8-10; 369-370=chip3 L12-13; 491-493=chip4 L15-17; 614-616=chip5 L19-21; 737-739=chip6 L23-25. Local start per
+chip = ~4*chip (deltas 4,4,4,3,4,4), ~3 correct tiles each. Since split_work_to_cores is IDENTICAL per chip, a
+per-CORE bug would put correct tiles at the SAME local pos for every chip - but they SHIFT ~4/chip, so it is a
+per-CHIP effect that correlates with fabric distance from the dispatch/source chip. This matches the strategy's
+KNOWN failure (tt_spmv.cpp:226-233): "degraded 27,25 link lagged fabric propagation -> stale x for tiles>=1024 ->
+deterministic-wrong SpMV" - i.e. x (or a) is not fully live on the far chips when the gather reads it; each chip is
+correct only for the window that WAS propagated by gather time, and that window advances ~4 tiles per fabric hop.
+The existing Finish(cq) after the x-write is INSUFFICIENT post-reset. CANDIDATE FIXES to test when hw returns, in
+order: (1) after EnqueueWriteMeshBuffer(x)+Finish, run a tiny "touch-x" workload that reads all x tiles on every
+chip (forces full replication) then Finish, THEN the gather; (2) verify x is REPLICATED per-chip via host write
+(MakeReplBuf) not fabric-multicast - if fabric, switch to host-direct per-chip write; (3) the c-zeroing test
+(already staged, result pending) confirms whether nonzero=99.4% (all cores write; propagation/correctness) vs ~85
+(dispatch). If (1)/(2) make rel_err ~1e-6 -> correct all-cores gather on the recovered galaxy -> wire g_tt_fine_spmv
+-> full GMG solve maxU=95.81 -> measure G4/cold/warm/stretch. The device is recovered; the blocker is now this
+per-chip propagation correctness bug PLUS the transient quietbox outage. Resume: retry quietbox; on access, apply
+fix (1) first.
