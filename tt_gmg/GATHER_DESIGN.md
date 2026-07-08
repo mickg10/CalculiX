@@ -1368,3 +1368,20 @@ programs - args aren't sticking per-core. KEY NEXT: the REDUNDANT-compute approa
 tiles) is ROBUST to a per-core-args bug and was never actually tested (kernels didn't take effect) - re-test it
 now with the API-correct reader made redundant; OR fix per-core SetRuntimeArgs. Path fix committed; kernels are
 finally editable. This is the real unblock toward the correct all-cores gather -> timing gates.
+
+## ROOT CAUSE ISOLATED: replicated buffers (a/x/nbr) not fully replicated on reap (8,4) mesh — 2026-07-08
+With kernels finally live (path fix), systematic isolation: (1) redundant reader (every core all tiles, identical
+args) STILL 85-at-123i -> NOT per-core args/dispatch. (2) a-bypass b=1.0 -> Sum_k a_k ~=0 (Laplacian rows sum to 0,
+degenerate). (3) a-CENTER test (b=1 only for k=39, output=cf[39, tile]): tiles_a39_correct=206/541, and the wrong
+ones have y~=0 where cf[39] is large (1.58, 12.65) -> the reader reads a[tile*K+39]=0 for ~62% of tiles. So the
+REPLICATED a buffer is NOT correctly present on the chips - MakeReplBuf(ReplicatedBufferConfig) +
+EnqueueWriteMeshBuffer only partially replicates a/x/nbr across the reap Mesh(8,4). The gather (85/3781) is worse
+than a-alone (206/541) -> x AND nbr replication also affected. ROOT CAUSE = multi-chip replicated-buffer write on
+the reap galaxy mesh, NOT the gather kernel, args, dispatch, or the wedged-device (all ruled out). FIX DIRECTIONS
+to try: (a) write each replicated buffer per-chip explicitly (loop MeshCoordinate, write to each device's local
+view) instead of one EnqueueWriteMeshBuffer; (b) verify ReplicatedBufferConfig broadcasts on Mesh(8,4) vs (1,32) -
+maybe replication only covers row/col; (c) check if the a-buffer (617MB x3) write is silently truncated. This
+turn's arc: recovered wedged device (glx reset) after 13.5h cluster outage; found+fixed the root-owned-kernel-dir
+issue that silently voided ALL session kernel edits (path->/tmp/kernels); ruled out args/dispatch; isolated the
+real bug to replicated-buffer population on the mesh. Kernels are editable, diagnostics are in place; next is the
+replicated-write fix, then correct all-cores gather -> full solve -> timing gates.
