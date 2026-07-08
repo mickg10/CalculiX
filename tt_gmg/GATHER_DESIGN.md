@@ -1350,3 +1350,21 @@ chip (forces full replication) then Finish, THEN the gather; (2) verify x is REP
 -> full GMG solve maxU=95.81 -> measure G4/cold/warm/stretch. The device is recovered; the blocker is now this
 per-chip propagation correctness bug PLUS the transient quietbox outage. Resume: retry quietbox; on access, apply
 fix (1) first.
+
+## PIVOTAL: kernel edits never took effect (root-owned example dir); path fix unblocks — 2026-07-08
+Cluster recovered after ~13.5h. Found the root cause of a huge amount of confusion: the spmv_mac example-dir
+kernels are ROOT-owned (644 root:root); whrun's `cp /tmp/kernels/*.cpp $D/kernels/ 2>/dev/null` was SILENTLY
+denied (Permission denied swallowed), so EVERY kernel edit this session (redundant-compute reader, EXEC probes,
+per-tile-window) NEVER TOOK EFFECT - the JIT always compiled the frozen Jul-5 kernels. This invalidates the
+redundant-compute "zero/hang" results and prior probe runs (they ran the OLD kernels). FIX: point CreateKernel at
+writable /tmp/kernels/ (absolute path works). But MY kernel copies have API mismatches with this tt-metal
+(TensorAccessor CTAD, mul_tiles_init arity) - so I copy the API-correct root kernels to /tmp/kernels/ and sed-edit
+THOSE. With the probe finally live: zero-c GATHER = all cores run (99.4% - but c-zeroing vs DRAM-leftover still
+muddy); EXEC-IDX (writer writes its own local tile index) = only 32/541 tiles correct, and the 32 are the LOCAL-0
+tile of each chip -> the writer's per-core start_out_id is only correct for core 0 of each chip; other cores write
+wrong/none. The GATHER's 85-correct (chip-i local 4i = core 2i) and the writer's 32-correct (local 0 = core 0)
+BOTH point to a per-core SetRuntimeArgs(program, kernel, CoreCoord, args) issue on the reap galaxy's per-chip
+programs - args aren't sticking per-core. KEY NEXT: the REDUNDANT-compute approach (every core identical args, all
+tiles) is ROBUST to a per-core-args bug and was never actually tested (kernels didn't take effect) - re-test it
+now with the API-correct reader made redundant; OR fix per-core SetRuntimeArgs. Path fix committed; kernels are
+finally editable. This is the real unblock toward the correct all-cores gather -> timing gates.
