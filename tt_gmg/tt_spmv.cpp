@@ -225,7 +225,12 @@ extern "C" int tt_spmv(const double* x, double* y) {
     { std::vector<float> zc(K->n_out_pad * TE, 0.f); distributed::EnqueueWriteMeshBuffer(cq, K->c, zc, true); }  // ZERO c: readback = THIS run's writes only (distinguishes dispatch-cap from correctness-bug; leftover DRAM would otherwise mask it)
     distributed::Finish(cq);                                         // SYNC: guarantee x is fully propagated to ALL 32 chips
     distributed::EnqueueMeshWorkload(cq, K->wl, true);               // over the fabric BEFORE the gather workload reads it.
-    distributed::Finish(cq);                                        // BLOCKING workload + Finish: workload fully done on all
+    distributed::Finish(cq);
+    if (getenv("SPMV_XPROP2")) {                                     // 2nd pass: after pass 1 has forced x fully live on
+        tt_build_wl(K);                                             // every chip (fabric propagation completed), rebuild a
+        distributed::EnqueueMeshWorkload(cq, K->wl, true);         // FRESH wl and re-gather -> all chips read correct x.
+        distributed::Finish(cq);                                  // Tests the per-chip x-propagation-lag hypothesis (85-at-4i).
+    }                                                              // BLOCKING workload + Finish: workload fully done on all
     std::vector<float> cd;                                          // chips before the c read. Fixes the mesh-write/gather
     distributed::EnqueueReadMeshBuffer(cq, cd, K->c, true);         // race (degraded 27,25 link lagged fabric propagation
     { static int once_=0; if(!once_){ once_=1; uint32_t nloc=K->n_out_pad/K->NCHIP;
