@@ -1402,3 +1402,22 @@ device -> found+fixed root-owned-kernel-dir bug that silently voided ALL session
 -> ruled out args/dispatch/mesh-shape -> corrected a to sharded (proven arch) -> isolated the residual to a
 reap-galaxy HARDWARE fault + confirmed the clean path is tt-quietbox. Next: the timing gates need EITHER a healthy
 tt-quietbox device window (tt-fold) OR the specific faulted reap chip identified and excluded from the mesh.
+
+## READY-TO-EXECUTE: tt-quietbox 8-chip port plan (blocked only on tt-fold device window) — 2026-07-08
+Re-read TT_GMG_STRATEGY.md: gate host is the 8xWH tt-quietbox (line 3/6); gather correctness ALREADY PASSED there
+(G3, rel_err 6.4e-7, line 53). I am logged into tt-quietbox (ttuser@100.117.137.85): 4 n300 boards = 8 WH chips.
+tt-fold.service is a LIVE production job (tt-bio python, running 19h44m) holding boards 0,2,3; board 1 free.
+The 8-chip timing gates need ALL 4 boards -> requires tt-fold to yield (user setup: "PAUSED pending a device
+window"). Security constraint: do NOT disrupt tt-fold without explicit user authorization (asked; user away -> NOT
+authorized -> not disrupting). Armed a non-disruptive watcher that auto-resumes when all 4 boards free.
+tt-quietbox is BARE (only /tmp/row236_real_op.bin remains). The COMPLETE setup is on g15 and transferable:
+/tmp/tt_spmv.cpp, /tmp/kernels/{gather_reader,mac_compute,mac_writer}.cpp, /tmp/whrun3.sh, /tmp/fixeddiag3.py,
+/tmp/row236_nbr.bin (139MB), /tmp/row236_real_op.bin (1.25GB). tt-metal build at ttuser@quietbox:~/src/tt-metal.
+ONE-PASS EXECUTION when boards free:
+  1. scp g15:/tmp/{tt_spmv.cpp,kernels/*,whrun3.sh,fixeddiag3.py,row236_nbr.bin,row236_real_op.bin} -> quietbox:/tmp
+  2. build libtt_spmv.so against ~/src/tt-metal (use /tmp/kernels path fix - writable, avoids root-owned example dir)
+  3. run 8-chip gather: SPMV_NCHIP=8, MeshShape(1,8) (native quietbox topology, NOT the reap 32-chip) -> expect
+     rel_err ~1e-6 (proven-correct code; NO reap hardware fault on healthy quietbox). Verify COMPARE green.
+  4. wire g_tt_fine_spmv=&tt_spmv -> ccx_gmg_solve_from_dump -> maxU=95.8129714 -> capture G4/cold/warm/stretch.
+Use SPMV_NCHIP=8 sharded-a (proven spmv_mac arch, now matched). The reap detour taught: kernel path fix
+(/tmp/kernels), sharded-a architecture, and that 32-chip reap has a hw fault - all irrelevant on the 8-chip target.
