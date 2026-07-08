@@ -176,11 +176,11 @@ static void tt_build_wl(TtSpmvCtx* K) {
     TensorAccessorArgs(*K->xh).append_to(r_ct); TensorAccessorArgs(*K->xm).append_to(r_ct); TensorAccessorArgs(*K->xl).append_to(r_ct);
     TensorAccessorArgs(*K->nbrbuf).append_to(r_ct);
     std::vector<uint32_t> w_ct = {(uint32_t)tt::CBIndex::c_16}; TensorAccessorArgs(*K->c).append_to(w_ct);
-    auto reader = CreateKernel(program, "tt_metal/programming_examples/spmv_mac/kernels/gather_reader.cpp", cores,
+    auto reader = CreateKernel(program, "/tmp/kernels/gather_reader.cpp", cores,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default, .compile_args = r_ct});
-    auto writer = CreateKernel(program, "tt_metal/programming_examples/spmv_mac/kernels/mac_writer.cpp", cores,
+    auto writer = CreateKernel(program, "/tmp/kernels/mac_writer.cpp", cores,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default, .compile_args = w_ct});
-    auto compute = CreateKernel(program, "tt_metal/programming_examples/spmv_mac/kernels/mac_compute.cpp", cores,
+    auto compute = CreateKernel(program, "/tmp/kernels/mac_compute.cpp", cores,
         ComputeConfig{.math_fidelity = MathFidelity::HiFi4, .fp32_dest_acc_en = true, .math_approx_mode = false, .compile_args = {}});
     uint32_t start = 0, ci = 0;
     for (auto [grp, npc] : {std::make_pair(gA, nA1), std::make_pair(gB, nB1)})
