@@ -1385,3 +1385,20 @@ turn's arc: recovered wedged device (glx reset) after 13.5h cluster outage; foun
 issue that silently voided ALL session kernel edits (path->/tmp/kernels); ruled out args/dispatch; isolated the
 real bug to replicated-buffer population on the mesh. Kernels are editable, diagnostics are in place; next is the
 replicated-write fix, then correct all-cores gather -> full solve -> timing gates.
+
+## 85-at-123i is a REAP-GALAXY HARDWARE FAULT (not code) + tt-quietbox is the gate target — 2026-07-08
+Applied the correct architecture fix (a SHARDED, proven spmv_mac layout, local a-page) -> rel_err 1.4298->1.2918
+but STILL 85-at-123i. The pattern is DECISIVE: correct tiles at spacing ~123 (deltas 123,123,123,122,...),
+3 consecutive per group. 3808/31 = 122.8 ~= 123 -> the reap galaxy is behaving as 31 EFFECTIVE chips, not 32.
+This matches the recurring `TT_FATAL: Read unexpected run_mailbox value from core (x=23,y=17)` - ONE chip/core is
+FAULTED. The 8-chip config CRASHES on `fabric_firmware_initializer.cpp:212` (fabric router sync wedge). glx_reset
+re-inits 32 boards but does NOT heal the bad chip/fabric (85 persists post-2x-reset; 8-chip still fabric-crashes).
+CONCLUSION: the free reap galaxy has a HARDWARE FAULT (bad chip -> 32-chip gather misaligns to 31-shard geometry;
+8-chip -> fabric wedge). This is NOT the gather kernel/args/dispatch/buffer-type (all systematically ruled out and
+the architecture now matches the proven-correct spmv_mac exactly). The GATES target tt-quietbox (8xWH T3K, healthy,
+where G2/G3/G5+gather-correctness rel_err 1e-6 ALREADY PASSED) - held by tt-fold.service pending a device window.
+THIS TURN's real progress: waited out 13.5h cluster outage (auto-resume caught recovery) -> recovered wedged
+device -> found+fixed root-owned-kernel-dir bug that silently voided ALL session kernel edits (path->/tmp/kernels)
+-> ruled out args/dispatch/mesh-shape -> corrected a to sharded (proven arch) -> isolated the residual to a
+reap-galaxy HARDWARE fault + confirmed the clean path is tt-quietbox. Next: the timing gates need EITHER a healthy
+tt-quietbox device window (tt-fold) OR the specific faulted reap chip identified and excluded from the mesh.
