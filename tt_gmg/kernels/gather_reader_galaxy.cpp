@@ -76,8 +76,8 @@ void kernel_main() {
         }
         noc_async_read_barrier();
 
-        // ---- stream a[gt,k] (replicated, GLOBAL page) + gather b[k] per k (cb_a/cb_b -> compute) ----
-        const uint32_t base = gt * K;
+        // ---- stream a[t,k] (SHARDED, LOCAL page -> chip's a-shard via accessor) + gather b[k] per k ----
+        const uint32_t base = t * K;   // LOCAL out-tile index; sharded a accessor maps to chip i's slice [tile_base..]
         for (uint32_t k = 0; k < K; ++k) {
             const uint32_t oo = k / 3, c = k % 3;
             cb_reserve_back(cb_a, 3); cb_reserve_back(cb_b, 3);

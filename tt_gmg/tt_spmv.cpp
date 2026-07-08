@@ -111,7 +111,10 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
     Program program = CreateProgram();
     // a REPLICATED (full on each chip, ~1.25GB/chip fits Blackhole DRAM): each chip reads its output tiles' a
     // by GLOBAL page from the local full copy -> no shard-local-accessor dependency. c stays SHARDED (local write).
-    K->ah = MakeReplBuf(K->dev, K->n_out_pad * K->K); K->am = MakeReplBuf(K->dev, K->n_out_pad * K->K); K->al = MakeReplBuf(K->dev, K->n_out_pad * K->K);
+    // a SHARDED (proven spmv_mac architecture): chip i owns a-tiles [i*n_local*K..]; reader reads a by LOCAL page t*K
+    // -> the shard accessor maps to the chip's slice. (My earlier REPLICATED-a global-page read never populated across
+    // the reap mesh -> a=0 for 62% of tiles = the 85-at-123i bug. Sharded a distributes correctly by construction.)
+    K->ah = MakeBuf(K->dev, K->n_out_pad * K->K, K->NCHIP); K->am = MakeBuf(K->dev, K->n_out_pad * K->K, K->NCHIP); K->al = MakeBuf(K->dev, K->n_out_pad * K->K, K->NCHIP);
     K->c  = MakeBuf(K->dev, K->n_out_pad, K->NCHIP, 4);   // c MUST be sharded (tt-metal: multi-mesh read requires SHARDED)
     K->xh = MakeReplBuf(K->dev, K->n_out_pad); K->xm = MakeReplBuf(K->dev, K->n_out_pad); K->xl = MakeReplBuf(K->dev, K->n_out_pad);
     uint32_t nbr_tiles_total = ((uint32_t)NBn * 27 + 1023) / 1024;
