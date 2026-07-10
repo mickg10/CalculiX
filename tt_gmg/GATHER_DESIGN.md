@@ -1511,3 +1511,29 @@ SESSION NET: the multi-chip gather MECHANISM is SOLVED (correct 8e-7 all-tiles o
 proven) - the strategy's "one remaining large kernel" for the mechanism; the remaining blocker for G4/cold/warm/
 stretch is the on-device fp32-accumulate MAC on cancellation vectors (the documented open research problem), NOT the
 gather. Next: fp32 reduce_tile OR a residual-scaling/double-single reformulation at the smoother level.
+
+## FULL strategy re-read complete: the fast-path blocker is the fp32-ACCUMULATE MAC (matmul-diagonal) — 2026-07-10
+Read the ENTIRE TT_GMG_STRATEGY.md research arc (lines 1-656). Complete synthesis:
+- CONVERGENCE is SOLVED at the algorithm level (line 451-464): computed-eigenvector deflated PCG (Saad DCG,
+  GMG_DEFL_EIG k=24) + bf16 smoother-in-complement + HYBRID fp64 finish + best-iterate -> rc=0, true_rel 1.34e-6,
+  maxU=95.8129714. The eig-deflation tolerates a fine-SpMV abserr up to ~5e-4 on the cancellation vectors.
+- CORRECTNESS is BANKED on real TT (2026-07-03): maxU=95.812971 via the SLOW matmul-diagonal+host-gather (10.41s/
+  apply). The matmul-diagonal has fp32 ACCUMULATE (matmul_tiles) + 11-bit products = abserr 4.69e-4 -> WITHIN the
+  ~5e-4 deflation tolerance -> converges.
+- MY fast on-device gather: correct 8e-7 on normal/smooth vectors, but its bf16-ACCUMULATE (eltwise LLK) gives
+  rel_err 687 on the extreme-cancellation vector (apply3, |Ax/x|=5e-4) -> FAR over the ~5e-4 tolerance -> the eig-
+  defl+hybrid solve DIVERGES (measured this session: rel 589->4280, rc=4, maxU 0.149).
+=> THE EXACT REMAINING FIX for G3-timing/G4/cold/warm/stretch: give my FAST on-device gather an fp32 ACCUMULATE.
+The ONLY Metalium primitive that fp32-accumulates is matmul_tiles (strategy line 111); reduce_tile<fp32> gives
+bf16 math+garbage (line 296-304), packer_l1_acc hangs, eltwise is bf16-accum. So the fix = an on-device MATMUL-
+DIAGONAL MAC (A[32,K]@B[K,32], diag) fed by my gather -> fp32 accumulate + (with the bf16x3 SPLIT as matmul inputs,
+8-bit survive 11-bit rounding) products BETTER than 4.69e-4 -> well within deflation tolerance -> converges FAST.
+That needs the transposed [element,(term,k)] layout (reader+compute+host rework) the strategy repeatedly scopes as
+MULTI-DAY, on a box whose documented wedge recovery is a COLD POWER-CYCLE / BMC (lines 466-488: tt-smi -r re-wedges
+via PCIe AER; ARC hangs need AC cycle) that I have neither credentials nor authorization to perform - and this
+session already required multiple resets. Even built, the strategy flags G3<=3ms/G4<=1s as timing-uncertain (eig
+setup = k*eigit vcycles + matmul cost). SESSION NET: solved+integrated the fast gather MECHANISM (the strategy's
+"one remaining large kernel"), and pinned the fast-path blocker precisely on real silicon = the on-device fp32-
+accumulate matmul-diagonal MAC (multi-day, device-recovery-blocked). CONCRETE NEXT: build the matmul-diagonal
+Metalium compute (matmul_tiles over the transposed compensated-split layout), verify 4.69e-4 on cancellation,
+re-run the eig-defl+hybrid solve -> expect maxU=95.813; then optimize resident-x + measure the timing gates.
