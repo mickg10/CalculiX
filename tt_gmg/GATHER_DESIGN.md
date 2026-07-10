@@ -1600,3 +1600,23 @@ buffered a-prefetch (deeper CB, issue-ahead -> BW-bound not latency-bound) + L1 
 on real TT (maxU==golden, fast on-device gather+MAC, ~100x faster than the 10.41s host path); G3-TIMING/G4/cold/
 warm/stretch = blocked ONLY on gather-kernel throughput (64.4ms workload -> ~3.5ms), a well-scoped Metalium prefetch/
 streaming restructure. All precision/convergence/correctness SOLVED and BANKED on silicon.
+
+## Per-node gather (commit follows) — measured 2026-07-03
+Restructured the reader inner loop from per-ELEMENT to per-NODE: NB[] lookup, `3*nn+c`, and the
+XH/XM/XL[s] L1 reads now happen ONCE per node (the gathered x value is identical for the 3 r-components
+of a node), then the 3 r-elements are written. 3x fewer L1 x-reads + 3x fewer NB lookups than the
+per-element loop.
+
+Measured (SPMV_TIMING=1, n=150, eig-deflation env): workload 64.4ms -> 44.4ms; per-apply 98.5ms -> 78.8ms.
+Correctness UNCHANGED and exact: maxU=95.8129714 == GOLDEN, true_rel 1.13e-6, PCG iters=89, solve=27.8s.
+Phase: xwrite=5.1ms, WORKLOAD=44.4ms, readback=9.2ms.
+
+Reader (gather) is still the workload floor (~40ms) — it runs on the movement RISC concurrently with the
+~3.5ms MAC compute, so workload ~= reader time. Remaining levers to reach the ~3.5ms BW limit, in order:
+  (1) oo-grouping: share the nbr lookup across the 3 components k=3oo+{0,1,2} (s = 3*nn+{0,1,2} are
+      consecutive x elements) -> 3x fewer NB lookups+branches. Touches reader+compute (cb depth 9, group
+      of 3 k's) + host group count. Est ~44 -> ~30ms. Still scalar-bound.
+  (2) SFPU-vectorized gather: the scalar per-element writes (1024/k) are the residual floor; vectorizing
+      the scatter/broadcast in SFPU is the strategy's Stage-B/D "large kernel" and the only path to ~3.5ms.
+  (3) x-resident PCG: keep x/y on device across iterations (only scalars over PCIe) -> drops xwrite(5.1)+
+      readback(9.2) = 14.3ms/apply of the non-gather overhead.
