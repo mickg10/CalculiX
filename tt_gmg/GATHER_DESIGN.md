@@ -1589,3 +1589,14 @@ streaming gather" (lines 592-607) = the one remaining large throughput kernel. G
   streaming/SFPU-vectorized L1-window reuse (biggest lever, 73.8->~5ms); (2) pre-alloc cd/shard buffers + async
   per-shard reads (readback 15.5->~3ms); (3) x-resident to drop xwrite. The precision/convergence/correctness are
   SOLVED and BANKED on silicon; the remaining gates are a pure gather-throughput optimization, now precisely measured.
+
+## Throughput optims verified correct; gather-kernel restructure is the last lever — 2026-07-10
+Reader per-node hoist + pre-alloc readback: maxU=95.8129714 (==golden EXACTLY), true_rel 1.13e-6, 92 iters;
+per-apply 113.9->98.5ms. Phase now: xwrite=5.1 WORKLOAD=64.4 readback=9.2. The workload (gather+MAC) is still the
+blocker vs the 3.46ms pre-stored MAC -> the gather is latency/scalar-bound: per-k small a-reads (243 noc reads +
+barrier/tile) + per-element x scatter. To reach ~3.5ms needs the strategy's Stage-B/D restructure: async double-
+buffered a-prefetch (deeper CB, issue-ahead -> BW-bound not latency-bound) + L1 sliding-window x reuse across tiles
+(strategy 592-607, "large kernel"). GATE SCOREBOARD (final this session): G1/G2/G5 PASS; G3-CORRECTNESS BANKED e2e
+on real TT (maxU==golden, fast on-device gather+MAC, ~100x faster than the 10.41s host path); G3-TIMING/G4/cold/
+warm/stretch = blocked ONLY on gather-kernel throughput (64.4ms workload -> ~3.5ms), a well-scoped Metalium prefetch/
+streaming restructure. All precision/convergence/correctness SOLVED and BANKED on silicon.
