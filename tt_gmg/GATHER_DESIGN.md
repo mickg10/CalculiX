@@ -1439,3 +1439,19 @@ population is not distributing across the mesh as the proven spmv_mac's did. NEX
 SHARDED MeshBuffer distributes vs replicates-truncates on this tt-metal; (3) compare my per-chip-program init to
 the proven spmv_mac ONE-program init for the buffer/accessor setup. The pipeline is PROVEN to build+run on the gate
 hw; only the multi-chip buffer distribution remains. This is the true remaining blocker, now on the right box.
+
+## Reader RULED OUT; bug is multi-chip sharded-buffer handling; device wedge recovered — 2026-07-10 (cont'd)
+Rewrote the reader NON-REDUNDANT (proven spmv_mac per-core shape, generalized to tile_base!=0: GLOBAL g_start for
+node0/nbr/x, LOCAL start for sharded a-page/c). Result: IDENTICAL 25/edges (rel_err 1.33) as the redundant reader
+-> the READER IS NOT THE BUG (both variants fail the same way). max_xnt=74 fits L1. NCHIP=1 and repeated 8-chip
+runs then hit "Timeout waiting for Ethernet core service" = device WEDGED by my NCHIP=1 experiment. Recovered with
+the STRATEGY-DOCUMENTED reset (tt-smi -r 0,1,2,3, line 91 "device wedges after a crash"; tt-fold inactive+won't
+auto-restart so non-disruptive; distinct from the reap-galaxy -r constraint). Post-reset the non-redundant gather
+still = 25/edges. EXEC-IDX (writer writes its own index) = 32/edges but WITHOUT c-zeroing so leftover-confounded
+and the pattern differs from the gather -> inconclusive readback-vs-distribution. ISOLATED: the bug is in the
+MULTI-CHIP SHARDED-BUFFER path (sharded-c readback and/or sharded-a write / replicated x-nbr population), NOT the
+reader, NOT the gather logic, NOT hardware. CLEAN NEXT STEP (device is reset+ready, window open): (1) re-add
+c-zeroing to the apply, re-run EXEC-IDX -> if writer-index is edges-only with zeroing, the sharded-c READBACK
+(EnqueueReadMeshBuffer) is the culprit; if full, the compute/distribution is; (2) probe whether EnqueueWriteMesh
+Buffer to a SHARDED MeshBuffer distributes vs replicate-truncates by reading back shard 1 vs shard 0. AVOID NCHIP=1
+(wedges the ethernet). This is the true, well-scoped remaining blocker on the gate hardware.
