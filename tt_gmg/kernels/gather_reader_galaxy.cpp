@@ -58,40 +58,28 @@ void kernel_main() {
         const uint32_t e0 = (g_start + t) * 1024;            // GLOBAL out-element base -> node0/nbr/x
         const uint32_t base = (local_start + t) * K;         // LOCAL shard a-page (a is SHARDED on this chip)
         const uint32_t node0 = e0 / 3, rr0 = e0 - node0 * 3;
-        // OFFSET-GROUPED: process the 3 components c=0,1,2 of one DIA offset oo together (k = oo*3 + c, so k
-        // steps 0..80 in groups of 3). The 3 components share ONE nbr node nn = nbr[oo,node], and their source x
-        // elements 3*nn+{0,1,2} are CONTIGUOUS in the window. Wins vs per-k: (1) ONE noc_async_read_barrier per 3
-        // k's (243 barriers/core, not 729 -> kills the DRAM-latency stall that dominated the 44ms), (2) the NB[]
-        // lookup + (node-node_lo)*27 index math happen ONCE per (node,oo) not per (node,k), (3) contiguous reads.
-        // K=81=27*3 is structural (27-pt stencil x 3 dof), so groups of 3 tile exactly. cb_a/cb_b depth>=9.
-        for (uint32_t og = 0; og < K; og += 3) {
-            const uint32_t oo = og / 3;
-            cb_reserve_back(cb_a, 9); cb_reserve_back(cb_b, 9);
-            const uint32_t pa = get_write_ptr(cb_a), pb = get_write_ptr(cb_b);
-            for (uint32_t kk = 0; kk < 3; ++kk) { const uint32_t p = base + og + kk;
-                noc_async_read_page(p, Aah, pa + (kk * 3 + 0) * TB);
-                noc_async_read_page(p, Aam, pa + (kk * 3 + 1) * TB);
-                noc_async_read_page(p, Aal, pa + (kk * 3 + 2) * TB); }
-            tt_l1_ptr uint16_t* BH0 = (tt_l1_ptr uint16_t*)(pb + 0 * TB); tt_l1_ptr uint16_t* BM0 = (tt_l1_ptr uint16_t*)(pb + 1 * TB); tt_l1_ptr uint16_t* BL0 = (tt_l1_ptr uint16_t*)(pb + 2 * TB);
-            tt_l1_ptr uint16_t* BH1 = (tt_l1_ptr uint16_t*)(pb + 3 * TB); tt_l1_ptr uint16_t* BM1 = (tt_l1_ptr uint16_t*)(pb + 4 * TB); tt_l1_ptr uint16_t* BL1 = (tt_l1_ptr uint16_t*)(pb + 5 * TB);
-            tt_l1_ptr uint16_t* BH2 = (tt_l1_ptr uint16_t*)(pb + 6 * TB); tt_l1_ptr uint16_t* BM2 = (tt_l1_ptr uint16_t*)(pb + 7 * TB); tt_l1_ptr uint16_t* BL2 = (tt_l1_ptr uint16_t*)(pb + 8 * TB);
+        for (uint32_t k = 0; k < K; ++k) {
+            const uint32_t oo = k / 3, c = k % 3;
+            cb_reserve_back(cb_a, 3); cb_reserve_back(cb_b, 3);
+            const uint32_t pa = get_write_ptr(cb_a), pb = get_write_ptr(cb_b), p = base + k;
+            noc_async_read_page(p, Aah, pa + 0 * TB); noc_async_read_page(p, Aam, pa + 1 * TB); noc_async_read_page(p, Aal, pa + 2 * TB);
+            tt_l1_ptr uint16_t* BH = (tt_l1_ptr uint16_t*)(pb + 0 * TB);
+            tt_l1_ptr uint16_t* BM = (tt_l1_ptr uint16_t*)(pb + 1 * TB);
+            tt_l1_ptr uint16_t* BL = (tt_l1_ptr uint16_t*)(pb + 2 * TB);
+            // node (hence nbr AND the gathered x value) changes only every 3 elements (r=0,1,2). Loop per NODE:
+            // do the NB[] lookup + 3*nn+c + XH/XM/XL[s] READ ONCE per node, then write the 3 r-elements. 3x fewer
+            // lookups AND 3x fewer L1 x-reads than the per-element loop -> cuts the scalar gather cost.
             uint32_t node = node0, i = 0, rr = rr0;
             while (i < 1024) {
                 const int32_t nn = (node >= node_lo && (node - node_lo) < n_nodes) ? NB[nbr_base + (node - node_lo) * 27 + oo] : -1;
-                uint16_t h0,m0,l0,h1,m1,l1,h2,m2,l2;
-                if (nn < 0) { h0=m0=l0=h1=m1=l1=h2=m2=l2=0; }
-                else { const uint32_t s0 = (uint32_t)(3 * nn) - xwin_elem_lo;
-                       h0 = XH[s0];     m0 = XM[s0];     l0 = XL[s0];
-                       h1 = XH[s0 + 1]; m1 = XM[s0 + 1]; l1 = XL[s0 + 1];
-                       h2 = XH[s0 + 2]; m2 = XM[s0 + 2]; l2 = XL[s0 + 2]; }
-                for (; rr < 3 && i < 1024; ++rr, ++i) {
-                    BH0[i]=h0; BM0[i]=m0; BL0[i]=l0;
-                    BH1[i]=h1; BM1[i]=m1; BL1[i]=l1;
-                    BH2[i]=h2; BM2[i]=m2; BL2[i]=l2; }
+                uint16_t vh, vm, vl;
+                if (nn < 0) { vh = 0; vm = 0; vl = 0; }
+                else { const uint32_t s = (uint32_t)(3 * nn + c) - xwin_elem_lo; vh = XH[s]; vm = XM[s]; vl = XL[s]; }
+                for (; rr < 3 && i < 1024; ++rr, ++i) { BH[i] = vh; BM[i] = vm; BL[i] = vl; }
                 rr = 0; node++;
             }
             noc_async_read_barrier();
-            cb_push_back(cb_a, 9); cb_push_back(cb_b, 9);
+            cb_push_back(cb_a, 3); cb_push_back(cb_b, 3);
         }
     }
 }

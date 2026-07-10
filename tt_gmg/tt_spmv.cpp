@@ -186,7 +186,7 @@ static void tt_build_wl(TtSpmvCtx* K) {
     Program program = CreateProgram();
     const uint32_t tile_base = chip * n_local;            // GLOBAL output-tile base for this chip's shard
     CoreRangeSet all_set(CoreRange({0,0},{grid.x-1,grid.y-1}));
-    MakeCB(program, all_set, tt::CBIndex::c_0, 9); MakeCB(program, all_set, tt::CBIndex::c_1, 9);  // depth 9 = one offset-group (3 k's x 3 planes); reader pushes 9, compute drains 3/k FIFO
+    MakeCB(program, all_set, tt::CBIndex::c_0, 3); MakeCB(program, all_set, tt::CBIndex::c_1, 3);  // depth 3 (1 k). depth>=9 overflows L1 (x-window ~444KB + nbr ~360KB/core already tight) -> hang; offset-grouping is L1-infeasible
     MakeCB(program, all_set, tt::CBIndex::c_16, 8, tt::DataFormat::Float32);
     // NON-REDUNDANT (proven spmv_mac shape, generalized to tile_base!=0): split this chip's n_local tiles across
     // cores; each core does npc tiles with ONE staged x-window (union over its tiles). GLOBAL g_start=tile_base+

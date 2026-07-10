@@ -1620,3 +1620,25 @@ Reader (gather) is still the workload floor (~40ms) — it runs on the movement 
       the scatter/broadcast in SFPU is the strategy's Stage-B/D "large kernel" and the only path to ~3.5ms.
   (3) x-resident PCG: keep x/y on device across iterations (only scalars over PCIe) -> drops xwrite(5.1)+
       readback(9.2) = 14.3ms/apply of the non-gather overhead.
+
+## Offset-grouping attempt — L1-INFEASIBLE (2026-07-10)
+Hypothesis: the 44ms gather is barrier-latency-bound (729 noc_async_read_barriers/core, one per k). Fix tried:
+OFFSET-GROUP the 3 components c=0,1,2 of each DIA offset oo (k=oo*3+c) so ONE barrier covers 3 k's (243/core,
+not 729), sharing the nbr lookup + doing contiguous 3-component x-reads. This needs cb_a/cb_b depth >= 9
+(3 k's x 3 planes live before the single barrier).
+
+RESULT: HANGS on the first device apply (TT_FATAL run_mailbox 0x40, core x=22,y=16). Bisected cleanly:
+  - offset-grouped reader + cb depth 9  -> HANG
+  - PROVEN per-node reader + cb depth 9  -> ALSO HANG
+So the culprit is **cb depth 9, not the reader**. Depth 9 adds +24KB (cb_a/cb_b 18KB each vs 6KB at depth 3),
+and L1 is already tight: the resident x-window is up to max_xnt=74 tiles x 2KB x 3 planes = ~444KB, plus the
+nbr slice max_npg=90 x 4KB = ~360KB, plus output/compute. +24KB tips it over -> L1 corruption -> core hang.
+=> Offset-grouping (and any depth->=9 prefetch) is L1-INFEASIBLE with the current per-core x-window.
+Both hangs were killed cleanly by the whrun timeout (exit=124); device stayed healthy (dev0-3 OK, no D-state,
+BMC recovery NOT needed) — the timeout wrapper is the essential safety net for these experiments.
+
+REVERTED to proven-good: per-node reader + cb depth 3 (commit 5250074, 44ms/workload, maxU=95.8129714 exact).
+To make offset-grouping fit, a FUTURE change must first SHRINK the per-core L1 footprint: tile the x-window
+(don't stage all 74 neighbor-tiles at once — stream a sliding sub-window) or shrink the nbr residency, freeing
+>=24KB, THEN raise cb depth. That is the strategy's "L1 sliding-window over x with stateful cross-tile reuse"
+large kernel — confirmed here to be a prerequisite (not just an optimization) for any deeper CB prefetch.
