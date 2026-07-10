@@ -1455,3 +1455,19 @@ c-zeroing to the apply, re-run EXEC-IDX -> if writer-index is edges-only with ze
 (EnqueueReadMeshBuffer) is the culprit; if full, the compute/distribution is; (2) probe whether EnqueueWriteMesh
 Buffer to a SHARDED MeshBuffer distributes vs replicate-truncates by reading back shard 1 vs shard 0. AVOID NCHIP=1
 (wedges the ethernet). This is the true, well-scoped remaining blocker on the gate hardware.
+
+## CONCRETE CLUE: host write to the SHARDED-C buffer HANGS — 2026-07-10 (final this session)
+Clean c-zeroed EXEC-IDX attempt: EnqueueWriteMeshBuffer(cq, K->c, zc) to the SHARDED c-buffer HANGS (run killed at
+timeout 400s), even though the identical-shape init sharded-A write does NOT hang. So the sharded-C buffer handling
+is anomalous. Combined with: writer-index EXEC (no zeroing) = 32/edges, gather = 25/edges, both = shard-0-start +
+shard-7-end correct / everything-middle wrong; and the reader ruled out (redundant==non-redundant). STRONG
+HYPOTHESIS: the sharded-C MeshBuffer (MakeBuf(n_out_pad, NCHIP, ebytes=4), fp32) is mis-sharded on Mesh(1,8) - its
+shards map/stride such that only shard 0's head and shard 7's tail land, and host writes to it hang. The a-buffer
+(bf16, MakeBuf same shape) reads fine, so the anomaly is specific to the c path (fp32 ebytes=4 -> page_size 4096,
+or the write-after-readback lifecycle). FIX DIRECTIONS (device is reset+clean, window open, tt-fold inactive):
+(1) rebuild the c-buffer exactly like the proven spmv_mac's c (MakeBuf(n_out_pad, NCHIP, 4) + ONE program) and
+verify shard mapping; (2) test a REPLICATED c + host-side gather of the per-chip slice; (3) probe EnqueueRead/Write
+Shard per-shard to confirm shard i lands on chip i. AVOID NCHIP=1 and large host writes to sharded fp32 buffers
+(both wedge the device -> needs tt-smi -r 0,1,2,3 recovery). Milestone stands: pipeline builds+runs on gate hw;
+reader+gather-logic+hardware ruled out; bug is the sharded-C multi-chip buffer, with the host-write-hang as the
+sharpest lead.
