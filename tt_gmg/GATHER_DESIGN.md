@@ -1421,3 +1421,21 @@ ONE-PASS EXECUTION when boards free:
   4. wire g_tt_fine_spmv=&tt_spmv -> ccx_gmg_solve_from_dump -> maxU=95.8129714 -> capture G4/cold/warm/stretch.
 Use SPMV_NCHIP=8 sharded-a (proven spmv_mac arch, now matched). The reap detour taught: kernel path fix
 (/tmp/kernels), sharded-a architecture, and that 32-chip reap has a hw fault - all irrelevant on the 8-chip target.
+
+## MAJOR MILESTONE: full gather pipeline BUILDS+RUNS on healthy 8-chip tt-quietbox (gate hardware) — 2026-07-10
+tt-fold released the boards (device window opened after ~3 days). PORTED the full gather from g15 to tt-quietbox
+(the actual gate target per strategy line 3): transferred setup+data (nbr/op .zst), adapted the build (tt-quietbox
+tt-metal 25888ec: BR=build_Release/build_Release nested; add reflect + metalium-thirdparty includes; kernel
+include api/compute->compute_kernel_api; python_env has numpy 1.26.4). RESULT: host builds, MeshDevice inits
+(init rc=0), kernels JIT-compile, 8-chip gather EXECUTES, COMPARE runs. FIRST TIME the pipeline runs end-to-end on
+the gate hardware. BUT gather is NOT yet correct on healthy hw: rel_err 1.33, right_tiles=25/3781 = GLOBAL DOMAIN
+EDGES (tiles 0-13 + 3770-3781), middle wrong. This DISPROVES the earlier "reap hardware fault" theory - the SAME
+class of bug (edges-correct) reproduces on the healthy proven box -> it's a CODE BUG in my tt_spmv MULTI-CHIP
+BUFFER DISTRIBUTION. Isolation so far: max_xnt=67 (fits L1, not a window/L1 issue); a-page must be LOCAL t*K
+(global gt*K gives 14/NaN - sharded accessor uses page as LOCAL shard offset); a-center test shows a-shard reads 0
+for many tiles -> the sharded-a WRITE (EnqueueWriteMeshBuffer full ahd -> sharded buffer) and/or replicated x/nbr
+population is not distributing across the mesh as the proven spmv_mac's did. NEXT (needs the device window):
+(1) x-direct probe (output x[gt] vs test x) to confirm x-replication; (2) verify EnqueueWriteMeshBuffer to a
+SHARDED MeshBuffer distributes vs replicates-truncates on this tt-metal; (3) compare my per-chip-program init to
+the proven spmv_mac ONE-program init for the buffer/accessor setup. The pipeline is PROVEN to build+run on the gate
+hw; only the multi-chip buffer distribution remains. This is the true remaining blocker, now on the right box.
