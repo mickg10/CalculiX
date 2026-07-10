@@ -1642,3 +1642,35 @@ To make offset-grouping fit, a FUTURE change must first SHRINK the per-core L1 f
 (don't stage all 74 neighbor-tiles at once — stream a sliding sub-window) or shrink the nbr residency, freeing
 >=24KB, THEN raise cb depth. That is the strategy's "L1 sliding-window over x with stateful cross-tile reuse"
 large kernel — confirmed here to be a prerequisite (not just an optimization) for any deeper CB prefetch.
+
+## bf16x2-b PRECISION host-validated (strategy path B) — 2026-07-10
+emu_bf16x2b_precision.py emulates the EXACT device compensated MAC (bf16 RNE split + exact bf16xbf16 products +
+fp32 dst accumulate over 6*K or 5*K terms in device k-outer order) against fp64 truth on the orthogonalized
+extreme-cancellation operator (all b_k O(1), no blowup). Result:
+  bf16x3 (6 terms, proven): err/term med 7.5e-8, max 1.2e-6   (matches strategy's ~4e-7 class)
+  bf16x2-b (5 terms, drop ah*bl; b in 2 levels): err/term med 1.07e-6, max 1.0e-5
+Verdict: bf16x2-b HOLDS fp32-class at the apply2 cancellation depth (RATIO 1e-4..7e-5 -> 8-10x margin below
+the answer); marginal only at RATIO 3e-5 (deeper than apply2's ~4e-4..1e-4). Its floor is ~13x higher than
+bf16x3 but still far below the true answer at apply2 depth, and the eig-deflation+hybrid (GMG_HYBRID_TOL=1e-2)
+absorbs the residual floor. => path B is precision-viable; worth a device maxU re-verify if pursued.
+
+## COMPLETE lever/limit analysis for the 4 timing gates (G3-timing, G4, cold, warm, stretch)
+The gather materializes b = 81*n gathered x-values each apply (n=3.87M -> 313M gathers). Measured scalar-gather
+throughput on the movement RISC ~= 1.88GB / 44ms ~= 43 GB/s (well under L1 write BW -> scalar-instruction-bound,
+NOT BW-bound). Every achievable lever and its gather-time floor:
+  - per-node reader (DONE, banked): 64.4 -> 44.4 ms.
+  - bf16x2-b (host-validated above): writes 2 b-planes not 3, x-window 2 levels not 3 (frees ~148KB L1) -> est
+    gather ~29 ms AND re-enables depth-9 prefetch/offset-grouping (which was L1-infeasible at bf16x3).
+  - offset-grouping (needs the freed L1): 1 barrier/3k -> est another few ms.
+  Best-case STACKED estimate: gather ~20 ms/apply. Per-apply ~20+ (xwrite~3.4 + readback~9) ~= 32 ms.
+DECISIVE ARITHMETIC: G4 needs ~89 applies < 1.0s => <= ~11 ms/apply. cold <= 5s with ~3s setup => <= ~22ms/apply
+over 89. G3-timing needs <= 3 ms for ONE SpMV. Even the fully-stacked best case (~20-32 ms/apply) MISSES G4 (3x),
+G3-timing (7-10x), stretch, and is borderline-to-over on cold/warm. The ONLY way to ~3ms is BW-limit streaming,
+which REQUIRES a vectorized scatter-gather -- and Wormhole's SFPU ISA has NO indexed/gather load (verified in
+runtime/sfpi/include/sfpi.h: loads are immediate/constant or fixed dst_reg lanes only), the unpacker does strided
+not arbitrary-scatter reads, and there is no matmul fusion for arbitrary gather. So the scatter-gather is
+intrinsically scalar on this hardware, and the scalar floor (~20-44 ms/apply) is 2-10x over the timing budgets.
+CONCLUSION (evidence-backed, not assumed): G3-correctness/G1/G2/G5 are CLOSED and banked on silicon. G3-timing,
+G4, cold, warm, stretch are bounded BELOW the strategy's budgets by a hardware/operator mismatch -- the row236
+27-point scattered gather (nbr scatters +-8192, strategy's own locality analysis) cannot be vectorized on
+Wormhole, and even the strategy's own numbers put the ideal pre-stored stream at 3.46ms > the 3ms G3 budget.
