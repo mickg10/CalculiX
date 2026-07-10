@@ -66,13 +66,17 @@ void kernel_main() {
             tt_l1_ptr uint16_t* BH = (tt_l1_ptr uint16_t*)(pb + 0 * TB);
             tt_l1_ptr uint16_t* BM = (tt_l1_ptr uint16_t*)(pb + 1 * TB);
             tt_l1_ptr uint16_t* BL = (tt_l1_ptr uint16_t*)(pb + 2 * TB);
+            // node (hence nbr) changes only every 3 elements (r=0,1,2); hoist the nbr lookup + source offset per NODE
+            // (3x fewer NB[] lookups + 3*nn+c computes than the old per-element loop) -> cuts the scalar gather cost.
             uint32_t node = node0, rr = rr0;
+            int32_t nn = (node >= node_lo && (node - node_lo) < n_nodes) ? NB[nbr_base + (node - node_lo) * 27 + oo] : -1;
+            uint32_t s = (nn < 0) ? 0u : (uint32_t)(3 * nn + c) - xwin_elem_lo;
             for (uint32_t i = 0; i < 1024; ++i) {
-                const int32_t nn = (node >= node_lo && (node - node_lo) < n_nodes)
-                                 ? NB[nbr_base + (node - node_lo) * 27 + oo] : -1;
                 if (nn < 0) { BH[i] = 0; BM[i] = 0; BL[i] = 0; }
-                else { const uint32_t s = (uint32_t)(3 * nn + c) - xwin_elem_lo; BH[i] = XH[s]; BM[i] = XM[s]; BL[i] = XL[s]; }
-                if (++rr == 3) { rr = 0; node++; }
+                else { BH[i] = XH[s]; BM[i] = XM[s]; BL[i] = XL[s]; }
+                if (++rr == 3) { rr = 0; node++;
+                    nn = (node >= node_lo && (node - node_lo) < n_nodes) ? NB[nbr_base + (node - node_lo) * 27 + oo] : -1;
+                    s = (nn < 0) ? 0u : (uint32_t)(3 * nn + c) - xwin_elem_lo; }
             }
             noc_async_read_barrier();
             cb_push_back(cb_a, 3); cb_push_back(cb_b, 3);

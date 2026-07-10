@@ -275,9 +275,9 @@ extern "C" int tt_spmv(const double* x, double* y) {
     // shard-7-tail (edges-only 25/3781, middle chips missing). Read each chip's shard EXPLICITLY from its mesh
     // coord and place it at its GLOBAL tile offset -> correct multi-chip assembly. cols = mesh columns.
     const uint32_t nloc_ = K->n_out_pad / K->NCHIP, cols_ = (K->NCHIP == 32) ? 4u : K->NCHIP;
-    std::vector<float> cd((size_t)K->n_out_pad * TE, 0.f);
+    static std::vector<float> cd; static std::vector<float> shard_;   // PRE-ALLOC (persist across applies): avoid the
+    cd.resize((size_t)K->n_out_pad * TE);                            // 15.5MB malloc+memset + 8 shard allocs every apply.
     for (uint32_t j = 0; j < K->NCHIP; j++) {                       // chips before the c read. Fixes the mesh-write/gather
-        std::vector<float> shard_;                                 // race (degraded link lagged fabric propagation);
         distributed::ReadShard(cq, shard_, K->c, distributed::MeshCoordinate(j / cols_, j % cols_), true);
         const size_t cnt_ = std::min(shard_.size(), (size_t)nloc_ * TE);
         std::copy(shard_.begin(), shard_.begin() + cnt_, cd.begin() + (size_t)j * nloc_ * TE);
