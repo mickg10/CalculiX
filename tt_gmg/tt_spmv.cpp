@@ -70,11 +70,36 @@ struct TtSpmvCtx {
     std::shared_ptr<distributed::MeshDevice> dev;
     distributed::MeshWorkload wl;
     std::shared_ptr<distributed::MeshBuffer> ah, am, al, xh, xm, xl, nbrbuf, c;
+    std::shared_ptr<distributed::MeshBuffer> a_mm, idmask;    // matmul-diagonal: a_mm[grp][kt] [elem,k] tiles + identity
+    uint32_t n_grp = 0, KT = 0;                               // matmul-diagonal: 32-elem groups, k-tiles (ceil(81/32)=3)
     uint32_t n = 0, n_out = 0, n_out_pad = 0, K = 0, NCHIP = 8, tile_elems = 1024;
     float VSCALE = 1e6f;
     std::vector<bfloat16> xhd, xmd, xld;                 // scratch bf16x3 x planes (row-major, per apply)
     std::vector<int32_t> nmin_v, nmax_v; uint32_t NBn_v = 0;  // sharding inputs, kept for per-apply workload rebuild
 };
+// --- matmul-diagonal (fp32-accumulate) support ---------------------------------------------------------------
+// build_a_mm: transpose the single-bf16 DIA operator to a_mm[grp][kt] = a 32x32 tile with a_mm[e][k]=cf[k][g*32+e].
+// NOTE tt-metal tiles are stored as 4x(16x16) faces; the host must emit in that face order (tilize) OR the device
+// tilizes on read. Draft below writes ROW-MAJOR [e*32+k]; device build must tilize (or use a tilize kernel) - one of
+// the device-iteration items. cf = the DIA op adf[tile][k][elem_in_tile] (tile-major, 1024 elems/tile).
+static std::vector<bfloat16> build_a_mm(const std::vector<float>& adf, uint32_t n_out, uint32_t K, uint32_t n_pad,
+                                        uint32_t& n_grp, uint32_t& KT) {
+    n_grp = n_pad / 32; KT = (K + 31) / 32;
+    std::vector<bfloat16> a_mm((size_t)n_grp * KT * 1024, bfloat16(0.f));
+    for (uint32_t g = 0; g < n_grp; g++) for (uint32_t kt = 0; kt < KT; kt++) {
+        bfloat16* T = &a_mm[((size_t)g*KT + kt)*1024];
+        for (uint32_t e = 0; e < 32; e++) { uint32_t ge = g*32 + e, tile = ge/1024, ein = ge%1024;
+            for (uint32_t kk = 0; kk < 32; kk++) { uint32_t k = kt*32 + kk;
+                float v = (k < K && tile < n_out) ? adf[((size_t)tile*K + k)*1024 + ein] : 0.f;
+                T[e*32 + kk] = bfloat16(v); } } }   // ROW-MAJOR draft (needs tilize on device)
+    return a_mm;
+}
+// identity mask tile (1.0 on the 32x32 diagonal) for the diag(A@B) extraction (mask + row-reduce).
+static std::vector<bfloat16> build_identity() {
+    std::vector<bfloat16> id(1024, bfloat16(0.f));
+    for (uint32_t d = 0; d < 32; d++) id[d*32 + d] = bfloat16(1.f);   // ROW-MAJOR draft (needs tilize)
+    return id;
+}
 // Build a FRESH program+workload from the resident buffers. Some tt-metal builds accumulate state when the SAME
 // MeshWorkload is re-enqueued across calls (gather corrupts deterministically after ~4 applies). Rebuilding per
 // apply (CreateKernel hits the JIT cache, so it's cheap) sidesteps that. Same body as the original init build.
