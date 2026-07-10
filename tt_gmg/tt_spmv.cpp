@@ -233,8 +233,17 @@ extern "C" int tt_spmv(const double* x, double* y) {
     distributed::Finish(cq);                                         // SYNC: guarantee x is fully propagated to ALL 32 chips
     distributed::EnqueueMeshWorkload(cq, K->wl, true);               // over the fabric BEFORE the gather workload reads it.
     distributed::Finish(cq);                                        // BLOCKING workload + Finish: workload fully done on all
-    std::vector<float> cd;                                          // chips before the c read. Fixes the mesh-write/gather
-    distributed::EnqueueReadMeshBuffer(cq, cd, K->c, true);         // race (degraded 27,25 link lagged fabric propagation
+    // PER-SHARD readback: EnqueueReadMeshBuffer's auto-assembly of the sharded c returned only shard-0-head +
+    // shard-7-tail (edges-only 25/3781, middle chips missing). Read each chip's shard EXPLICITLY from its mesh
+    // coord and place it at its GLOBAL tile offset -> correct multi-chip assembly. cols = mesh columns.
+    const uint32_t nloc_ = K->n_out_pad / K->NCHIP, cols_ = (K->NCHIP == 32) ? 4u : K->NCHIP;
+    std::vector<float> cd((size_t)K->n_out_pad * TE, 0.f);
+    for (uint32_t j = 0; j < K->NCHIP; j++) {                       // chips before the c read. Fixes the mesh-write/gather
+        std::vector<float> shard_;                                 // race (degraded link lagged fabric propagation);
+        distributed::ReadShard(cq, shard_, K->c, distributed::MeshCoordinate(j / cols_, j % cols_), true);
+        const size_t cnt_ = std::min(shard_.size(), (size_t)nloc_ * TE);
+        std::copy(shard_.begin(), shard_.begin() + cnt_, cd.begin() + (size_t)j * nloc_ * TE);
+    }
     { static int once_=0; if(!once_){ once_=1; uint32_t nloc=K->n_out_pad/K->NCHIP;
         fprintf(stderr,"CD_SIZE cd.size()=%zu tiles=%zu n=%u n_out_pad=%u n_local=%u cd_tiles/NCHIP=%zu (drift if !=n_local)\n",
                 cd.size(), cd.size()/1024, K->n, K->n_out_pad, nloc, (cd.size()/1024)/K->NCHIP); } }
