@@ -1483,3 +1483,13 @@ shard ReadShard readback was already in place. The long arc (redundant vs non-re
 mesh shape, device wedges) all reduced to this one buffer-upload bug. G3 CORRECTNESS now banked on the gate box.
 NEXT: measure per-apply SpMV time (G3 <=3ms), then wire g_tt_fine_spmv=&tt_spmv -> ccx_gmg_solve_from_dump ->
 maxU=95.8129714 -> measure G4(<=1s)/cold(<=5s)/warm(<=1.5s)/stretch(<=2s).
+
+## G3 correctness BANKED on gate hw; timing = host-transfer-bound (needs resident-vector) — 2026-07-10
+Per-shard WriteShard fix -> multi-chip gather CORRECT (rel_err 8.07e-7, 3781/3781) on 8-chip tt-quietbox. TIMING:
+128ms/apply (rebuild-per-apply) or 108ms (reuse) -- both host-transfer-bound (x-write replicated ~182MB + 8 per-
+shard reads), NOT the ~3.46ms SpMV compute. Reusing the MeshWorkload corrupts after a few applies (LAST-APPLY
+rel_err 1.0), so rebuild-per-apply is the correct default (SPMV_REUSE_WORKLOAD opts into reuse). G3 CORRECTNESS is
+banked; G3<=3ms / G4<=1s / cold / warm / stretch require the RESIDENT-VECTOR path (keep x/y on device across
+applies, on-device dot products, only scalars over PCIe) - strategy line 96 "multi-week engineering". The hard,
+long-debugged part (correct full multi-chip sharded gather on the gate box) is DONE; the timing gates are now a
+well-defined perf-engineering task (resident vectors + reuse-corruption fix), not a correctness unknown.
