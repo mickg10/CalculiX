@@ -1558,3 +1558,21 @@ REMAINING BUILD (multi-day, tractable):
   3. Build libtt_spmv, verify smooth-vector COMPARE ~1e-6, then the cancellation apply3 probe (<4.69e-4 target),
      then eig-defl+hybrid solve -> maxU=95.813, then x-resident + measure G3<=3ms / G4<=1s / cold / warm / stretch.
 matmul_tiles is BW-bound so G3<=3ms is reachable; x-resident (no per-apply host round-trip) closes G4.
+
+## *** CORRECTNESS BANKED e2e with the FAST on-device gather+MAC: maxU=95.8129715 on real TT *** — 2026-07-10
+The full re-read (strategy 557-645) revealed my "divergence" was an ENV-VAR BUG, not a precision limit: I set bare
+EIG=1 K=24 HYBRID_TOL=1e-2 (which defaulted to deg=1 POLYNOMIAL deflation -> fails), NOT GMG_DEFL_EIG=1 GMG_DEFL_K=24
+GMG_HYBRID_TOL=1e-2 (eig-deflation, which works). With the CORRECT env the solve using MY fast on-device gather +
+compensated bf16x3 MAC CONVERGES on the 8-chip tt-quietbox:
+  [tt-gmg] deflated PCG on: k=24 (eig)  it0 rel=781 -> it10 19.2 -> it85 3.4e-6
+  PCG iters=89  rel=8.84e-07  true_rel=1.13e-06  maxU=95.8129715 == golden 95.8129714  solve=36.07s  total=96.40s
+This BANKS G3-CORRECTNESS end-to-end with the FAST on-device gather+MAC (not the slow host path) - the strategy's
+"one remaining large kernel" (on-device gather) is DONE and validated in the full solve, ~100x faster than the
+10.41s/apply host-gather path. The matmul-diagonal build (mac_compute_matmul/gather_reader_matmul) is UNNECESSARY -
+the compensated bf16x3 MAC is fp32-class (strategy 631-645) and converges via eig-deflation; keep those files as a
+throughput alternative but the compensated MAC is the working path.
+REMAINING for G4/cold/warm/stretch = pure THROUGHPUT: per-apply is ~100-140ms (HOST round-trip bound: replicated
+x-write ~182MB + per-shard readback + workload rebuild), while the SpMV compute is 3.46ms (proven, BW limit; ~1.8ms
+with on-device gather = G3). Fix = x-RESIDENT (keep x/y on device across PCG iters, only scalars over PCIe): then
+per-apply -> ~SpMV time -> G4 ~= 228*3.46ms = 0.79s PASSES; + cache eig-basis (warm) for cold<=5s/warm<=1.5s. The
+fast pipeline is proven CORRECT e2e; the timing gates are now a throughput-only optimization (x-resident + reuse).
