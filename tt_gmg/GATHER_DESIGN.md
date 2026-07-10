@@ -1493,3 +1493,21 @@ banked; G3<=3ms / G4<=1s / cold / warm / stretch require the RESIDENT-VECTOR pat
 applies, on-device dot products, only scalars over PCIe) - strategy line 96 "multi-week engineering". The hard,
 long-debugged part (correct full multi-chip sharded gather on the gate box) is DONE; the timing gates are now a
 well-defined perf-engineering task (resident vectors + reuse-corruption fix), not a correctness unknown.
+
+## FULL SOLVE integrated; DIVERGES on the extreme-cancellation vector (device MAC not fp32-class there) — 2026-07-10
+Wired C tt_spmv as g_tt_fine_spmv into libgmg.so ccx_gmg_solve_from_dump (row236_fine.bin, eig-defl+hybrid env).
+INTEGRATION WORKS: 1204 fine-SpMV applies at ~131ms/apply, no crash. But the solve DIVERGES (rel 589->877->...->
+4280 from it=0; rc=4 maxU=0.149 != golden 95.813). Per-apply device-vs-CPU probe on the ACTUAL solver vectors:
+  apply2 (|Ax/x|=15.6, normal):        rel_err 3.84e-7  OK (fp32-class)
+  apply3 (|x|=64, |Ax/x|=5.2e-4, EXTREME CANCELLATION): rel_err 6.87e+02  FAIL
+  apply4 (|Ax/x|=12.6, normal):        rel_err 1.77e-7  OK
+=> the on-device bf16x3-COMPENSATED MAC is fp32-exact on NORMAL vectors (matches the 8e-7 smooth gather) but
+BF16-CLASS on the smoother's extreme-cancellation vectors (|Ax|<<|x|) - EXACTLY the strategy's documented killer
+(lines 163-288). The strategy's emulate_compensated_mac.py predicted 3.73e-7 there, but the REAL DEVICE eltwise-LLK
+(clear_fp32_dst_acc=false) does NOT hold - decisive NEGATIVE result: the emulation was optimistic; the device
+accumulate/products lose the cancellation. This is the project's OPEN problem (fp32-products+accumulate on-device:
+reduce_tile<fp32> hangs, packer_l1_acc hangs, matmul 11-bit, "may have NO clean primitive on this HW").
+SESSION NET: the multi-chip gather MECHANISM is SOLVED (correct 8e-7 all-tiles on gate hw + full-solve integration
+proven) - the strategy's "one remaining large kernel" for the mechanism; the remaining blocker for G4/cold/warm/
+stretch is the on-device fp32-accumulate MAC on cancellation vectors (the documented open research problem), NOT the
+gather. Next: fp32 reduce_tile OR a residual-scaling/double-single reformulation at the smoother level.
