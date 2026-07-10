@@ -262,12 +262,15 @@ extern "C" int tt_spmv(const double* x, double* y) {
                                                                      // (LAST-APPLY rel_err 1.0). Correctness > speed until the
                                                                      // resident-vector path (no host round-trip) lands for G3/G4.
     auto& cq = K->dev->mesh_command_queue();
+    auto _tc=[](){return std::chrono::high_resolution_clock::now();}; using _D=std::chrono::duration<double,std::milli>; auto _tw0=_tc();
     distributed::EnqueueWriteMeshBuffer(cq, K->xh, K->xhd, true);
     distributed::EnqueueWriteMeshBuffer(cq, K->xm, K->xmd, true);
     distributed::EnqueueWriteMeshBuffer(cq, K->xl, K->xld, true);
     distributed::Finish(cq);                                         // SYNC: guarantee x is fully propagated to ALL 32 chips
+    auto _tw1=_tc();
     distributed::EnqueueMeshWorkload(cq, K->wl, true);               // over the fabric BEFORE the gather workload reads it.
     distributed::Finish(cq);                                        // BLOCKING workload + Finish: workload fully done on all
+    auto _tw2=_tc();
     // PER-SHARD readback: EnqueueReadMeshBuffer's auto-assembly of the sharded c returned only shard-0-head +
     // shard-7-tail (edges-only 25/3781, middle chips missing). Read each chip's shard EXPLICITLY from its mesh
     // coord and place it at its GLOBAL tile offset -> correct multi-chip assembly. cols = mesh columns.
@@ -279,9 +282,10 @@ extern "C" int tt_spmv(const double* x, double* y) {
         const size_t cnt_ = std::min(shard_.size(), (size_t)nloc_ * TE);
         std::copy(shard_.begin(), shard_.begin() + cnt_, cd.begin() + (size_t)j * nloc_ * TE);
     }
-    { static int once_=0; if(!once_){ once_=1; uint32_t nloc=K->n_out_pad/K->NCHIP;
-        fprintf(stderr,"CD_SIZE cd.size()=%zu tiles=%zu n=%u n_out_pad=%u n_local=%u cd_tiles/NCHIP=%zu (drift if !=n_local)\n",
-                cd.size(), cd.size()/1024, K->n, K->n_out_pad, nloc, (cd.size()/1024)/K->NCHIP); } }
+    auto _tw3=_tc();
+    if(getenv("SPMV_TIMING")){ static double aw=0,ac=0,ar=0; static int na=0;
+        aw+=_D(_tw1-_tw0).count(); ac+=_D(_tw2-_tw1).count(); ar+=_D(_tw3-_tw2).count(); na++;
+        if(na%50==0) fprintf(stderr,"PHASE(ms/apply,n=%d) xwrite=%.1f workload=%.1f readback=%.1f\n", na, aw/na, ac/na, ar/na); }
                                                                     // -> stale x for tiles>=1024 -> deterministic-wrong SpMV).
     const double inv = 1.0 / (double)vscale;
     { const uint32_t NT = 16; const uint32_t cds_ = (uint32_t)cd.size(); std::vector<std::thread> thr_; const uint32_t ch_ = (n + NT - 1) / NT;
