@@ -1471,3 +1471,15 @@ Shard per-shard to confirm shard i lands on chip i. AVOID NCHIP=1 and large host
 (both wedge the device -> needs tt-smi -r 0,1,2,3 recovery). Milestone stands: pipeline builds+runs on gate hw;
 reader+gather-logic+hardware ruled out; bug is the sharded-C multi-chip buffer, with the host-write-hang as the
 sharpest lead.
+
+## *** SOLVED: multi-chip gather CORRECT on 8-chip tt-quietbox (rel_err 8.07e-7, 3781/3781) — 2026-07-10 ***
+ROOT CAUSE: EnqueueWriteMeshBuffer(cq, sharded_buffer, full_data) does NOT distribute across shards on Mesh(1,8) -
+it populated only shard-0-head + shard-7-tail (edges-only 25/3781). FIX: upload the sharded `a` PER-SHARD via
+distributed::WriteShard(cq, ah, shard_slice_j, MeshCoordinate(j/cols, j%cols), true) for each chip j. Result on the
+healthy 8-chip gate hardware: rel_err=8.0718e-07 (fp32-exact, matches strategy G3 6.4e-7), right_tiles=3781/3781 ALL
+CORRECT. This is the first correct FULL multi-chip sharded gather (the proven spmv_mac only ever did chip-local
+subset). Replicated x/nbr (EnqueueWriteMeshBuffer) were fine - only the SHARDED auto-distribute was broken; per-
+shard ReadShard readback was already in place. The long arc (redundant vs non-redundant reader, a-page local/global,
+mesh shape, device wedges) all reduced to this one buffer-upload bug. G3 CORRECTNESS now banked on the gate box.
+NEXT: measure per-apply SpMV time (G3 <=3ms), then wire g_tt_fine_spmv=&tt_spmv -> ccx_gmg_solve_from_dump ->
+maxU=95.8129714 -> measure G4(<=1s)/cold(<=5s)/warm(<=1.5s)/stretch(<=2s).
