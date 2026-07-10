@@ -1537,3 +1537,24 @@ setup = k*eigit vcycles + matmul cost). SESSION NET: solved+integrated the fast 
 accumulate matmul-diagonal MAC (multi-day, device-recovery-blocked). CONCRETE NEXT: build the matmul-diagonal
 Metalium compute (matmul_tiles over the transposed compensated-split layout), verify 4.69e-4 on cancellation,
 re-run the eig-defl+hybrid solve -> expect maxU=95.813; then optimize resident-x + measure the timing gates.
+
+## CORRECTION: timing gates are BW-bound-TRACTABLE (not infeasible); building the matmul-diagonal fix — 2026-07-10
+Re-read strategy §1-60. Line 31 corrects my earlier error: the fine SpMV is BANDWIDTH-BOUND at ~1ms (compute
+~0.02ms). So the matmul-diagonal's extra compute (32x diagonal "waste") is NEGLIGIBLE vs BW -> it is NOT slow. The
+strategy's 10.41s/apply was the ttnn+HOST-gather path, not an optimized on-device Metalium matmul-diagonal. Stage B
+(line 42) explicitly specifies "bf16x3 matmul_tiles into fp32 dest accumulate". So G3<=3ms / G4<=1s ARE achievable
+with the on-device matmul-diagonal (fp32-accumulate) + x-resident. My earlier "fundamentally infeasible" was WRONG.
+BUILD STARTED: tt_gmg/kernels/mac_compute_matmul.cpp = fp32-accumulate DIA MAC via matmul-diagonal:
+  y[e]=sum_k a_k[e]b_k[e] = diag(A@B), A[e,k]=a_k[e], B[k,e]=b_k[e]; K-reduction (matmul inner dim) accumulates
+  in fp32 -> exact cancellation. Feed the bf16x3 SPLIT levels (8-bit survive matmul 11-bit input rounding) ->
+  products <=4.69e-4-class -> within eig-deflation tolerance -> CONVERGES. Diagonal via identity-mask + row-reduce
+  (one nonzero/row -> no cancellation -> bf16 reduce safe). matmul_tiles is the proven fp32-accum primitive
+  (unlike reduce_tile which hung for the strategy's authors).
+REMAINING BUILD (multi-day, tractable):
+  1. Reader: emit A tiles [32 elem, 32 k] and B tiles [32 k, 32 elem] (transpose the current [k,element] gather):
+     A from host-transposed resident a; B by writing each gathered b_k to ROW k of the B tile. + stage identity mask.
+  2. Host: transpose resident a to [out_elem_group, (level,k)] at init (once); build KT = ceil(6K/32) k-tiles;
+     workload wires cb_A/cb_B/cb_id/cb_c(fp32)/cb_out(fp32).
+  3. Build libtt_spmv, verify smooth-vector COMPARE ~1e-6, then the cancellation apply3 probe (<4.69e-4 target),
+     then eig-defl+hybrid solve -> maxU=95.813, then x-resident + measure G3<=3ms / G4<=1s / cold / warm / stretch.
+matmul_tiles is BW-bound so G3<=3ms is reachable; x-resident (no per-apply host round-trip) closes G4.
