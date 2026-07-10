@@ -119,8 +119,13 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
     K->xh = MakeReplBuf(K->dev, K->n_out_pad); K->xm = MakeReplBuf(K->dev, K->n_out_pad); K->xl = MakeReplBuf(K->dev, K->n_out_pad);
     uint32_t nbr_tiles_total = ((uint32_t)NBn * 27 + 1023) / 1024;
     K->nbrbuf = MakeReplBuf(K->dev, nbr_tiles_total, 4);
-    // upload resident `a` once + nbr node-major once (x uploaded per apply)
-    distributed::EnqueueWriteMeshBuffer(cq, K->ah, ahd, true); distributed::EnqueueWriteMeshBuffer(cq, K->am, amd, true); distributed::EnqueueWriteMeshBuffer(cq, K->al, ald, true);
+    // upload resident `a` PER-SHARD (EnqueueWriteMeshBuffer's auto-distribute to the sharded buffer populated only
+    // shard-0-head + shard-7-tail = edges-only gather; WriteShard places each chip's a-slice on its coord explicitly).
+    { const uint32_t nl0 = K->n_out_pad/K->NCHIP, cc0 = (K->NCHIP==32)?4u:K->NCHIP; const size_t se = (size_t)nl0*K->K*TE;
+      for (uint32_t j = 0; j < K->NCHIP; j++) { distributed::MeshCoordinate co(j/cc0, j%cc0);
+        std::vector<bfloat16> sh(ahd.begin()+(size_t)j*se, ahd.begin()+(size_t)(j+1)*se); distributed::WriteShard(cq, K->ah, sh, co, true);
+        std::vector<bfloat16> sm(amd.begin()+(size_t)j*se, amd.begin()+(size_t)(j+1)*se); distributed::WriteShard(cq, K->am, sm, co, true);
+        std::vector<bfloat16> sl(ald.begin()+(size_t)j*se, ald.begin()+(size_t)(j+1)*se); distributed::WriteShard(cq, K->al, sl, co, true); } }
     std::vector<int32_t> nbr2((size_t)nbr_tiles_total * 1024, -1);
     for (uint32_t nd = 0; nd < NBn; nd++) for (uint32_t o = 0; o < 27; o++) nbr2[(size_t)nd * 27 + o] = nbrv[(size_t)o * NBn + nd];
     distributed::EnqueueWriteMeshBuffer(cq, K->nbrbuf, nbr2, true);
