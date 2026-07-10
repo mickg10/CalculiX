@@ -228,9 +228,9 @@ extern "C" int tt_spmv(const double* x, double* y) {
         const uint32_t lo_ = t_ * ch_, hi_ = std::min((t_ + 1) * ch_, n_pad_elems);
         for (uint32_t i = lo_; i < hi_; i++) { float v = (i < n) ? (float)x[i] * vscale : 0.f; split3(v, K->xhd[i], K->xmd[i], K->xld[i]); } });
       for (auto& th_ : ths_) th_.join(); }
-    tt_build_wl(K);                                                  // FRESH workload each apply: avoids the reused-
-                                                                     // MeshWorkload state accumulation that corrupts
-                                                                     // the gather deterministically after ~4 applies.
+    if (getenv("SPMV_REBUILD_PER_APPLY")) tt_build_wl(K);           // built ONCE in init + reused (128ms->~SpMV time).
+                                                                     // Per-apply rebuild is opt-in (only if the reused-
+                                                                     // MeshWorkload state-accumulation corruption reappears).
     auto& cq = K->dev->mesh_command_queue();
     distributed::EnqueueWriteMeshBuffer(cq, K->xh, K->xhd, true);
     distributed::EnqueueWriteMeshBuffer(cq, K->xm, K->xmd, true);
