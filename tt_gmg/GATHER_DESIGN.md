@@ -1576,3 +1576,16 @@ x-write ~182MB + per-shard readback + workload rebuild), while the SpMV compute 
 with on-device gather = G3). Fix = x-RESIDENT (keep x/y on device across PCG iters, only scalars over PCIe): then
 per-apply -> ~SpMV time -> G4 ~= 228*3.46ms = 0.79s PASSES; + cache eig-basis (warm) for cold<=5s/warm<=1.5s. The
 fast pipeline is proven CORRECT e2e; the timing gates are now a throughput-only optimization (x-resident + reuse).
+
+## Timing bottleneck MEASURED: gather-kernel workload=73.8ms is the G3/G4 blocker (not host round-trip) — 2026-07-10
+Per-apply phase breakdown (SPMV_TIMING, 8-chip, reuse-workload): xwrite=5.2ms, WORKLOAD=73.8ms, readback=15.5ms
+(+ host split/assembly). The on-device gather+MAC WORKLOAD is 73.8ms vs the pre-stored-operand MAC's 3.46ms (strategy
+561) -> the ~70ms delta is the GATHER: my non-redundant reader does a per-element SCALAR loop (per core: ~npc*81*1024
+nbr-lookups + L1 x-reads) on the RISC-V, which is scatter/scalar-bound. This is exactly the strategy's "L1-windowed
+streaming gather" (lines 592-607) = the one remaining large throughput kernel. GATE STATUS after this session:
+  G1/G2/G5 = PASS; G3-CORRECTNESS = BANKED e2e with the FAST on-device gather+MAC (maxU=95.8129715, true_rel 1.13e-6,
+  89 iters, real TT); G3-TIMING(<=3ms)/G4(<=1s)/cold/warm/stretch = blocked ONLY on gather-kernel throughput
+  (workload 73.8ms -> target ~3.5ms). Optimization levers (well-defined): (1) restructure the reader gather to
+  streaming/SFPU-vectorized L1-window reuse (biggest lever, 73.8->~5ms); (2) pre-alloc cd/shard buffers + async
+  per-shard reads (readback 15.5->~3ms); (3) x-resident to drop xwrite. The precision/convergence/correctness are
+  SOLVED and BANKED on silicon; the remaining gates are a pure gather-throughput optimization, now precisely measured.
