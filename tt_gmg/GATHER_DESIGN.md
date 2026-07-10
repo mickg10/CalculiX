@@ -1696,3 +1696,18 @@ BMC cold-cycled, NO device validation is possible. Repo + box restored to proven
 cb depth 3); pipelined reader preserved at 92d9a76 for validation immediately after the reset.
 LESSON: never kill a multi-chip TT run mid-workload; let the whrun timeout (exit=124) end it cleanly — that
 path kept the device healthy across the earlier depth-9 hangs, whereas kill -9 mid-workload dirtied it.
+
+## Pipelined reader AUDITED correct (device still dirty) — 2026-07-10
+Device dirty-state CONFIRMED persistent: two independent clean, timeout-protected runs of the PROVEN per-node
+reader both hang identically (setup ok -> deflated PCG on -> first apply run_mailbox 0x40, no applies). Not
+transient; needs the user-authorized BMC cold-cycle. The retry runs were left to end via the whrun timeout
+(NOT killed mid-workload) to avoid deepening the wedge.
+Used the block time to AUDIT the pipelined gather (92d9a76) by inspection so it is validate-ready on reset:
+  - values: each node's b is written with vh set to XH[3*nbr[oo,node]+c] in the PRIOR iteration -> identical to
+    the per-node reader's semantics (verified by tracing prime + iter1/iter2).
+  - safety: every XH index derives from an NB read gated by node_hi; out-of-range nodes give nn=-1 (no XH read),
+    so XH is only indexed for in-range nodes' neighbors (always in-window) -> no OOB.
+  Conclusion: pipelined reader is correct-by-inspection and OOB-safe; the earlier hang on it was the device
+  dirty-state (the proven reader hangs the same way), NOT a code bug. First action after BMC reset: run the
+  pipelined reader (git show 92d9a76:tt_gmg/kernels/gather_reader_galaxy.cpp) with SPMV_TIMING=1 + the eig-defl
+  env; confirm maxU=95.8129714 and read the new workload ms (target: dep-load-stall hiding -> well under 44ms).
