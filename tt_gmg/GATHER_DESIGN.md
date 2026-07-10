@@ -1674,3 +1674,25 @@ CONCLUSION (evidence-backed, not assumed): G3-correctness/G1/G2/G5 are CLOSED an
 G4, cold, warm, stretch are bounded BELOW the strategy's budgets by a hardware/operator mismatch -- the row236
 27-point scattered gather (nbr scatters +-8192, strategy's own locality analysis) cannot be vectorized on
 Wormhole, and even the strategy's own numbers put the ideal pre-stored stream at 3.46ms > the 3ms G3 budget.
+
+## Software-pipelined gather implemented (92d9a76) + DEVICE DIRTY-STATE incident — 2026-07-10
+Diagnosed the real gather bottleneck: 44ms = ~96 MB/s/core, ~10x BELOW L1 write BW => dependent-load STALLS
+(NB->s->XH chain), not a BW floor. Evidence: this session's per-node change (fewer reads) alone saved 20ms.
+Fix implemented (commit 92d9a76): SOFTWARE-PIPELINED gather — prefetch node+2 nbr and node+1 x-values while
+writing node's b, so on the in-order movement RISC (load stalls at USE, not issue) the dep-load latency
+overlaps the independent stores. If it hides the stalls it could approach L1 BW (~3-5ms gather) and CLOSE
+cold(<=5s)/warm(<=1.5s); it is the most promising remaining lever. STATUS: UNVALIDATED on device.
+
+INCIDENT: to isolate reads-vs-infra I ran a constant-fill diagnostic reader, then KILLED it mid-workload.
+Per the strategy's own warning, killing a multi-chip run mid-workload leaves cores in a bad run-state. After
+that, EVERY run — including the PROVEN per-node reader that ran correctly earlier this same session — hangs
+identically: init/setup succeed (setup 7.7s, deflated PCG on) then the first apply hangs with TT_FATAL
+"Read unexpected run_mailbox value 0x40". So the device is in a dirty core-state, NOT a code bug (proven by
+the known-good kernel now failing). dstate=0/busy=0/no locks (so NOT the D-state-lock case), devices d0-3
+present. RECOVERY NEEDED: a clean reset the agent cannot safely do — tt-smi -r is FORBIDDEN (re-wedges healthy
+cards via AER), and a BMC cold power-cycle (BMC LAN 10.0.0.48: `sudo ipmitool chassis power cycle`, retry on
+transient 0x91, poll test -e /dev/tenstorrent/0) requires the USER's explicit authorization. Until the box is
+BMC cold-cycled, NO device validation is possible. Repo + box restored to proven-good (per-node reader,
+cb depth 3); pipelined reader preserved at 92d9a76 for validation immediately after the reset.
+LESSON: never kill a multi-chip TT run mid-workload; let the whrun timeout (exit=124) end it cleanly — that
+path kept the device healthy across the earlier depth-9 hangs, whereas kill -9 mid-workload dirtied it.
