@@ -57,7 +57,9 @@ void kernel_main() {
                 for (uint32_t e = 0; e < 32; ++e) { const uint32_t ge = g_elem0 + g*32 + e;       // GLOBAL output element
                     const uint32_t node = ge/3;                                                   // output node (r=ge%3 unused: cf holds it)
                     int32_t nn = (k < 81 && node>=node_lo && (node-node_lo)<n_nodes) ? NB[nbr_base + (node-node_lo)*27 + oo] : -1;
-                    B[kk*32 + e] = (nn<0) ? 0 : XH[(uint32_t)(3*nn + cc) - xwin_elem_lo];          // B[k,e]=x[3*nbr[o,node]+c]; k>=81 pad 0
+                    // B[k,e] -> TILED offset (row=kk, col=e): 4x16x16 faces
+                    const uint32_t off = ((kk/16)*2 + (e/16))*256 + (kk%16)*16 + (e%16);
+                    B[off] = (nn<0) ? 0 : XH[(uint32_t)(3*nn + cc) - xwin_elem_lo];                // B[k,e]=x[3*nbr[o,node]+c]; k>=81 pad 0
                 } }
             noc_async_read_barrier();
             cb_push_back(cb_A, 1); cb_push_back(cb_B, 1);

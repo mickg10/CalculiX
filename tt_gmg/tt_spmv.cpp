@@ -78,6 +78,10 @@ struct TtSpmvCtx {
     std::vector<int32_t> nmin_v, nmax_v; uint32_t NBn_v = 0;  // sharding inputs, kept for per-apply workload rebuild
 };
 // --- matmul-diagonal (fp32-accumulate) support ---------------------------------------------------------------
+// tt-metal 32x32 tile layout: 4 faces of 16x16 in (TL,TR,BL,BR) order, each row-major -> flat offset for (row,col).
+static inline uint32_t tile_off(uint32_t row, uint32_t col) {
+    return ((row/16)*2 + (col/16))*256 + (row%16)*16 + (col%16);
+}
 // build_a_mm: transpose the single-bf16 DIA operator to a_mm[grp][kt] = a 32x32 tile with a_mm[e][k]=cf[k][g*32+e].
 // NOTE tt-metal tiles are stored as 4x(16x16) faces; the host must emit in that face order (tilize) OR the device
 // tilizes on read. Draft below writes ROW-MAJOR [e*32+k]; device build must tilize (or use a tilize kernel) - one of
@@ -91,13 +95,13 @@ static std::vector<bfloat16> build_a_mm(const std::vector<float>& adf, uint32_t 
         for (uint32_t e = 0; e < 32; e++) { uint32_t ge = g*32 + e, tile = ge/1024, ein = ge%1024;
             for (uint32_t kk = 0; kk < 32; kk++) { uint32_t k = kt*32 + kk;
                 float v = (k < K && tile < n_out) ? adf[((size_t)tile*K + k)*1024 + ein] : 0.f;
-                T[e*32 + kk] = bfloat16(v); } } }   // ROW-MAJOR draft (needs tilize on device)
+                T[tile_off(e, kk)] = bfloat16(v); } } }   // A[e,k], TILED (4x16x16 faces)
     return a_mm;
 }
-// identity mask tile (1.0 on the 32x32 diagonal) for the diag(A@B) extraction (mask + row-reduce).
+// identity mask tile (1.0 on the 32x32 diagonal), TILED, for the diag(A@B) extraction (mask + row-reduce).
 static std::vector<bfloat16> build_identity() {
     std::vector<bfloat16> id(1024, bfloat16(0.f));
-    for (uint32_t d = 0; d < 32; d++) id[d*32 + d] = bfloat16(1.f);   // ROW-MAJOR draft (needs tilize)
+    for (uint32_t d = 0; d < 32; d++) id[tile_off(d, d)] = bfloat16(1.f);
     return id;
 }
 // Build a FRESH program+workload from the resident buffers. Some tt-metal builds accumulate state when the SAME
