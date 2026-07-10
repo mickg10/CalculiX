@@ -69,25 +69,14 @@ void kernel_main() {
             // node (hence nbr AND the gathered x value) changes only every 3 elements (r=0,1,2). Loop per NODE:
             // do the NB[] lookup + 3*nn+c + XH/XM/XL[s] READ ONCE per node, then write the 3 r-elements. 3x fewer
             // lookups AND 3x fewer L1 x-reads than the per-element loop -> cuts the scalar gather cost.
-            // SOFTWARE-PIPELINED per-node gather: prefetch node+2's nbr and node+1's x-values while writing
-            // node's b. On the in-order movement RISC a load stalls at its USE, not its issue, so issuing the
-            // next nodes' NB/XH loads before the (independent) b-writes overlaps the NB->s->XH L1 dep-load
-            // latency with the stores -> attacks the ~96MB/s/core (10x-below-L1-BW) dependent-load stall.
-            const uint32_t node_hi = node_lo + n_nodes;
             uint32_t node = node0, i = 0, rr = rr0;
-            int32_t nn1 = (node + 1 >= node_lo && node + 1 < node_hi) ? NB[nbr_base + (node + 1 - node_lo) * 27 + oo] : -1;
-            int32_t nn0 = (node >= node_lo && node < node_hi) ? NB[nbr_base + (node - node_lo) * 27 + oo] : -1;
-            uint16_t vh, vm, vl;
-            if (nn0 < 0) { vh = 0; vm = 0; vl = 0; }
-            else { const uint32_t s = (uint32_t)(3 * nn0 + c) - xwin_elem_lo; vh = XH[s]; vm = XM[s]; vl = XL[s]; }
             while (i < 1024) {
-                const uint32_t nb2 = node + 2;
-                const int32_t nn2 = (nb2 >= node_lo && nb2 < node_hi) ? NB[nbr_base + (nb2 - node_lo) * 27 + oo] : -1;  // prefetch node+2 nbr
-                uint16_t vhn, vmn, vln;                                                                                 // node+1 x (nn1 ready)
-                if (nn1 < 0) { vhn = 0; vmn = 0; vln = 0; }
-                else { const uint32_t s1 = (uint32_t)(3 * nn1 + c) - xwin_elem_lo; vhn = XH[s1]; vmn = XM[s1]; vln = XL[s1]; }
-                for (; rr < 3 && i < 1024; ++rr, ++i) { BH[i] = vh; BM[i] = vm; BL[i] = vl; }                            // write node (overlaps loads)
-                vh = vhn; vm = vmn; vl = vln; nn1 = nn2; rr = 0; node++;
+                const int32_t nn = (node >= node_lo && (node - node_lo) < n_nodes) ? NB[nbr_base + (node - node_lo) * 27 + oo] : -1;
+                uint16_t vh, vm, vl;
+                if (nn < 0) { vh = 0; vm = 0; vl = 0; }
+                else { const uint32_t s = (uint32_t)(3 * nn + c) - xwin_elem_lo; vh = XH[s]; vm = XM[s]; vl = XL[s]; }
+                for (; rr < 3 && i < 1024; ++rr, ++i) { BH[i] = vh; BM[i] = vm; BL[i] = vl; }
+                rr = 0; node++;
             }
             noc_async_read_barrier();
             cb_push_back(cb_a, 3); cb_push_back(cb_b, 3);
