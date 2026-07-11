@@ -3,7 +3,7 @@
 // accumulation is bf16 -> fails under cancellation. We call the LLK directly with clear_fp32_dst_acc=false
 // for every term after the first, so the 6*K cross-term products accumulate in the fp32 dst register.
 // cb_a=[ah,am,al], cb_b=[bh,bm,bl] per k; 6 cross-terms (level-sum<=2). c_16 = fp32 output.
-#include "api/compute/eltwise_binary.h"
+#include "compute_kernel_api/eltwise_binary.h"
 #include <cstdint>
 
 // one MAC term: dst[0] (+)= cb_a[ai] (elementwise*) cb_b[bi].  first=true seeds (clears fp32 acc), else accumulates.
