@@ -1920,3 +1920,11 @@ stencil kernel = brick-resident x + per-offset contiguous shift (in-brick + 1-vo
 bf16x3 compensated MAC (already precision-proven in mac_compute.cpp) + fp32 accumulate -- SIMPLER than the gather
 reader (no scalar gather loop); (3) wire as g_tt_fine_spmv; (4) full solve -> maxU=golden + measure G3/G4/cold/warm.
 Representation + operator are validated; the TT kernel is the remaining build.
+
+## Operator serialized to TT-uploadable binary (2026-07-11)
+serialize_tiled.py writes row236_stencil.bin: header(nb,nbrick,B,nx,ny,nz) + brick coords + 27-way brick
+neighbor-table + node->brick map + A27 (per active node, 27 offsets x 3x3, bf16x3 split hi/mid/lo). Actual
+1.89 GB (compact active) / 2.36 GB padded-brick stream -> ~1.39 ms/SpMV. nbrick=25284 (4^3). Ready for TT upload.
+STATUS: representation validated machine-exact; tiled operator built + serialized. NOT YET closed on hardware --
+the TT stencil kernel (brick-resident x + per-offset contiguous shift w/ halo via brick_nbr + bf16x3 MAC) and the
+integrated full-solve measurement remain. That is the active build.
