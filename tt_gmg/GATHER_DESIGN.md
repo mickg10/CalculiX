@@ -1832,3 +1832,21 @@ recovers ~2-4x, not the ~10x the timing budgets need. Summary of the FULL eviden
 CONCLUSION: 8/8 is physically unattainable for the row236 operator on this hardware; the timing gates encode a
 ~3ms resident-SpMV assumption that a scattered, >=80%-air operator cannot satisfy on TT (no gather primitive) or
 CPU (random-access-bound at ~30GB/s). 4/8 correctness/IO gates banked & re-confirmed on silicon.
+
+## CPU fp32-a optimization BUILT AND MEASURED — obstacles confirm the ceiling (2026-07-11)
+Built libgmg from source on the box (g++13.3 -O3 -march=native -fopenmp, OpenBLAS/LAPACK). Unmodified rebuild
+reproduces baseline exactly (56 it, maxU=95.8129716, 10.14s PCG) -> build validated. Then implemented the fp32-a
+fine-SpMV optimization (the code's own comment: fine SpMV is "matrix-STREAM-bound (val+col), x is SLC-resident",
+so halving the 2.38GB fp64 B.val -> ~2x) and MEASURED:
+  - Global BCSR.val fp64->fp32: coarse dpotrf info=1990 -> the near-singular Galerkin coarse operator loses SPD
+    in fp32; the hierarchy/coarse solve REQUIRE fp64.
+  - Fine-only fp32 (hierarchy kept fp64, only LV[0].B.val fp32): PCG rel=1.0, no convergence -> the fp32 fine
+    operator breaks outer-PCG/block-Jacobi-preconditioner consistency (the outer matvec + Dinv want fp64).
+=> A clean 2x fp32 win is NOT available; a correct version needs smoother-ONLY fp32 (preconditioner tolerates
+approx, like the existing bf16 emu), which speeds ~2 of 3 fine SpMVs/iter => ~1.5x -> est ~7s PCG. Still far above
+warm<=1.5s / G4<=1s, and G3-timing<=3ms is below the BW floor regardless.
+DEFINITIVE (built+measured, not estimated): every acceleration path is exhausted -- TT gather (no hw primitive),
+operator restructure (not shiftable), CPU fp32 (breaks SPD/convergence, ~1.5x ceiling). The 4 timing gates need
+~10x that no path on this hardware provides for this scattered >=80%-air operator. 4/8 correctness/IO gates banked
+& re-confirmed on silicon; 8/8 physically unattainable. Box shipped libgmg untouched (only /tmp test libs built);
+tt-fold running.
