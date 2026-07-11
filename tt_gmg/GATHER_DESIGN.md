@@ -1790,3 +1790,17 @@ LOSS vs CPU -- the per-apply gather (45ms) exceeds the CPU V-cycle work, so the 
 The TT strategy's premise (offload the fine SpMV to go faster) holds for DENSE/LOCAL operators where the gather
 streams; it does NOT hold for this sparse scattered holder operator. cold<=5s would need ~4x over the CPU path
 (GMG-side: fewer iters / faster V-cycle / cached setup), independent of TT. This closes the P5 comparison.
+
+## CPU-GMG tuning sweep — fine SpMV is the memory-bound wall (2026-07-11)
+Tuned the GMG V-cycle via env knobs (no rebuild) to chase cold<=5s/warm<=1.5s on the CPU path:
+  cfg A (GAMMA=1 NPRE=1 NPOST=1 DEG=2, minimal smooth): 56 it, PCG 10.36s (185ms/it)  == baseline
+  cfg B (GAMMA=1 NPRE=2 NPOST=2 DEG=4, more smooth):     29 it, PCG 14.18s (489ms/it)  -> NET SLOWER
+=> The 185ms/iter is NOT the smoother (minimal smoothing is the same); it is the FINE SpMV, MEMORY-BOUND at
+~83ms/sweep (313M nnz x fp64 a ~ 2.5GB at CPU ~30GB/s). Tuning cannot beat memory bandwidth. This simultaneously
+(a) CONFIRMS the strategy's premise that the fine SpMV dominates, and (b) confirms the wall: TT's ~1TB/s BW could
+stream that fine SpMV in ~3.5ms (30x the CPU), which is EXACTLY the ~3ms G3 budget -- but only a STREAMING SpMV
+hits BW, and this operator's fine SpMV requires the scattered GATHER, which is scalar (45ms) with no hardware
+gather primitive on Wormhole. So every path to the timing budget converges on the same missing capability:
+streaming the scattered gather at bandwidth. CPU can't (memory BW), TT can't (no gather primitive), operator
+can't be restructured (not shiftable + >=80% air). cold<=5s/warm<=1.5s/G4<=1s/G3-timing<=3ms are unreachable for
+the row236 operator on this hardware; correctness gates remain banked on silicon.
