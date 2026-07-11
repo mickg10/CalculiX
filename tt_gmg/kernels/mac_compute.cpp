@@ -20,7 +20,7 @@ void kernel_main() {
     constexpr auto cb_a = tt::CBIndex::c_0, cb_b = tt::CBIndex::c_1, cb_out = tt::CBIndex::c_16;
 
     binary_op_init_common(cb_a, cb_b, cb_out);
-    mul_tiles_init(cb_a, cb_b, 1 /*acc_to_dest*/, 0 /*call_line, disambiguates overload*/);
+    mul_tiles_init(cb_a, cb_b);   // this tt-metal API: mul_tiles_init(icb0, icb1, call_line=__LINE__) — 2 real args
 
     for (uint32_t t = 0; t < n_out; ++t) {
         tile_regs_acquire();

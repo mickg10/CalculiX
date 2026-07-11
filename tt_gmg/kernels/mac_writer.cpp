@@ -9,7 +9,7 @@ void kernel_main() {
 
     constexpr uint32_t cb_out = get_compile_time_arg_val(0);
     constexpr auto c_args = TensorAccessorArgs<1>();
-    const auto c = TensorAccessor(c_args, c_addr);
+    const auto c = TensorAccessor(c_args, c_addr, 4096);  // fp32 output tile = 32*32*4 bytes; page size required for CTAD
 
     for (uint32_t t = 0; t < n_out; ++t) {
         cb_wait_front(cb_out, 1);
