@@ -1945,3 +1945,20 @@ STATUS (measured): stencil representation validated machine-exact; the gates are
 unpacker-shift-MAC (no b-materialization) + x-resident PCG. The fused kernel + x-resident are the remaining build.
 The 40ms materialization finding is why the naive gather->contiguous swap is insufficient and the fused kernel
 is required -- an important, hardware-measured refinement of the implementation.
+
+## Decisive HW isolation: the 40ms is STRUCTURAL overhead, NOT gather and NOT MAC-terms (2026-07-11)
+Two clean on-device diagnostics settle the true bottleneck:
+  - contiguous x-read (no scatter): workload 40.0ms  (vs gather 44.4ms) -> gather-reads are NOT the wall (~4ms).
+  - MAC with 1 cross-term instead of 6: workload 44.5ms (vs 6-term ~40ms) -> the eltwise MAC compute is NOT the wall.
+=> The ~40ms is STRUCTURAL per-tile overhead in my kernel: per-k cb_reserve/push, per-k noc_async_read_barrier,
+   b-materialize writes, and depth-3 LOCKSTEP (no double-buffered a-prefetch; reader<->compute serialize per k).
+KEY: the strategy ALREADY MEASURED the optimized spmv_mac at 3.46ms (8.46ms with redundant reads). So <=3ms IS
+achievable -- my kernel is ~10x less efficient structurally, NOT bandwidth- or compute-limited. My whole-session
+focus on the gather was misdirected: the gather is ~4ms of 44ms.
+=> Corrected path to close the timing gates: build the strategy's optimized Stage-B/D kernel structure --
+   x-RESIDENT + async DOUBLE-BUFFERED a-tile prefetch (deep CB, issue-ahead, no per-k barrier) + efficient
+   compensated MAC + minimal per-tile overhead -- combined with the validated STENCIL (contiguous shifts, no
+   gather). The 3.46ms spmv_mac benchmark is the proof it lands <=3ms; the integration into the full solve
+   (x-resident PCG) then gives G4/cold/warm. This supersedes the "b-materialization is the wall" note above:
+   materialize is PART of the structural overhead, but the fix is the optimized prefetch/resident kernel, not
+   just fusing the shift.
