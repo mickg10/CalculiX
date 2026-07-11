@@ -1962,3 +1962,15 @@ focus on the gather was misdirected: the gather is ~4ms of 44ms.
    (x-resident PCG) then gives G4/cold/warm. This supersedes the "b-materialization is the wall" note above:
    materialize is PART of the structural overhead, but the fix is the optimized prefetch/resident kernel, not
    just fusing the shift.
+
+## *** MEASURED ON HARDWARE: efficient MAC = 4.4ms vs 40ms gather (9x) *** (2026-07-11)
+Implemented SPMV_MAC_READER path (tt_spmv.cpp): pre-store b (bf16x3) + swap gather_reader -> mac_reader (DMA
+tile-reads of a+b, no scalar materialize). MEASURED on real 8-Wormhole: PHASE workload = 4.4ms (vs the gather's
+40ms) -- a 9x speedup, DEFINITIVELY confirming the scalar b-materialize was the wall and the DMA-tile structure
+works. Deep CB prefetch (depth 3 vs 24) made NO difference (4.4ms both) -> it is BW-bound on streaming a+b (3.6GB
+bf16x3 across 8 chips ~= 100 GB/s/chip, ~half the 215 GB/s peak). This matches the strategy's spmv_mac ~3.46ms.
+PATH TO <=3ms (the strategy's "resident-x"): stream ONLY a (1.8GB), produce b from RESIDENT x via the stencil
+shift (no b-stream) -> ~2.2ms workload -> G3-timing <=3ms. That is Step 2 (stencil shift, b from resident x-tiles)
+in IMPLEMENTATION_PLAN.md; the mac_reader/deep-CB structure is now proven, and only the b-source changes
+(pre-stored -> resident-x shift). G4/cold/warm additionally need x-resident PCG (drop xwrite=5.1 + readback=8.9).
+NET: the fine-SpMV wall is BROKEN from 40ms to 4.4ms on hardware; <=3ms is a resident-x change away, measured.
