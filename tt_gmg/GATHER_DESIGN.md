@@ -1910,3 +1910,13 @@ IMPLEMENTATION (the strategy's Stage B/D large kernel, gather removed by constru
   4. wire as g_tt_fine_spmv; run full solve -> maxU=golden + measure G3/G4/cold/warm.
 All prior "8/8 physically unattainable" statements in this file are RETRACTED: they assumed the general-sparse
 gather; the stencil+tiled-shift representation closes the timing gates.
+
+## Tiled operator BUILT + validated (2026-07-11)
+build_tiled_stencil.py builds the 4^3-brick tiled-stencil operator and validates a TILED SpMV (1-voxel halos)
+reproduces bspmv MACHINE-EXACT: rel_err = 3.83e-16. 25284 occupied bricks -> 2.36 GB bf16x3 -> ~1.39 ms/SpMV.
+Saved to tt_gmg/stencil/. This is the artifact the TT stencil kernel streams. REMAINING to close the timing
+gates on hardware: (1) serialize this tiled operator to a TT-uploadable binary + brick neighbor-table; (2) TT
+stencil kernel = brick-resident x + per-offset contiguous shift (in-brick + 1-voxel halo from neighbor bricks) +
+bf16x3 compensated MAC (already precision-proven in mac_compute.cpp) + fp32 accumulate -- SIMPLER than the gather
+reader (no scalar gather loop); (3) wire as g_tt_fine_spmv; (4) full solve -> maxU=golden + measure G3/G4/cold/warm.
+Representation + operator are validated; the TT kernel is the remaining build.
