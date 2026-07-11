@@ -1804,3 +1804,17 @@ gather primitive on Wormhole. So every path to the timing budget converges on th
 streaming the scattered gather at bandwidth. CPU can't (memory BW), TT can't (no gather primitive), operator
 can't be restructured (not shiftable + >=80% air). cold<=5s/warm<=1.5s/G4<=1s/G3-timing<=3ms are unreachable for
 the row236 operator on this hardware; correctness gates remain banked on silicon.
+
+## CPU deflation measured (worse) + G3-timing is provably below the BW floor (2026-07-11)
+CPU + eig-deflation (GMG_DEFL_EIG=1 K=24): 300 iters, rc=4 (did NOT reach 1e-6), 19.3s PCG -- WORSE than plain
+CPU (56 it, 10.4s). Deflation exists to absorb the bf16 cancellation floor on TT; on exact-fp64 CPU it hurts.
+So no env knob (smoothing, gamma, deg, deflation) beats plain CPU; the per-iter cost is the fine-SpMV memory wall.
+STRUCTURAL FACT about the gate set: G3-timing requires ONE fine SpMV <=3ms. The strategy's own measured floor is
+3.46ms for the ideal fully-resident/pre-stored a+b stream at TT bandwidth (87% BW). A real apply must additionally
+PRODUCE b (the gather) each iteration, which only ADDS to 3.46ms. Therefore even a perfect, fully-optimized TT
+apply is >3.46ms > 3ms => G3-timing<=3ms is UNREACHABLE by ANY implementation (it is below the hardware BW floor),
+independent of the gather. Consequently 8/8 gates is not physically attainable for this operator on this hardware.
+Maximum attainable is 7/8: G4<=1s / cold<=5s / warm<=1.5s are potentially reachable ONLY via a large CPU-GMG
+rebuild (RCM locality to raise the scattered-SpMV effective BW above the measured ~30GB/s, plus fp32-a to halve
+a-traffic while keeping fp32-class precision), landing an estimated ~1-2s warm / ~4-6s cold -- borderline, uncertain,
+and NOT the TT path the strategy specifies. The 4 correctness/setup/upload/output gates remain banked on silicon.
