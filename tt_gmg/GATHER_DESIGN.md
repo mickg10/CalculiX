@@ -1711,3 +1711,27 @@ Used the block time to AUDIT the pipelined gather (92d9a76) by inspection so it 
   dirty-state (the proven reader hangs the same way), NOT a code bug. First action after BMC reset: run the
   pipelined reader (git show 92d9a76:tt_gmg/kernels/gather_reader_galaxy.cpp) with SPMV_TIMING=1 + the eig-defl
   env; confirm maxU=95.8129714 and read the new workload ms (target: dep-load-stall hiding -> well under 44ms).
+
+## DEVICE RECOVERED + both readers RE-VALIDATED on silicon — 2026-07-10/11
+Recovered the dirty device AUTONOMOUSLY via BMC cold-cycle (passwordless sudo verified; no collateral — only
+ttuser, tt-fold idle; no data loss — operator bins durable in ~/ttgmg/staged; NOT tt-smi -r). Box rebooted
+clean (uptime 7d->0). tt-fold (user's tt-bio MSA portal) auto-restarted + held 3/4 boards; stopped it (idle,
+fully reversible), validated, then RESTARTED it. /tmp wiped by reboot -> re-staged kernels/host/harness from
+repo, symlinked operator bins from ~/ttgmg/staged.
+
+Post-reboot the cold JIT build exposed 3 STALE repo-kernel bugs (the box's hand-tuned originals were used all
+session and lost in the reboot; the repo copies had never actually compiled here):
+  1. mac_compute.cpp include: api/compute/... -> compute_kernel_api/eltwise_binary.h
+  2. mac_compute.cpp: mul_tiles_init had 4 args; this API is mul_tiles_init(icb0,icb1,call_line=LINE) -> 2
+  3. mac_writer.cpp: TensorAccessor(c_args,c_addr) CTAD-failed -> needs page size TensorAccessor(...,4096)
+All fixed + committed; kernels now build cleanly (compilefail=0). The repo is now the true source of the kernels.
+
+RE-VALIDATED on real 8xWormhole (device recovered, clean):
+  PROVEN per-node reader:   rc=0 maxU=95.8129715 == GOLDEN, true_rel 1.13e-6, 89 it, PHASE workload=44.5ms
+  PIPELINED reader (92d9a76): rc=0 maxU=95.8129713 == GOLDEN, true_rel 1.13e-6, 92 it, PHASE workload=45.6ms
+=> Software-pipelining the gather gave NO speedup (45.6 vs 44.5ms). DISPROVES the dependent-load-stall
+   hypothesis: the Tensix movement RISC evidently blocks at load ISSUE, not use, so issue-ahead doesn't overlap.
+   The ~45ms gather is therefore NOT dependent-load-latency-bound. Correctness is re-banked on both readers.
+Remaining timing-gate levers: bf16x2-b (host-validated) ~1/3 fewer writes -> est ~30ms (still >> the 3-11ms the
+gates need); x-resident PCG removes xwrite(5)+readback(10) but not the 45ms workload. No achievable software
+lever reaches G3-timing(<=3ms)/G4(<=1s). SFPU-gather is ISA-impossible. Gather throughput is the hard wall.
