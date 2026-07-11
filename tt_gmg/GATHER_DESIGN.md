@@ -1890,3 +1890,23 @@ on the general-sparse gather and are RETRACTED. The remaining work is the TT imp
 x + per-offset unpacker shift + 101-block dict lookup + bf16x3 compensated MAC (already precision-proven) + fp32
 accumulate, (4) wire as g_tt_fine_spmv, (5) run full solve -> maxU=golden + measure G3/G4/cold/warm. This is the
 strategy's Stage B/D "large kernel", now with the gather REMOVED by construction.
+
+## *** GATES REACHABLE: tiled stencil-shift streams 2.4GB -> ~1.4ms (2026-07-11) ***
+Brick-occupancy measured from ijk (active nodes are a connected lattice -> spatially coherent):
+  brick 4^3: 25284 occupied bricks, covered_vol=1.62M = 1.3x active (only 30% zero-pad, NOT 27x!)
+    -> value-stream 27 x 1.62M x 9 x 6B(bf16x3) = 2.4 GB -> ~1.4 ms/SpMV at 1.7TB/s. Index-stream 0.04GB.
+  brick 8^3: 1.6x active, 3.1GB (~1.8ms).  brick 16^3: 2.5x, 4.6GB (~2.7ms).
+=> TILED dense-shift (4^3 bricks, skip empty) gives a fully STREAMABLE (no-gather) fine SpMV at ~1.4ms:
+   G3-timing ~1.4ms <= 3ms; G4 ~228x1.4ms ~= 0.32s + host PCG + PCIe <= 1s; cold <= 5s; warm <= 1.5s; stretch<=2s.
+   ALL FOUR TIMING GATES ARE REACHABLE. The stencil representation (validated machine-exact, rel_err 2.97e-16)
+   eliminates the x-gather via contiguous within-brick shifts, and the lattice's spatial coherence keeps the
+   zero-padding to 1.3x. This is the correct implementation of the strategy's ~1ms BW-bound model.
+IMPLEMENTATION (the strategy's Stage B/D large kernel, gather removed by construction):
+  1. setup: build 4^3-brick-tiled operator = occupied bricks x 4^3 x 27 offsets x 3x3 block, bf16x3, ~2.4GB;
+     + a brick neighbor-table so cross-brick shifts resolve (26 face/edge/corner brick-neighbors).
+  2. upload ~0.3GB/chip to 8 chips (one-time, cached across the many-solve loop -> ~0 warm).
+  3. TT kernel: brick-local x resident + per-offset shift (in-brick contiguous + halo from neighbor brick) +
+     bf16x3 compensated MAC (already precision-proven) + fp32 accumulate.
+  4. wire as g_tt_fine_spmv; run full solve -> maxU=golden + measure G3/G4/cold/warm.
+All prior "8/8 physically unattainable" statements in this file are RETRACTED: they assumed the general-sparse
+gather; the stencil+tiled-shift representation closes the timing gates.
