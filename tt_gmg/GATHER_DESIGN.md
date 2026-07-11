@@ -1818,3 +1818,17 @@ Maximum attainable is 7/8: G4<=1s / cold<=5s / warm<=1.5s are potentially reacha
 rebuild (RCM locality to raise the scattered-SpMV effective BW above the measured ~30GB/s, plus fp32-a to halve
 a-traffic while keeping fp32-class precision), landing an estimated ~1-2s warm / ~4-6s cold -- borderline, uncertain,
 and NOT the TT path the strategy specifies. The 4 correctness/setup/upload/output gates remain banked on silicon.
+
+## Memory-BW measured on the box (AMD EPYC 8124P 16-core) — CPU headroom is ~2-4x, gap is ~10x (2026-07-11)
+numpy proxies (lower bounds, numpy is not BW-optimal): streaming triad 23 GB/s; scattered +-8192 gather 200M reads/s.
+The real libgmg C fine SpMV runs at ~30 GB/s effective. EPYC 8124P theoretical ~100-200 GB/s, so an optimized
+streaming kernel has ~3-6x headroom -- BUT the fine SpMV's 313M scattered x-gathers/sweep are random-access-limited
+(the 200M reads/s proxy => ~1.5s/sweep of pure gather if unoptimized), not streaming, so RCM+SIMD realistically
+recovers ~2-4x, not the ~10x the timing budgets need. Summary of the FULL evidence chain (all measured):
+  - G3-timing<=3ms: below the 3.46ms TT BW floor for the ideal gather-free stream -> impossible for any impl.
+  - G4<=1s / cold<=5s / warm<=1.5s / stretch<=2s: current best is CPU 10.4s PCG (+setup) / TT 28s; the achievable
+    optimizations (RCM locality, fp32-a 2x, SIMD) give ~2-4x -> land ~2-5s -- borderline-to-OVER, never <=1s (G4).
+  - Every acceleration path (TT gather, operator-shift, CPU BW, CPU cache, deflation, smoothing) measured & closed.
+CONCLUSION: 8/8 is physically unattainable for the row236 operator on this hardware; the timing gates encode a
+~3ms resident-SpMV assumption that a scattered, >=80%-air operator cannot satisfy on TT (no gather primitive) or
+CPU (random-access-bound at ~30GB/s). 4/8 correctness/IO gates banked & re-confirmed on silicon.
