@@ -1760,3 +1760,22 @@ Note: an optimized CPU AMX fine SpMV (313M MACs) is ~ms — for THIS scattered o
 the 8-chip path slower than CPU, i.e. the timing gates are a hardware/operator mismatch, not an implementation gap.
 The correctness gates (G1/G2/G3-correctness/G5) are banked and re-confirmed on silicon; the timing gates require a
 hardware gather primitive Wormhole does not provide.
+
+## Operator-restructure path (shift-SpMV) also exhausted with DATA — 2026-07-11
+Last idea to reach ~3.5ms: if row236 were a STRUCTURED voxel grid with scrambled numbering, renumber to lattice
+-> 27 CONSTANT-offset shift-axpy ops -> streamable at BW -> gates close. Checked the nbr connectivity directly
+(analysis/nbr_struct + grid_check on row236_nbr.bin, NBn=1290738):
+  - per-offset delta nbr[o,node]-node: 921565 DISTINCT values / offset, mode covers ~0% -> NOT constant-offset.
+  - valid_frac 0.95 uniform across all 27 offsets, mean degree 25.6 -> a dense 27-point operator, BUT
+  - 0 involutive offset-pairs (no o,o' with nbr[nbr[n,o],o']==n for >80% of n) -> NO consistent global grid
+    axis; the DIA neighbor-slots are per-node arbitrary order, not a shiftable lattice.
+  - Even if a lattice were recoverable (spectral embedding), this holder is a lattice-cloud >=80% OPEN AIR
+    (project gate holder_air_fraction>=0.80), so the 1.29M active voxels are a tiny fraction of the bounding
+    box; padding to a shiftable full grid inflates compute 5-50x -> far worse than the scattered gather. The
+    compacted scattered gather IS the efficient representation.
+=> The shift/structured-stencil route is dead for this operator, by data. Combined with the exhaustive
+   hardware-gather verification (SFPU/unpacker/ttnn/matmul all absent) and the empirical software sweep
+   (per-node banked, pipelining no-speedup, offset-grouping L1-infeasible, bf16x2 ~30ms), EVERY route to the
+   ~3.5ms/apply the timing gates need is now closed with evidence. The gather is intrinsically ~45ms scalar on
+   Wormhole's movement RISC. G3-timing<3ms is additionally below the 3.46ms BW floor. Correctness gates remain
+   banked on silicon.
