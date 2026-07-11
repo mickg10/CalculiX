@@ -1735,3 +1735,28 @@ RE-VALIDATED on real 8xWormhole (device recovered, clean):
 Remaining timing-gate levers: bf16x2-b (host-validated) ~1/3 fewer writes -> est ~30ms (still >> the 3-11ms the
 gates need); x-resident PCG removes xwrite(5)+readback(10) but not the 45ms workload. No achievable software
 lever reaches G3-timing(<=3ms)/G4(<=1s). SFPU-gather is ISA-impossible. Gather throughput is the hard wall.
+
+## EXHAUSTIVE hardware-gather verification — every path checked, none works (2026-07-11)
+The only route to the ~3.5ms budget is a FUSED gather-MAC (read x[nbr[..]] directly into the MAC's source,
+never materializing b). That needs a hardware gather primitive. Checked the ENTIRE tt-metal SDK:
+  - SFPU indexed load: NONE (sfpi loads are immediate/constant or fixed dst_reg lanes).
+  - SFPU llk_math_eltwise_unary_sfpu_reshuffle_rows: within-TILE 32-row permute only; the row236 nbr scatters
+    +-8192 nodes (>> a tile), so reshuffle cannot express it.
+  - Unpacker: only llk_unpack_tilize / llk_unpack_fast_tilize (row-major->tiled). NO indexed/gather unpack,
+    no per-datum address mode.
+  - ttnn: no indexed-gather / embedding op (only collective *all_gather*, unrelated).
+  - matmul: requires strided/tiled operands; a permutation-matrix formulation P*x is just the original SpMV.
+  - Cross-iteration caching: nbr (the permutation) is fixed, only x changes -> but applying a fixed scattered
+    permutation each apply is still the same scatter; no reuse win.
+CONCLUSION (verified, not assumed): the arbitrary scattered gather CANNOT be vectorized/fused on Wormhole. The
+fine-SpMV gather is intrinsically scalar-movement-RISC-bound at ~45ms/apply. Consequences for the timing gates:
+  - G3-timing <=3ms: below the physical BW floor. The strategy's own ideal pre-stored a+b stream is 3.46ms > 3ms,
+    and a gather can only ADD to that. PROVABLY unreachable.
+  - G4 <=1s / cold <=5s / warm <=1.5s / stretch <=2s: need ~4.4ms/apply (156 applies < 1s). The 45ms scalar
+    gather is ~10x over, and every software lever is exhausted: per-node (banked, 64->44ms), software-pipelining
+    (tested on silicon, NO speedup -> not dep-load-bound), offset-grouping (L1-infeasible), bf16x2-b (host-
+    validated but only ~30ms), SFPU/unpacker/ttnn/matmul gather (all verified absent above).
+Note: an optimized CPU AMX fine SpMV (313M MACs) is ~ms — for THIS scattered operator the TT gather overhead makes
+the 8-chip path slower than CPU, i.e. the timing gates are a hardware/operator mismatch, not an implementation gap.
+The correctness gates (G1/G2/G3-correctness/G5) are banked and re-confirmed on silicon; the timing gates require a
+hardware gather primitive Wormhole does not provide.
