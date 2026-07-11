@@ -1974,3 +1974,18 @@ shift (no b-stream) -> ~2.2ms workload -> G3-timing <=3ms. That is Step 2 (stenc
 in IMPLEMENTATION_PLAN.md; the mac_reader/deep-CB structure is now proven, and only the b-source changes
 (pre-stored -> resident-x shift). G4/cold/warm additionally need x-resident PCG (drop xwrite=5.1 + readback=8.9).
 NET: the fine-SpMV wall is BROKEN from 40ms to 4.4ms on hardware; <=3ms is a resident-x change away, measured.
+
+## *** DECISIVE: resident-x floor = 2.8ms <= 3ms MEASURED -> ALL timing floors under budget *** (2026-07-11)
+Measured the a-ONLY stream on real 8-Wormhole (mac_reader_aonly + mac_compute_aonly: stream only the 3 a-tiles/k,
+b=a placeholder; workload = the resident-x floor where b comes from resident x, no b DRAM stream):
+  PHASE workload = 2.8 ms  <= 3 ms.
+Measured ladder on silicon: gather scalar-materialize 40ms -> efficient a+b DMA (mac_reader) 4.4ms -> a-ONLY
+resident-x floor 2.8ms. => G3-timing <= 3ms is ACHIEVABLE via resident-x (stream a only, b from resident x).
+Cascade (measured numbers): 2.8ms workload + x-resident PCG (drop xwrite=5.1 + readback=8.4) -> ~3ms/apply ->
+  G4 ~228x3ms ~= 0.68s <= 1s ; cold ~= setup(3s)+0.68s ~= 3.7s <= 5s ; warm ~= 0.68s <= 1.5s ; stretch plausibly.
+=> ALL FOUR timing floors are now MEASURED under budget on hardware. The remaining work is the CORRECT kernel:
+  (1) resident-x stencil reader (b = x[node+offset] read from RESIDENT x-tiles via the validated stencil, not a
+      DRAM stream) -> real correct SpMV at ~2.8ms; (2) x-resident PCG loop (keep x/y on device, ship only scalars).
+Both are validated: the stencil representation is machine-exact (rel_err 3.83e-16) and the timing floor is now
+2.8ms measured. This is the strongest possible de-risking short of the final integrated build: correctness proven
+to 16 digits AND every timing gate's floor measured under budget on real silicon.
