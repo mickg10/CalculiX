@@ -1779,3 +1779,14 @@ Last idea to reach ~3.5ms: if row236 were a STRUCTURED voxel grid with scrambled
    ~3.5ms/apply the timing gates need is now closed with evidence. The gather is intrinsically ~45ms scalar on
    Wormhole's movement RISC. G3-timing<3ms is additionally below the 3.46ms BW floor. Correctness gates remain
    banked on silicon.
+
+## CPU-GMG vs TT-GMG row236 measured head-to-head (P5) — 2026-07-11
+Both solve row236 to golden on the tt-quietbox (CPU path uses libgmg's CPU fine SpMV, no TT callback):
+  CPU-GMG: rc=0 maxU=95.8129717 == GOLDEN  56 PCG iters  solve~10.4s PCG + ~8s setup = ~20s wall
+  TT-GMG : rc=0 maxU=95.812971x == GOLDEN  92 PCG iters  ~28s (45ms gather x 156 applies + host/PCIe)
+NEITHER path meets the strategy's TOTAL budgets (cold<=5s, warm<=1.5s). Decisive engineering finding: for THIS
+operator (1.29M active voxels, >=80% open air, scattered 27-pt connectivity) the TT fine-SpMV offload is a NET
+LOSS vs CPU -- the per-apply gather (45ms) exceeds the CPU V-cycle work, so the 8-chip path is SLOWER than CPU.
+The TT strategy's premise (offload the fine SpMV to go faster) holds for DENSE/LOCAL operators where the gather
+streams; it does NOT hold for this sparse scattered holder operator. cold<=5s would need ~4x over the CPU path
+(GMG-side: fewer iters / faster V-cycle / cached setup), independent of TT. This closes the P5 comparison.
