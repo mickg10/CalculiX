@@ -69,7 +69,7 @@ static inline void split3(float v, bfloat16& h, bfloat16& m, bfloat16& l) {
 struct TtSpmvCtx {
     std::shared_ptr<distributed::MeshDevice> dev;
     distributed::MeshWorkload wl;
-    std::shared_ptr<distributed::MeshBuffer> ah, am, al, xh, xm, xl, nbrbuf, c;
+    std::shared_ptr<distributed::MeshBuffer> ah, am, al, bh, bm, bl, xh, xm, xl, nbrbuf, c;
     std::shared_ptr<distributed::MeshBuffer> a_mm, idmask;    // matmul-diagonal: a_mm[grp][kt] [elem,k] tiles + identity
     uint32_t n_grp = 0, KT = 0;                               // matmul-diagonal: 32-elem groups, k-tiles (ceil(81/32)=3)
     uint32_t n = 0, n_out = 0, n_out_pad = 0, K = 0, NCHIP = 8, tile_elems = 1024;
@@ -155,6 +155,16 @@ extern "C" int tt_spmv_init(const char* real_op_path, const char* nbr_path, cons
         std::vector<bfloat16> sh(ahd.begin()+(size_t)j*se, ahd.begin()+(size_t)(j+1)*se); distributed::WriteShard(cq, K->ah, sh, co, true);
         std::vector<bfloat16> sm(amd.begin()+(size_t)j*se, amd.begin()+(size_t)(j+1)*se); distributed::WriteShard(cq, K->am, sm, co, true);
         std::vector<bfloat16> sl(ald.begin()+(size_t)j*se, ald.begin()+(size_t)(j+1)*se); distributed::WriteShard(cq, K->al, sl, co, true); } }
+    // PRE-STORED b for the efficient-MAC (mac_reader DMA-tile) G3-timing measurement (SPMV_MAC_READER=1). The workload
+    // timing is structure/BW-bound, independent of b VALUES -> upload a's data as a placeholder. Real apply produces b
+    // on-device via the stencil shift (see tt_gmg/stencil/IMPLEMENTATION_PLAN.md Step 2).
+    if (getenv("SPMV_MAC_READER")) {
+      K->bh = MakeBuf(K->dev, K->n_out_pad * K->K, K->NCHIP); K->bm = MakeBuf(K->dev, K->n_out_pad * K->K, K->NCHIP); K->bl = MakeBuf(K->dev, K->n_out_pad * K->K, K->NCHIP);
+      const uint32_t nl0 = K->n_out_pad/K->NCHIP, cc0 = (K->NCHIP==32)?4u:K->NCHIP; const size_t se = (size_t)nl0*K->K*TE;
+      for (uint32_t j = 0; j < K->NCHIP; j++) { distributed::MeshCoordinate co(j/cc0, j%cc0);
+        std::vector<bfloat16> sh(ahd.begin()+(size_t)j*se, ahd.begin()+(size_t)(j+1)*se); distributed::WriteShard(cq, K->bh, sh, co, true);
+        std::vector<bfloat16> sm(amd.begin()+(size_t)j*se, amd.begin()+(size_t)(j+1)*se); distributed::WriteShard(cq, K->bm, sm, co, true);
+        std::vector<bfloat16> sl(ald.begin()+(size_t)j*se, ald.begin()+(size_t)(j+1)*se); distributed::WriteShard(cq, K->bl, sl, co, true); } }
     std::vector<int32_t> nbr2((size_t)nbr_tiles_total * 1024, -1);
     for (uint32_t nd = 0; nd < NBn; nd++) for (uint32_t o = 0; o < 27; o++) nbr2[(size_t)nd * 27 + o] = nbrv[(size_t)o * NBn + nd];
     distributed::EnqueueWriteMeshBuffer(cq, K->nbrbuf, nbr2, true);
@@ -210,12 +220,20 @@ static void tt_build_wl(TtSpmvCtx* K) {
     }
     MakeCB(program, all_set, tt::CBIndex::c_2, max_xnt+2); MakeCB(program, all_set, tt::CBIndex::c_3, max_xnt+2);
     MakeCB(program, all_set, tt::CBIndex::c_4, max_xnt+2); MakeCB(program, all_set, tt::CBIndex::c_5, max_npg+2, tt::DataFormat::Float32);
-    std::vector<uint32_t> r_ct = {(uint32_t)tt::CBIndex::c_0,(uint32_t)tt::CBIndex::c_1,(uint32_t)tt::CBIndex::c_2,(uint32_t)tt::CBIndex::c_3,(uint32_t)tt::CBIndex::c_4,(uint32_t)tt::CBIndex::c_5};
-    TensorAccessorArgs(*K->ah).append_to(r_ct); TensorAccessorArgs(*K->am).append_to(r_ct); TensorAccessorArgs(*K->al).append_to(r_ct);
-    TensorAccessorArgs(*K->xh).append_to(r_ct); TensorAccessorArgs(*K->xm).append_to(r_ct); TensorAccessorArgs(*K->xl).append_to(r_ct);
-    TensorAccessorArgs(*K->nbrbuf).append_to(r_ct);
+    const bool USE_MAC_READER = getenv("SPMV_MAC_READER") != nullptr;   // G3-timing: pre-stored-b DMA reader (mac_reader)
+    std::vector<uint32_t> r_ct;
+    if (USE_MAC_READER) {
+        r_ct = {(uint32_t)tt::CBIndex::c_0,(uint32_t)tt::CBIndex::c_1};
+        TensorAccessorArgs(*K->ah).append_to(r_ct); TensorAccessorArgs(*K->am).append_to(r_ct); TensorAccessorArgs(*K->al).append_to(r_ct);
+        TensorAccessorArgs(*K->bh).append_to(r_ct); TensorAccessorArgs(*K->bm).append_to(r_ct); TensorAccessorArgs(*K->bl).append_to(r_ct);
+    } else {
+        r_ct = {(uint32_t)tt::CBIndex::c_0,(uint32_t)tt::CBIndex::c_1,(uint32_t)tt::CBIndex::c_2,(uint32_t)tt::CBIndex::c_3,(uint32_t)tt::CBIndex::c_4,(uint32_t)tt::CBIndex::c_5};
+        TensorAccessorArgs(*K->ah).append_to(r_ct); TensorAccessorArgs(*K->am).append_to(r_ct); TensorAccessorArgs(*K->al).append_to(r_ct);
+        TensorAccessorArgs(*K->xh).append_to(r_ct); TensorAccessorArgs(*K->xm).append_to(r_ct); TensorAccessorArgs(*K->xl).append_to(r_ct);
+        TensorAccessorArgs(*K->nbrbuf).append_to(r_ct);
+    }
     std::vector<uint32_t> w_ct = {(uint32_t)tt::CBIndex::c_16}; TensorAccessorArgs(*K->c).append_to(w_ct);
-    auto reader = CreateKernel(program, "/tmp/kernels/gather_reader.cpp", cores,
+    auto reader = CreateKernel(program, USE_MAC_READER ? "/tmp/kernels/mac_reader.cpp" : "/tmp/kernels/gather_reader.cpp", cores,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default, .compile_args = r_ct});
     auto writer = CreateKernel(program, "/tmp/kernels/mac_writer.cpp", cores,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default, .compile_args = w_ct});
@@ -227,9 +245,13 @@ static void tt_build_wl(TtSpmvCtx* K) {
     for (auto pr_ : {std::make_pair(grpA, n1), std::make_pair(grpB, n2)}) {
         for (const auto& cr : pr_.first.ranges()) for (const auto& cc : cr) { const uint32_t npc = pr_.second;
             const uint32_t g_start = tile_base + start;
-            SetRuntimeArgs(program, reader, cc, {(uint32_t)K->ah->address(),(uint32_t)K->am->address(),(uint32_t)K->al->address(),
-                (uint32_t)K->xh->address(),(uint32_t)K->xm->address(),(uint32_t)K->xl->address(),(uint32_t)K->nbrbuf->address(),
-                npc, K->K, g_start, pc_xlo[ci], pc_xnt[ci], pc_nlo[ci], pc_nn[ci], start});
+            if (USE_MAC_READER)
+                SetRuntimeArgs(program, reader, cc, {(uint32_t)K->ah->address(),(uint32_t)K->am->address(),(uint32_t)K->al->address(),
+                    (uint32_t)K->bh->address(),(uint32_t)K->bm->address(),(uint32_t)K->bl->address(), npc, K->K, start});
+            else
+                SetRuntimeArgs(program, reader, cc, {(uint32_t)K->ah->address(),(uint32_t)K->am->address(),(uint32_t)K->al->address(),
+                    (uint32_t)K->xh->address(),(uint32_t)K->xm->address(),(uint32_t)K->xl->address(),(uint32_t)K->nbrbuf->address(),
+                    npc, K->K, g_start, pc_xlo[ci], pc_xnt[ci], pc_nlo[ci], pc_nn[ci], start});
             SetRuntimeArgs(program, compute, cc, {npc, K->K});
             SetRuntimeArgs(program, writer, cc, {(uint32_t)K->c->address(), npc, start});
             start += npc; ci++;
