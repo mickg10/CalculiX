@@ -1850,3 +1850,23 @@ operator restructure (not shiftable), CPU fp32 (breaks SPD/convergence, ~1.5x ce
 ~10x that no path on this hardware provides for this scattered >=80%-air operator. 4/8 correctness/IO gates banked
 & re-confirmed on silicon; 8/8 physically unattainable. Box shipped libgmg untouched (only /tmp test libs built);
 tt-fold running.
+
+## CORRECTION + definitive root cause: operator is a 3.7%-DENSE structured grid (2026-07-11)
+Rereading the strategy ("grid elasticity, lattice-order z-fastest, 27-pt stencil") exposed an error in my earlier
+"0 involutive pairs -> not shiftable" claim: the nbr/BCSR is stored COLUMN-SORTED, so slot o is not a fixed
+geometric direction -> my per-slot involution test was meaningless. The dump DOES carry ijk coords + header
+h={nb,nblk,nx,ny,nz}. Measured from row236_fine.bin:
+  grid nx=559 ny=273 nz=229 -> box = 34,947,003 voxels; active nb = 1,290,738 -> DENSITY = 3.7%.
+  node numbering correlates 0.97 with lattice lin-index (mostly lattice-order, gaps from inactive voxels).
+So the operator IS a structured grid, BUT only 3.7% dense. This is the DEFINITIVE reason the timing gates are
+unreachable, quantified:
+  - Dense constant-offset SHIFT-SpMV (streams at BW, NO gather): must cover the full box -> 27 diag x 34.9M x 9
+    ~= 8.5G values ~= 51GB bf16x3 -> ~30ms/SpMV, wasting 96.3% on inactive voxels. > the 3ms budget.
+  - Compact sparse form (1.8GB, ~1ms stream): needs the scattered gather to place nonzeros -> 45ms scalar (no
+    hw gather primitive). > budget.
+The operator is simultaneously too SPARSE to stream densely (3.7% -> 96% wasted) and too SCATTERED to gather
+cheaply (no hw primitive). The strategy's ~1ms model assumed a hardware-fused gather (compute~0.02ms) that
+Wormhole does not have; it also implicitly assumed a much denser operator. For THIS 3.7%-dense operator, no SpMV
+formulation reaches ~3ms on this hardware. G3-timing<=3ms / G4<=1s / cold<=5s / warm<=1.5s are unreachable;
+correctness gates banked on silicon. (This corrects and supersedes the earlier "not a shiftable lattice" wording:
+it IS a lattice, but its 3.7% density is what defeats both the shift and the gather.)
