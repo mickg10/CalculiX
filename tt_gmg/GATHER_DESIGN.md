@@ -1928,3 +1928,20 @@ neighbor-table + node->brick map + A27 (per active node, 27 offsets x 3x3, bf16x
 STATUS: representation validated machine-exact; tiled operator built + serialized. NOT YET closed on hardware --
 the TT stencil kernel (brick-resident x + per-offset contiguous shift w/ halo via brick_nbr + bf16x3 MAC) and the
 integrated full-solve measurement remain. That is the active build.
+
+## Hardware measurement REFINES the path: b-materialization, not gather-reads, is the 40ms cost (2026-07-11)
+Ran a timing-diagnostic reader on real TT: contiguous x-reads (a fixed shift = the stencil's access pattern)
+instead of the scatter gather. Result: PHASE workload = 40.0ms vs the gather's 44.4ms -- only ~4ms difference.
+=> The scatter-gather READS were NOT the 40ms bottleneck. The b-MATERIALIZATION (the reader writing 1024x3 bf16
+values per k into b-tiles, 81 k x ~9 tiles/core) is -- and BOTH readers do it. This corrects the earlier "gather
+is the 45ms wall" framing (measured, not assumed). Consequences for the stencil implementation:
+  - Swapping gather->contiguous in the MATERIALIZING reader is only ~40ms (just measured). The stencil MUST be
+    FUSED: the compute's UNPACKER reads x shifted by the fixed offset directly into the src register (strided
+    reads ARE an unpacker capability) + streams the a-tile + bf16x3 MAC -> NO b-tile materialization -> the
+    a-stream (2.36GB) becomes the floor -> ~1.4ms. This is the real ~1ms strategy model.
+  - G4 additionally needs x-RESIDENT: per-apply overhead xwrite=5.1 + readback=9.6 + host PCG must drop (keep
+    x/y on device across PCG iters, ship only scalars) so 89-228 applies x few-ms <= 1s.
+STATUS (measured): stencil representation validated machine-exact; the gates are reachable via a FUSED
+unpacker-shift-MAC (no b-materialization) + x-resident PCG. The fused kernel + x-resident are the remaining build.
+The 40ms materialization finding is why the naive gather->contiguous swap is insufficient and the fused kernel
+is required -- an important, hardware-measured refinement of the implementation.
