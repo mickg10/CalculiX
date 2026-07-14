@@ -1,5 +1,20 @@
 # TT-GMG row236 — RESUME STATE (ultra-thorough handoff)
 
+## THE GOAL (the standing directive this work was driving toward — recorded verbatim)
+
+> read and reread calculix-fork/TT_GMG_STRATEGY.md. Make sure to require ALL gates it says. Do not complete until
+> done. DO NOT GIVE UP - IF YOU LOOK AT a 3 month integration - GO AHEAD AND PLOW INTO IT! You like hard problems -
+> diving into hard things is your job!
+
+Meaning: close ALL 8 gates in `TT_GMG_STRATEGY.md` (G1 setup ≤3s, G2 upload ≤0.3s, G3-correctness maxU=golden,
+G3-timing ≤3ms, G4 PCG-solve ≤1s, G5 output ≤0.2s, TOTAL cold ≤5s, TOTAL warm ≤1.5s, stretch ≤2s) for row236 on
+the 8×Wormhole tt-quietbox — do not stop until every gate is measured-closed on hardware. Status at handoff: 4/8
+closed (G1, G2, G3-correctness, G5); 4/8 timing gates de-risked to measured facts but NOT formally closed (need
+the brick-stencil resident-x SpMV + x-resident PCG + full-solve measurement — the multi-day integration in §10).
+(This goal was `/goal clear`-ed at session end; recorded here so the resume is self-contained.)
+
+---
+
 **Last updated:** 2026-07-14 (session end). **Branch:** `accel-gmg-backend` (fork `github.com/mickg10/CalculiX.git`).
 **Goal file:** `calculix-fork/TT_GMG_STRATEGY.md` (the 8 gates). **Forensic trail:** `tt_gmg/GATHER_DESIGN.md`.
 **Executable plan:** `tt_gmg/stencil/IMPLEMENTATION_PLAN.md`.
