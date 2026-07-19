@@ -16,6 +16,9 @@ Status: implementation in progress. Owner: mickg. Host: tt-quietbox (8× Wormhol
 > retried.
 > Management/public/private “cloud” terminology is reconciled in
 > `tt_gmg/CLOUD_AND_MANAGEMENT_AUDIT_2026-07-14.md`.
+> Large target bytes and portable repro packs are now externalized through
+> `TARGET_PACKS.md` and `tt_gmg/target_pack_registry.json`; both bind registry
+> commit, pack manifests, and release objects by SHA-256.
 
 ## North-star goal
 Solve **row236** (3.87 M DOF, near-singular grid elasticity, 6 rigid-body modes) on the 8×Wormhole QuietBox

@@ -44,6 +44,17 @@
 > The Mac Tailscale backend and unrelated peers remain healthy. Treat this as a shared remote-site power/WAN/LAN/
 > Tailscale-path outage until one management path returns. Do not issue a blind power action. The Run67/BMC logs
 > remain remote and must be recovered verbatim rather than reconstructed.
+>
+> **Target-pack publication (2026-07-19):** large targets and portable repro
+> packs now live in `github.com/mickg10/calculi_target_packs` at registry
+> commit `1fb01bf0d908ae9b555ce118a4db9fb9b06e3fa7`, release
+> `packs-v1-20260719`. This fork binds them by manifest/object SHA in
+> `TARGET_PACKS.md` and `tt_gmg/target_pack_registry.json`. The primary
+> row236 fine-dump object is
+> `8f13780171520a82d349e69b3c581e3278bf3b927cef8d9d8a6cc987e85ce676`
+> compressed and
+> `e58c212d593dd39884f9806558f1bfc30e6f2456708e61ed2ca1f32220f13638`
+> decompressed. Pack publication changes no solver gate.
 
 ## THE GOAL (the standing directive this work was driving toward — recorded verbatim)
 

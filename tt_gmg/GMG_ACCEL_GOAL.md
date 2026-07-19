@@ -279,6 +279,15 @@ This is the transferable-project punchline: 3 months of TT precision research (b
 a 30-line fp32 kernel on NVIDIA, behind the same fp64 host gate.
 
 ## C-COR INTEGRATION RECIPE (turn-key when operator lands) — 2026-07-03
+**Publication correction (2026-07-19):** the operator is no longer
+transfer-bound. Fetch pack `row236_ttgmg_fine_v1` from registry commit
+`1fb01bf0d908ae9b555ce118a4db9fb9b06e3fa7`; compressed SHA-256 is
+`8f13780171520a82d349e69b3c581e3278bf3b927cef8d9d8a6cc987e85ce676`
+and decompressed SHA-256 is
+`e58c212d593dd39884f9806558f1bfc30e6f2456708e61ed2ca1f32220f13638`.
+See `TARGET_PACKS.md`. The 2026-07-03 transfer narrative below is retained as
+historical infrastructure evidence only.
+
 The NVIDIA golden maxU=95.8129714 run needs 3 pieces, all now de-risked:
 1. OPERATOR: row236_fine.bin.zst (748MB) pushing Mac->NVIDIA (resilient rsync --partial loop). On box: pip install
    zstandard (no zstd binary) OR apt zstd; decompress -> /tmp/row236_fine.bin (2.6GB; box has 933G free).
@@ -295,7 +304,7 @@ The NVIDIA golden maxU=95.8129714 run needs 3 pieces, all now de-risked:
 STATUS: CUDA solve ENGINE fully green (C-G0/G2/G3/G4/G5 + near-singular C-COR mechanics); C-COR golden = these 3
 turn-key steps, gated only on the 748MB transfer finishing. TT G4/cold/warm gated on a tt-fold device window.
 
-## OPERATOR TRANSFER — 11 methods exhausted; genuinely infra/user-gated — 2026-07-03
+## HISTORICAL OPERATOR TRANSFER — superseded by SHA registry — 2026-07-03
 The NVIDIA C-COR golden run needs row236_fine.bin.zst (748MB) on desktop-ivlvav4. The box's tailnet SSH is too
 flaky to stream (scp/rsync die at 0 bytes over 8+ retries), though the box's OWN internet is fine (pip downloaded
 ~500MB). Tried to route around SSH via a public URL the box could wget: bashupload(DNS-blocked), transfer.sh(down),
@@ -329,8 +338,11 @@ Removed every C-COR unknown except the operator bytes:
 => GOLDEN RUN IS ONE COMMAND once the operator lands:
    CUDA_PATH=/tmp/ch GMG_DEFL_CORR=1 GMG_DEFL_EIG=1 GMG_DEFL_K=24 GMG_HYBRID_TOL=1e-2 \
      python3 /tmp/cuda_gmg_bridge.py /tmp/row236_fine.bin /tmp/libgmg.so   -> expect rc=0 maxU=95.8129714.
-The ONLY missing input is /tmp/row236_fine.bin (748MB.zst -> 2.6GB), transfer of which is user-gated (12+ methods
-exhausted). Everything else — build, symbols, bridge, SpMV engine, headers — is done and verified on the RTX box.
+Historically, the only missing input was `/tmp/row236_fine.bin` (748MB.zst ->
+2.6GB) and twelve transfer methods were exhausted. That transport blocker is
+now closed by `mickg10/calculi_target_packs`, release `packs-v1-20260719`, with
+the compressed/decompressed SHA-256 identities above. Solver and hardware
+acceptance gates remain separate and unchanged.
 
 ## C-COR FULL-STACK INTEGRATION VALIDATED end-to-end on the GPU — 2026-07-03
 Ran cuda_gmg_bridge.py (libgmg.so + cupy CUDA-SpMV callback) on a 32k-node 3-level synthetic SPD operator on the RTX box:
