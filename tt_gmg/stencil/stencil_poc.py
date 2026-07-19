@@ -42,4 +42,8 @@ y=ybox[lin]; dt=time.time()-t0
 err=np.abs(y-yref).max()/np.abs(yref).max()
 print("stencil-shift vs bspmv rel_err = %.2e  (%s)  apply=%.2fs (numpy, not TT)"%(err,"MATCH -> streamable, gates open" if err<1e-12 else "MISMATCH",dt))
 idxbytes=(nx*ny*nz)*27*2/1e9
-print("dense-box index-stream = %.2f GB -> at 1.7TB/s ~ %.2f ms/SpMV (vs 45ms gather); dict=101 blocks resident"%(idxbytes, idxbytes/1.7))
+print(
+    "dense-box index-stream = %.2f GB -> at 1.7TB/s ~ %.2f ms/SpMV (vs 45ms gather); "
+    "raw coefficient dictionary cardinality not established"
+    % (idxbytes, idxbytes / 1.7)
+)

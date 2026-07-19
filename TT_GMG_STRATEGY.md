@@ -1,6 +1,21 @@
 # TT-GMG — Tenstorrent-accelerated GMG smoother for CCX: Strategy & Goals
 
-Status: de-risking complete, entering implementation (P3+). Owner: mickg. Host: tt-quietbox (8× Wormhole, tt-metal v0.73.1).
+Status: implementation in progress. Owner: mickg. Host: tt-quietbox (8× Wormhole, tt-metal v0.73.1).
+
+> **Gate-accounting correction (2026-07-15):** `tt_gmg/GATE_CONTRACT.md` and
+> `tt_gmg/gates/gate_contract.json` are the authoritative measurable contract for this original TT closure
+> program. There are eight performance gates (G1–G5, cold, warm, stretch); correctness is a separate invariant.
+> Current honest score is 2/8 performance gates green (G3 and G5), with reduced-dump correctness separately green.
+> The earlier G1/G2 pass labels used cacheability or a partial payload rather than the named cold/full workloads.
+> No projection, placeholder-b/a-only diagnostic, or standalone dump result closes a performance or full-CCX gate.
+> The current qualifying G3 result is run66: complete canonical-base plus exact dense-fallback, correct persistent
+> fixed resident-x samples `1.945499/1.822259/1.858679 ms`, median `1.858679 ms`, therefore green against `3 ms`.
+> G2 remains red at `0.547659 s`; G4 remains open because Run66's vector is pre-shifted and fixed. The changing-x
+> host contract and selected page-gather residency design are in `tt_gmg/CANONICAL_PCG_RESIDENCY_DESIGN.md`.
+> Runs52 and 59b–61 remain historical arithmetic/transport evidence; their closed negative families should not be
+> retried.
+> Management/public/private “cloud” terminology is reconciled in
+> `tt_gmg/CLOUD_AND_MANAGEMENT_AUDIT_2026-07-14.md`.
 
 ## North-star goal
 Solve **row236** (3.87 M DOF, near-singular grid elasticity, 6 rigid-body modes) on the 8×Wormhole QuietBox
@@ -48,17 +63,19 @@ optimization loop needs.
 ## GOALS / budget — the gates (cold single solve, ≤ 5 s)
 | id | phase | budget | notes |
 |----|-------|-------:|-------|
-| G1 | setup (host: hierarchy + BCSR + bf16×3 terms) | ≤ 3.0 s | **cacheable** across loop solves → ~0 warm |
-| G2 | matrix upload host → 8 chips (one-time) | ≤ 0.3 s | **PASSED: 0.116 s (679 MB bf16 → 8 chips); bf16×3 ~1.8 GB would be ~0.3 s (borderline)** |
-| G3 | one fine SpMV (8 chips, bf16×3) | ≤ 3 ms | **CORRECT on REAL row236 operator: bf16×3, 8-chip, rel_err 6.4e-7 (fp32-exact), fp32 output. 8.46 ms unoptimized (6 cross-terms, redundant reads); 1.64 ms for the bf16×1 sub-kernel. Optimize reads/resident-x for ≤3 ms.** |
+| G1 | setup (host: hierarchy + BCSR + bf16×3 terms) | ≤ 3.0 s | **RED: about 8.25 s cold. Cacheability matters to warm operation but does not close this gate.** |
+| G2 | matrix upload host → 8 chips (one-time) | ≤ 0.3 s | **RED: 0.62 s for the complete bf16×3 payload. The 0.116 s result was partial.** |
+| G3 | one fine SpMV (8 chips, bf16×3) | ≤ 3 ms | **PASSED: Run66 correct persistent fixed-resident-x median 1.858679 ms. Changing-x/G4 remains open.** |
 | G4 | PCG solve (228 SpMVs + host fp64 PCG + PCIe residual) | ≤ 1.0 s | 38 iters; PCIe residual ≤ 0.15 s |
 | G5 | output / un-permute | ≤ 0.2 s | **PASSED: 0.013 s (solution read 8 chips → host)** |
-| **TOTAL (cold)** | | **≤ 5.0 s** | `maxU = golden`, `true_rel < 3e-3` |
-| **TOTAL (warm loop, setup cached)** | | **≤ 1.5 s** | the optimization-loop number |
-| **Stretch (cold)** | | **≤ 2.0 s** | overlap setup with upload |
+| **TOTAL (cold)** | | **≤ 5.0 s** | **OPEN: no qualifying complete accelerated run.** |
+| **TOTAL (warm loop, setup cached)** | | **≤ 1.5 s** | **OPEN: no cache-hit/resident-operator complete run.** |
+| **Stretch (cold)** | | **≤ 2.0 s** | **OPEN: no measured overlap/critical-path run.** |
 
 ## Correctness gates (non-negotiable)
-- `maxU` within acceptance of golden `107.0569734213`; `true_rel < min(2·tol, 1e-2)`.
+- Reduced-dump correctness is green at `maxU=95.8129714`, `rc=0`, and true relative residual about `1.13e-6`.
+- Full CCX acceptance remains open: `maxU` within acceptance of golden `107.0569734213` and
+  `true_rel < min(2·tol, 1e-2)` must pass through the unchanged CCX output path.
 - fp64 outer PCG + true-residual gate stays on host → a wrong TT result is impossible to return (falls back to
   CPU GMG / direct SPOOLES).
 - Converges to solver tol every run (determinism to tol, not bit-exactness).
@@ -654,3 +671,25 @@ auto-restarted it). LESSON: before any disruptive action (power-cycle) or device
 delete /dev/hugepages-1G/device_*_tenstorrent while it runs. Device-dependent GMG work (gather throughput,
 integration, timing) is PAUSED pending a device window; host-only work (this precision proof, code refactors,
 the de-interleave layout in make_abref/make_dia, the Phase-7 interface) proceeds without the device.
+
+## Run66 closes G3; exact changing-x page plan selects the G4 path — 2026-07-15
+
+Run66 measured the complete canonical-base plus exact dense-fallback Row236 apply on all eight QuietBox Wormhole
+chips at `1.945499/1.822259/1.858679 ms` (median `1.858679 ms`) with L2 relative error
+`9.314343407e-7`, maximum relative error `1.590476355e-6`, maximum absolute error `1.525878906e-4`, and no
+nonfinite output. The hardened runner restored three `tt-fold` workers and three device holders. G3 is green.
+
+The same run's `547.659 ms` / `943,718,400`-byte upload leaves G2 red. Run66 is not G4: its three
+`209,682,432`-byte shifted-B files encode one fixed vector.
+
+`tt_gmg/stencil/canonical_pcg_layout.py` now derives the lossless dynamic-vector map from brick metadata and the
+canonical permutation. Real Row236 validation checks all `314,523,648` BF16 words with zero mismatch. It measures
+`97.9591%` same-chip references, adjacent-chip-only remote traffic, and an `88,776`-node / `1.598 MB` BF16×3 halo.
+The selected DMA-page plan is `70.329 MB`, reconstructs the raw map with zero mismatch, and streams `344.181 MB`
+of vector pages per apply versus Run66's `629.047 MB` fixed B expansion. The corresponding first-pass upload bundle
+is projected at `408.298 MB`, but neither upload nor apply timing is claimed before measurement.
+
+The implementation authority is `tt_gmg/CANONICAL_PCG_RESIDENCY_DESIGN.md`; durable machine evidence is
+`tt_gmg/evidence/device_v1/canonical_pcg_gather_analysis_v1.json`. Next: default-off dynamic page reader, complete
+host/oracle and offline-role proof, then one guarded fresh-boot standalone measurement. Only after that pass should
+device vector operations, halo exchange, complete PCG, fp64 true-residual gating, and G4 be measured.

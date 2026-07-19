@@ -1,4 +1,18 @@
-# TT-GMG — Execution Plan to the Goal State (row236, 8×Wormhole, all 9 gates)
+# TT-GMG — Execution Plan to the Goal State (row236, 8×Wormhole, eight performance gates + correctness)
+
+> Accounting note (2026-07-15): `GATE_CONTRACT.md` supersedes status/count wording in this historical plan.
+> Correctness is an acceptance invariant, not a ninth performance gate; projections and partial workloads do not
+> close gates. The implementation phases remain useful, but each exit must now emit evidence accepted by the
+> machine-readable contract.
+>
+> Device-frontier note (2026-07-15): run52 is the best qualifying correct persistent resident-x apply. Its
+> default-off selective b-low policy measured `3.379803/3.377273/3.256412 ms`, median `3.377273 ms`, so G3 remains
+> red by `0.377273 ms`. Fixed exact-leading HiFi2 is correct but much slower; cross-term mixed-fidelity grouping is
+> closed device-incorrect. Runs54–57 also close affine A-low as device-incorrect. Correct split-A run59b and
+> lossless exact-corner runs60/61 are slower (`3.505936/3.532192/3.405163 ms` medians). The host-only joint-mask
+> search tops out at 36 omitted low products versus run52's 18, insufficient at the measured slope. The next G3
+> work must structurally reduce remaining arithmetic or B-materialization and pass host/offline proof before a boot.
+> Persistent PCG/G4 still follows only after a correct ≤3 ms apply exists.
 
 Owner: mickg. Target: `calculix-fork/TT_GMG_STRATEGY.md` acceptance — row236 solves on 8×Wormhole,
 cold ≤ 5 s / warm ≤ 1.5 s / stretch ≤ 2 s, `maxU = golden`, fp64 host PCG + residual gate intact.
@@ -25,10 +39,11 @@ The fast SpMV kernel exists and is proven, but is **not yet integrated** into th
 
 THE GAP, in one sentence: we have a *correct* solve and a *proven-fast* SpMV kernel, but not a *fast
 end-to-end solve* — because (a) the gather is latency-bound, and (b) the fast kernel isn't wired as the
-PCG SpMV callback. This plan closes exactly those two gaps, then measures all 9 gates.
+PCG SpMV callback. This historical plan closes those two gaps, then measures all eight performance gates plus the
+separate correctness invariant.
 
 --------------------------------------------------------------------------------
-## 1. The goal state — the 9 gates (from TT_GMG_STRATEGY.md §"the gates")
+## 1. The goal state — eight performance gates plus correctness
 
 | id | phase | budget | today | closes in |
 |----|-------|-------:|------:|-----------|
@@ -64,9 +79,10 @@ into a real optimization target.**
 **Objective:** make every subsequent measurement reproducible and never lose the box to a stale lock.
 
 Steps:
-1. Script `run_spmv.sh` that always: `pkill -9 -f metal_example_spmv_mac; sleep 2` (clear
-   `CHIP_IN_USE_*` locks — the timeout-leaves-lock bug we hit), `rm -rf ~/.cache/tt-metal-cache*` only
-   when kernels changed, sets `TT_METAL_HOME`, runs, and greps the DBG/SpMV lines.
+1. Use only the hardened `run_brick_hw.sh`: it requires empty portal jobs, a fresh boot ID, a settled active
+   `tt-fold`, no conflicting workload, no D-state task, and no device holder after its controlled service stop; it
+   marks the boot before mesh open, owns the timeout, and restores `tt-fold` in an EXIT trap. Never use
+   `pkill -9 -f`, never manually interrupt a TT workload, and never run a second workload on the same boot.
 2. Bank the three current numbers into `GATHER_DESIGN.md` as the "before" row: MAC 3.46 ms, gather
    34 ms/256-tiles, e2e 25 min. (Already recorded — verify still present.)
 3. Confirm the fp64 host residual gate path in `gmg_tt.py` is active and un-bypassed (grep for the
@@ -191,7 +207,7 @@ Steps:
 This is the milestone that converts 25 min into an optimization target.
 
 --------------------------------------------------------------------------------
-## PHASE 5 — Measure & close all 9 gates  (1 week)
+## PHASE 5 — Measure & close all eight performance gates  (1 week)
 
 **Objective:** hit cold ≤ 5 s, warm ≤ 1.5 s with every sub-gate green.
 
@@ -201,7 +217,7 @@ Steps:
 2. **G4**: if Option A missed (~1.4 s), implement Option B (device-resident vectors + partial dots). Target
    ≤ 1.0 s.
 3. **G2**: 0.62 s → ≤ 0.3 s — overlap the 3 bf16×3 streams, or upload while G1 finishes (borderline; the
-   strategy already flags it). If it can't hit 0.3 s cold, it's covered by warm (cached) — document.
+   strategy already flags it). Warm caching can improve WARM but cannot turn the separate G2 workload green.
 4. **G1**: confirm cacheable across loop solves (hierarchy/BCSR/bf16×3 terms) ⇒ ~0 warm.
 5. Full cold + warm runs, 3× each, report medians against the table.
 
@@ -347,9 +363,10 @@ Steps:
    `maxU` matches golden to tol on both. Record both gate tables side by side.
 2. **X-4 lessons:** finalize the TT→CUDA lessons table in `GMG_ACCEL_GOAL.md` with the *measured* CUDA
    outcomes (did fp32 suffice? did SIMT erase the gather wall? actual C-G2/G3/G4 numbers vs TT).
-3. **X-5 CI/repro:** one script `run_gates.sh <backend>` that (per backend) clears hygiene state, builds,
-   runs row236, and prints the correctness + G1–G5 + E2E gate table. Handles TT stale-lock (`pkill`,
-   avoid `tt-smi -r`) and CUDA reset (`nvidia-smi --gpu-reset`, driver pin) per Lesson L7.
+3. **X-5 CI/repro:** one script `run_gates.sh <backend>` that performs non-destructive health checks, builds,
+   runs row236, and prints the correctness + G1–G5 + E2E gate table. TT must delegate lifecycle to the hardened
+   fresh-boot runner—no `pkill`, manual interruption, or `tt-smi -r`. Any CUDA reset must be separately authorized
+   and gated on exclusive ownership; it is not automatic CI hygiene.
 
 **Exit gate 11 (== X-3/X-4/X-5):** one command reproduces the full gate table on each available backend;
 identical golden proven on both; lessons table reflects measured CUDA reality.

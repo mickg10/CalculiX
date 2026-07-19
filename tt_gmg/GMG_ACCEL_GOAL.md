@@ -1,9 +1,20 @@
 # GMG-ACCEL — THE GOAL (all gates): CalculiX row236 on Tenstorrent **and** NVIDIA
 
-Single source of truth for the accelerated-GMG effort. One CCX GMG solver, two interchangeable
+Cross-platform expansion goal for the accelerated-GMG effort. For the original 8×Wormhole TT closure,
+`GATE_CONTRACT.md` is the authoritative gate/count/evidence contract as of 2026-07-15. One CCX GMG solver, two interchangeable
 accelerator backends (**Tenstorrent Metalium** + **NVIDIA CUDA**), one shared fp64 host PCG + residual
 gate. Companion docs: `TT_GMG_STRATEGY.md` (why/de-risk), `TT_GMG_PLAN.md` (TT step-by-step),
 `GATHER_DESIGN.md` (the gather kernel). This file is the **gate list** — the definition of done.
+
+Current TT correction: the original eight-gate TT score is `1/8`, not the optimistic dashboard below. Reduced-dump
+correctness is separately green. The best qualifying persistent resident-x G3 evidence is run52 at a
+`3.377273 ms` median, hence red by `0.377273 ms`. Its selective b-low policy is correct but improves run41 by only
+`0.73%`. Runs54–57 close affine A-low as device-incorrect; correct split-A run59b and exact-corner runs60/61 are
+slower (`3.505936/3.532192/3.405163 ms` medians). The complete host joint-mask search reaches only 36 low-product
+omissions versus run52's 18, too little to justify hardware. Three-term mixed-fidelity batching remains closed
+correctness-red. The next G3 design must structurally reduce remaining arithmetic or B-materialization.
+Infrastructure/cloud naming and reachability are recorded in
+`CLOUD_AND_MANAGEMENT_AUDIT_2026-07-14.md`. The 2026-07-03 dashboard is retained as dated history.
 
 Every gate has: **budget**, **current status** (measured, not aspirational), and **how it's verified**.
 A gate is GREEN only with a measured number on the real target. Correctness gates are non-negotiable.

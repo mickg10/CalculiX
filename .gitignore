@@ -4,9 +4,13 @@ src/arrow/
 *.a
 ccx_accel
 *.log
+!tt_gmg/evidence/device_v1/brick_spmv_run66_canonical_packed_base_fallback_reverse_freshboot_infra_retry.log
 # linked binaries (build artifacts)
 src/CalculiX
 src/CalculiX_MT
 src/CalculiX_MT_*
 # dev/ test binaries
 dev/parse_test
+.tt_gmg_cache/
+__pycache__/
+*.pyc

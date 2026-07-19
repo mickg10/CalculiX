@@ -1,5 +1,13 @@
 # On-device gather + fast-SpMV integration — implementation spec (2026-07-03)
 
+> **Current correction (2026-07-15):** this is historical design rationale, not current gate status. Run52 is the
+> qualifying G3 frontier at `3.377273 ms`, still red. The global “101 blocks” statement used in early planning was
+> not measured; it came from a literal print. Raw coefficients contain many noise-distinct blocks, while only the
+> eight corners have a proved three-triple exact structure. Correct runs60/61 show that lossless corner compression/
+> representative reuse is slower than run52, so corner A traffic is not the remaining wall. Runs54–57 close affine
+> folding device-incorrect, and the host joint-mask ceiling is too small. Any next hardware candidate must instead
+> structurally reduce the remaining arithmetic or B-materialization path and satisfy `GATE_CONTRACT.md`.
+
 Goal: close the remaining row236 gates (G3<3ms, G4≤1s PCG, cold/warm/stretch) by making the neighbor gather
 run on-device so the proven 3.46 ms bf16x3 MAC becomes a full fast SpMV wired into the GMG solve with `x` resident.
 Correctness (rc=0, maxU=95.8129714) and G5 (18 ms) are already banked on real TT; the on-device MAC (spmv_mac,
@@ -1871,25 +1879,21 @@ formulation reaches ~3ms on this hardware. G3-timing<=3ms / G4<=1s / cold<=5s / 
 correctness gates banked on silicon. (This corrects and supersedes the earlier "not a shiftable lattice" wording:
 it IS a lattice, but its 3.7% density is what defeats both the shift and the gather.)
 
-## *** BREAKTHROUGH / RETRACTION: the timing gates ARE reachable via stencil+dictionary+shift (2026-07-11) ***
-I was WRONG that the timing gates are physically unreachable. That conclusion came from the general-sparse
-(gather) representation. Re-reading the strategy ("grid elasticity, 27-pt stencil") + the ijk/header data led to
-the correct representation, now VALIDATED machine-exact on the host (stencil_poc.py):
+## Historical stencil/dictionary projection (2026-07-11; global dictionary claim retracted 2026-07-15)
+The general-sparse representation did obscure a real 27-offset geometric stencil, and the host shift formulation is
+machine-exact. However, the accompanying global dictionary claim was not measured, so its traffic/timing projection
+does not constitute gate evidence:
   - The operator is a PERFECT 27-point stencil: 27 fixed geometric offsets (di,dj,dk in {-1,0,1}) -- verified by
     mapping every stored block's (node,col) through ijk: exactly 27 distinct offsets.
-  - Only 101 DISTINCT 3x3 blocks in all 33M blocks -> a 2-byte dictionary index per (node,offset).
+  - `stencil_poc.py` printed `101` as a literal; it did not compute a dictionary cardinality. Raw data has many
+    noise-distinct blocks. Only the eight corner offsets now have a proved exact three-triple structure.
   - Applied via dense-box CONTIGUOUS SHIFTS (x[node+offset] = contiguous strided read, which the TT UNPACKER
     supports -- unlike the arbitrary gather): stencil-shift SpMV reproduces exact bspmv, rel_err = 2.97e-16.
-  - Stream/SpMV = dense-box 27 x 34.9M x 2B indices = 1.89 GB -> at 1.7 TB/s ~ 1.11 ms (dict of 101 blocks
-    resident). NO 45ms gather. This is EXACTLY the strategy's ~1ms BW-bound model.
-=> The gather was an artifact of the WRONG representation. The stencil representation eliminates it. Timing gates
-   become reachable: G3-timing ~1.1ms<=3ms; G4 ~228x1.1ms~=0.25s+host<=1s; cold<=5s; warm<=1.5s; stretch<=2s.
-This SUPERSEDES all prior "physically unreachable / 8/8 impossible" conclusions in this file -- those were based
-on the general-sparse gather and are RETRACTED. The remaining work is the TT implementation: (1) host-build the
-27-diagonal dict-index stencil operator on the dense box, (2) upload to 8 chips, (3) TT kernel = resident dense-box
-x + per-offset unpacker shift + 101-block dict lookup + bf16x3 compensated MAC (already precision-proven) + fp32
-accumulate, (4) wire as g_tt_fine_spmv, (5) run full solve -> maxU=golden + measure G3/G4/cold/warm. This is the
-strategy's Stage B/D "large kernel", now with the gather REMOVED by construction.
+  - The old `1.89 GB`/`1.11 ms` dictionary stream estimate depends on the unproved global dictionary and is invalid
+    as a gate claim. The implemented brick-major path, not that arithmetic projection, is the authority: run52 is
+    correct at a `3.377273 ms` median, and exact corner transport runs60/61 are slower.
+The valid carry-forward is the exact 27-offset shift representation. Any future factorization/dictionary must be
+derived from the complete raw operator and prove exact reconstruction before it enters a device budget.
 
 ## *** GATES REACHABLE: tiled stencil-shift streams 2.4GB -> ~1.4ms (2026-07-11) ***
 Brick-occupancy measured from ijk (active nodes are a connected lattice -> spatially coherent):

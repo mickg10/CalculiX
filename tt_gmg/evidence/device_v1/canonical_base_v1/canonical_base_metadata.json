@@ -1,0 +1,18 @@
+{
+  "schema": "tt_gmg_canonical_base_export_v1",
+  "quantum": 1e-7,
+  "chips": 8,
+  "groups_per_chip": 198,
+  "lanes_per_group": 1024,
+  "active_lanes": 1290738,
+  "base_lanes": 1089163,
+  "nonbase_lanes": 201575,
+  "base_stencil_id": 20,
+  "base_nonzero_scalars": 153,
+  "base_scalar_palette_size_including_zero": 11,
+  "base_active_terms": 81,
+  "base_products_per_tile": 864,
+  "base_tiles": 1064,
+  "nonbase_tiles": 197,
+  "packed_tiles": 1261
+}

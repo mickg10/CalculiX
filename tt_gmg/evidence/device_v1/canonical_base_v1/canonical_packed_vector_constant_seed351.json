@@ -1,0 +1,81 @@
+{
+  "created_unix_s": 1784120286.8513503,
+  "files": {
+    "packed_b0": {
+      "bytes": 209682432,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/packed_shifted_b0_constant_seed351.bf16",
+      "sha256": "e7012bc900d892b5f6cb3a79ed2c21db793c46ec09cdb5568ad93d078e56815a",
+      "shape": [
+        8,
+        158,
+        81,
+        1024
+      ]
+    },
+    "packed_b1": {
+      "bytes": 209682432,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/packed_shifted_b1_constant_seed351.bf16",
+      "sha256": "fe9f1ad01ed732275d6e0e4047c555ec41d84910944058e52f814b566210c26c",
+      "shape": [
+        8,
+        158,
+        81,
+        1024
+      ]
+    },
+    "packed_b2": {
+      "bytes": 209682432,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/packed_shifted_b2_constant_seed351.bf16",
+      "sha256": "fe9f1ad01ed732275d6e0e4047c555ec41d84910944058e52f814b566210c26c",
+      "shape": [
+        8,
+        158,
+        81,
+        1024
+      ]
+    },
+    "packed_reference": {
+      "bytes": 15532032,
+      "dtype": "<f4",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/packed_reference_constant_seed351.fp32",
+      "sha256": "bcad5f1926e256e2129dc6814f24408fc513f9892211058ee78a79b53c08ca91",
+      "shape": [
+        8,
+        158,
+        3,
+        1024
+      ]
+    }
+  },
+  "host_only": true,
+  "layout_manifest": {
+    "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_packed_layout.json",
+    "sha256": "a32fcd5fa2a00687488449aae7f1ac18acc2f1a96eac88d1ff367fda5b581f6e"
+  },
+  "pack_seconds": 5.949126482009888,
+  "schema": "tt_gmg_canonical_packed_vector_v1",
+  "source": {
+    "reference": {
+      "path": "/home/ttuser/ttgmg/device_v1/reference_constant_seed351.fp32",
+      "sha256": "f7b6ed8374a8b7b5f07c420f6a612b1d989100e0644d27906af17b8f4c7169a0"
+    },
+    "shifted_b": [
+      {
+        "path": "/home/ttuser/ttgmg/device_v1/shifted_b0_constant_seed351.bf16",
+        "sha256": "f9b8058b7f4ad7863b3a232392a9e8e91a642df2f56ca7a3d02261f0500dfc3b"
+      },
+      {
+        "path": "/home/ttuser/ttgmg/device_v1/shifted_b1_constant_seed351.bf16",
+        "sha256": "138a077bcd579bd138416ccda4b36869bd163e674c3be5432a9aba10e10e2c8b"
+      },
+      {
+        "path": "/home/ttuser/ttgmg/device_v1/shifted_b2_constant_seed351.bf16",
+        "sha256": "138a077bcd579bd138416ccda4b36869bd163e674c3be5432a9aba10e10e2c8b"
+      }
+    ]
+  },
+  "vector_tag": "constant_seed351"
+}

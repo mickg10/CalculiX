@@ -1,0 +1,70 @@
+{
+  "schema": "tt_gmg_gate_evidence_v1",
+  "contract": "gate_contract.json",
+  "captured_date": "2026-07-15",
+  "measurements": {
+    "G1": {
+      "samples": [8.25],
+      "tags": ["real_row236", "real_8x_wormhole", "hierarchy", "bcsr", "bf16x3_all_terms", "measured", "durable"],
+      "evidence": "../TT_GMG_STRATEGY.md#t-g1-measured-cpu-only-no-device--2026-07-03",
+      "note": "Exceeds the 3.0 s budget. Cacheability does not turn the cold gate green."
+    },
+    "G2": {
+      "samples": [0.547659],
+      "tags": ["real_row236", "real_8x_wormhole", "bf16x3_all_terms", "all_8_chips", "measured", "durable"],
+      "evidence": "../evidence/device_v1/brick_spmv_run66_canonical_packed_base_fallback_reverse_freshboot_infra_retry.log",
+      "note": "Run66 measured a complete exact canonical bf16x3 operator representation on all 8 chips. The 0.547659 s measurement is conservative: its 943,718,400-byte timed region includes all three replicated base palettes, all three partitioned fallback streams, all three resident packed input-vector streams, and zero-initialization of the fp32 output. It improves the previous 0.62 s complete-upload evidence but still exceeds the 0.3 s budget by 0.247659 s."
+    },
+    "G3": {
+      "samples": [0.001945499, 0.001822259, 0.001858679],
+      "tags": [
+        "real_row236",
+        "real_8x_wormhole",
+        "correct_output",
+        "full_operator",
+        "all_8_chips",
+        "resident_x",
+        "persistent_program",
+        "no_host_xy_roundtrip",
+        "measured",
+        "durable"
+      ],
+      "evidence": "../evidence/device_v1/brick_spmv_run66_canonical_packed_base_fallback_reverse_freshboot_infra_retry.log",
+      "note": "Run66 is the first G3-green hardware bundle: correct full bf16x3 reverse-order canonical base-palette plus exact fallback apply across all 8 Wormhole chips, with resident packed input vectors, a persistent program, and no host x/y round trip. Samples were 1.945499/1.822259/1.858679 ms (median 1.858679 ms); warmup and all samples matched the dense fp32 reference with L2 relative error 9.314343407e-7, max relative error 1.590476355e-6, max absolute error 1.525878906e-4, and no non-finite values. Run65 was an infrastructure-only Ethernet-core timeout before kernel execution and contributes no candidate timing or correctness claim."
+    },
+    "G4": {
+      "samples": [],
+      "tags": [],
+      "evidence": "../../resume.md#10-the-remaining-work-exact-next-steps-to-close-the-4-timing-gates",
+      "note": "Only a projection exists; resident-vector PCG is not implemented."
+    },
+    "G5": {
+      "samples": [0.013],
+      "tags": ["real_row236", "real_8x_wormhole", "complete_solution", "measured", "durable"],
+      "evidence": "../../resume.md#1-the-8-gates-from-tt_gmg_strategymd-lines-48-60",
+      "note": "Component-scope pass; remeasure in the final acceptance bundle."
+    },
+    "COLD": {"samples": [], "tags": [], "evidence": "../../resume.md", "note": "Unmeasured."},
+    "WARM": {"samples": [], "tags": [], "evidence": "../../resume.md", "note": "Unmeasured; no cache-hit proof."},
+    "STRETCH": {"samples": [], "tags": [], "evidence": "../../resume.md", "note": "Unmeasured; no overlap proof."}
+  },
+  "correctness": {
+    "reduced_dump": {
+      "status": "green",
+      "rc": 0,
+      "max_u": 95.8129714,
+      "true_relative_residual": 1.13e-6,
+      "tol": 1e-6,
+      "evidence": "../TT_GMG_STRATEGY.md#correctness-gate-banked-on-real-tt--2026-07-03"
+    },
+    "full_ccx": {
+      "status": "open",
+      "evidence": null,
+      "note": "The full 107.0569734213 golden has not run through the TT backend and CCX output path."
+    },
+    "safety_path": {
+      "status": "code_present_unaccepted",
+      "note": "The fp64 gate exists in gmg_solve.cpp, but final TT fallback behavior must be exercised in CCX."
+    }
+  }
+}

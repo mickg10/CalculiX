@@ -36,4 +36,8 @@ err=np.abs(y-yref).max()/np.abs(yref).max()
 B=4; key=(ijk[:,0]//B)*(1<<40)+(ijk[:,1]//B)*(1<<20)+(ijk[:,2]//B); nbrick=len(np.unique(key))
 op_gb=nbrick*(B**3)*27*9*6/1e9
 print("TILED-STENCIL SpMV vs bspmv rel_err=%.2e (%s)  apply=%.1fs"%(err,"MATCH" if err<1e-12 else "MISMATCH",dt))
-print("tiled operator: %d occupied 4^3 bricks -> %.2f GB bf16x3 (stream/SpMV ~%.2f ms). Distinct blocks=101 (dict opt available)."%(nbrick,op_gb,op_gb/1.7))
+print(
+    "tiled operator: %d occupied 4^3 bricks -> %.2f GB bf16x3 "
+    "(stream/SpMV ~%.2f ms). Raw coefficient dictionary cardinality not established."
+    % (nbrick, op_gb, op_gb / 1.7)
+)

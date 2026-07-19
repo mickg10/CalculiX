@@ -1,0 +1,281 @@
+{
+  "absent_neighbor_node_references": 1393918,
+  "brick_operator": {
+    "path": "/home/ttuser/ttgmg/staged/row236_brick_v1.bin",
+    "sha256": "f1a956701882a164c3ddb62e522bbe1dc4111d2ce37990c746f7860b69fe4674"
+  },
+  "build_seconds": 15.487958431243896,
+  "canonical_layout": {
+    "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_packed_layout.json",
+    "sha256": "a32fcd5fa2a00687488449aae7f1ac18acc2f1a96eac88d1ff367fda5b581f6e"
+  },
+  "chips": 8,
+  "compact_gather_plan": {
+    "chips": 8,
+    "compact_plan_bytes": 82573408,
+    "compact_to_raw_byte_ratio": 0.590703335604196,
+    "files": {
+      "group_page_offsets": {
+        "bytes": 5060,
+        "dtype": "<u4",
+        "path": "/home/ttuser/ttgmg/canonical_pcg_v1/pcg_group_page_offsets.u32",
+        "sha256": "b3bdd536248e036173cff845d8c223f948b04827f19376e4d272e7eca6ac5fe4",
+        "shape": [
+          1265
+        ]
+      },
+      "group_unique_local_address": {
+        "bytes": 12319064,
+        "dtype": "<u4",
+        "path": "/home/ttuser/ttgmg/canonical_pcg_v1/pcg_group_unique_local_address.u32",
+        "sha256": "e4ed638ea48bb7c8961be9f4e136be5812ef863a6349bd106131ac179099137a",
+        "shape": [
+          3079766
+        ]
+      },
+      "group_unique_offsets": {
+        "bytes": 5060,
+        "dtype": "<u4",
+        "path": "/home/ttuser/ttgmg/canonical_pcg_v1/pcg_group_unique_offsets.u32",
+        "sha256": "0d75b4a7d014df72f74a0f0d0d479df0dcda2ccc1b7431927968128ff65dba9b",
+        "shape": [
+          1265
+        ]
+      },
+      "group_vector_page_local_index": {
+        "bytes": 74692,
+        "dtype": "<u4",
+        "path": "/home/ttuser/ttgmg/canonical_pcg_v1/pcg_group_vector_page_local_index.u32",
+        "sha256": "90a0492614e356decf15301ce2ea39ab0d3a64a889f45fbc6b42842d7c3db65b",
+        "shape": [
+          18673
+        ]
+      },
+      "halo_offsets": {
+        "bytes": 36,
+        "dtype": "<u4",
+        "path": "/home/ttuser/ttgmg/canonical_pcg_v1/pcg_halo_offsets.u32",
+        "sha256": "4ed28b0733abade5d6da5851ad2e9cd5baae059d4d2190aee1c392092032a31e",
+        "shape": [
+          9
+        ]
+      },
+      "halo_packed_position": {
+        "bytes": 355104,
+        "dtype": "<u4",
+        "path": "/home/ttuser/ttgmg/canonical_pcg_v1/pcg_halo_packed_position.u32",
+        "sha256": "2f4ab76f7a867a32ef60f58b685c74c76563eea262ab71efbe3ac92c0ce433d0",
+        "shape": [
+          88776
+        ]
+      },
+      "neighbor_group_local_index": {
+        "bytes": 69894144,
+        "dtype": "<u2",
+        "path": "/home/ttuser/ttgmg/canonical_pcg_v1/pcg_neighbor_group_local_index.u16",
+        "sha256": "5f2b10f3a25d1c721ae2fee42e217770e1e979406162f9775c28bd9f86f13881",
+        "shape": [
+          8,
+          158,
+          27,
+          1024
+        ]
+      },
+      "neighbor_group_page_lane": {
+        "bytes": 69894144,
+        "dtype": "<u2",
+        "path": "/home/ttuser/ttgmg/canonical_pcg_v1/pcg_neighbor_group_page_lane.u16",
+        "sha256": "1cc07253f0f92d19404ce04f65f2fcd36e3eaec841e110942e494b1d36a9dd48",
+        "shape": [
+          8,
+          158,
+          27,
+          1024
+        ]
+      }
+    },
+    "group_unique_input_positions_total": 3079766,
+    "group_vector_page_bf16x3_bytes_per_apply": 344180736,
+    "group_vector_pages_total_per_apply": 18673,
+    "groups_per_chip": 158,
+    "halo_unique_input_positions_total": 88776,
+    "invalid_index_mismatches": 0,
+    "invalid_page_index_mismatches": 0,
+    "max_group_unique_input_positions": 3224,
+    "max_group_vector_pages": 62,
+    "neighbor_index_sentinel": 65535,
+    "page_gather_plan_bytes": 70329036,
+    "page_gather_to_raw_byte_ratio": 0.5031110760867177,
+    "page_reconstruction_mismatches": 0,
+    "passing": true,
+    "positions_per_chip": 161792,
+    "raw_neighbor_map_bytes": 139788288,
+    "reconstruction_mismatches": 0,
+    "schema": "tt_gmg_canonical_pcg_compact_gather_plan_v1"
+  },
+  "contiguous_input_page_runs_per_output_group": {
+    "max": 14.0,
+    "mean": 4.786677240285488,
+    "min": 2.0,
+    "p50": 5.0,
+    "p90": 6.0,
+    "p95": 6.0,
+    "p99": 7.0
+  },
+  "created_unix_s": 1784126546.0135586,
+  "cross_chip_delta_histogram": {
+    "-1": 342392,
+    "0": 32868370,
+    "1": 342392
+  },
+  "cross_chip_input_pages_per_gather_tile": {
+    "max": 23.0,
+    "mean": 0.4089053367403883,
+    "min": 0.0,
+    "p50": 0.0,
+    "p90": 1.0,
+    "p95": 3.0,
+    "p99": 6.0
+  },
+  "cross_chip_neighbor_references": 684784,
+  "groups_per_chip": 158,
+  "host_only": true,
+  "input_pages_per_gather_tile": {
+    "max": 40.0,
+    "mean": 6.586806473404412,
+    "min": 1.0,
+    "p50": 6.0,
+    "p90": 10.0,
+    "p95": 13.0,
+    "p99": 20.0
+  },
+  "logical_vector_active_lanes": 1290738,
+  "logical_vector_bf16x3_bytes": 23298048,
+  "logical_vector_fp32_bytes": 15532032,
+  "logical_vector_lanes": 1294336,
+  "logical_vector_padding_lanes": 3598,
+  "neighbor_map": {
+    "bytes": 139788288,
+    "dtype": "<i4",
+    "order": "[output_chip][output_group][offset][output_lane]",
+    "path": "/home/ttuser/ttgmg/canonical_pcg_v1/packed_neighbor_position.i32",
+    "sha256": "dcf631c86299cb0d619d4cab3ee918f675f86b84f28df6514dce61442d583c45",
+    "shape": [
+      8,
+      158,
+      27,
+      1024
+    ]
+  },
+  "neighbor_map_bytes": 139788288,
+  "per_chip_local_unique_input_positions": [
+    161792,
+    161792,
+    161792,
+    161792,
+    161792,
+    160768,
+    160768,
+    160242
+  ],
+  "per_chip_remote_unique_input_positions": [
+    12570,
+    21509,
+    17126,
+    13209,
+    7118,
+    3989,
+    7982,
+    5273
+  ],
+  "per_role": {
+    "base": {
+      "same_chip_reference_fraction": 0.9813166420249106,
+      "same_chip_references": 28857972,
+      "tiles": 28728,
+      "valid_references": 29407401
+    },
+    "fallback": {
+      "same_chip_reference_fraction": 0.9673509251515949,
+      "same_chip_references": 4010398,
+      "tiles": 5319,
+      "valid_references": 4145753
+    }
+  },
+  "preshifted_vector_verification": {
+    "bit_mismatches_by_split": [
+      0,
+      0,
+      0
+    ],
+    "first_mismatch_by_split": [
+      null,
+      null,
+      null
+    ],
+    "passing": true,
+    "schema": "tt_gmg_canonical_pcg_gather_verification_v1",
+    "vector_manifest": {
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_packed_vector_random_seed351.json",
+      "sha256": "79fb5dd308e7ef613dbf34813b4b9dadbe36b5baed1dc1705acdba8aae0b3daf",
+      "vector_tag": "random_seed351"
+    },
+    "verified_bf16_words": 314523648,
+    "verify_seconds": 1.1676108837127686
+  },
+  "reference_reuse_per_output_group": {
+    "max": 13.279538904899136,
+    "mean": 11.043336404343465,
+    "min": 6.471291072021241,
+    "p50": 11.377777777777778,
+    "p90": 12.624657534246575,
+    "p95": 12.741013824884792,
+    "p99": 12.931711880261927
+  },
+  "remote_halo_bf16x3_bytes_per_apply": 1597968,
+  "remote_halo_fp32_bytes_per_apply": 1065312,
+  "remote_halo_unique_input_positions_total": 88776,
+  "same_chip_input_pages_per_gather_tile": {
+    "max": 39.0,
+    "mean": 6.1779011366640235,
+    "min": 1.0,
+    "p50": 6.0,
+    "p90": 10.0,
+    "p95": 13.0,
+    "p99": 19.0
+  },
+  "same_chip_neighbor_fraction": 0.9795910691436042,
+  "same_chip_neighbor_references": 32868370,
+  "schema": "tt_gmg_canonical_pcg_gather_analysis_v1",
+  "single_page_affine_lane_tile_fraction": 0.037037037037037035,
+  "single_page_affine_lane_tiles": 1261,
+  "unique_input_pages_per_output_group": {
+    "max": 62.0,
+    "mean": 15.396510705789057,
+    "min": 7.0,
+    "p50": 14.0,
+    "p90": 20.0,
+    "p95": 26.0,
+    "p99": 41.40000000000009
+  },
+  "unique_input_positions_per_output_group": {
+    "max": 3224.0,
+    "mean": 2442.3203806502775,
+    "min": 1850.0,
+    "p50": 2422.0,
+    "p90": 2763.0,
+    "p95": 2868.0,
+    "p99": 3050.6000000000004
+  },
+  "valid_gather_tiles": 34047,
+  "valid_neighbor_node_references": 33553154,
+  "valid_references_per_output_group": {
+    "max": 27648.0,
+    "mean": 26608.369547977796,
+    "min": 16785.0,
+    "p50": 27648.0,
+    "p90": 27648.0,
+    "p95": 27648.0,
+    "p99": 27648.0
+  }
+}

@@ -1,0 +1,161 @@
+{
+  "acceptance_complete": false,
+  "contract_schema": "tt_gmg_gate_contract_v1",
+  "correctness": {
+    "full_ccx": {
+      "evidence": null,
+      "note": "The full 107.0569734213 golden has not run through the TT backend and CCX output path.",
+      "status": "open"
+    },
+    "reduced_dump": {
+      "evidence": "../TT_GMG_STRATEGY.md#correctness-gate-banked-on-real-tt--2026-07-03",
+      "max_u": 95.8129714,
+      "rc": 0,
+      "status": "green",
+      "tol": 1e-06,
+      "true_relative_residual": 1.13e-06
+    },
+    "safety_path": {
+      "note": "The fp64 gate exists in gmg_solve.cpp, but final TT fallback behavior must be exercised in CCX.",
+      "status": "code_present_unaccepted"
+    }
+  },
+  "performance_gates": [
+    {
+      "blockers": [
+        "median 8.25 exceeds 3 seconds"
+      ],
+      "budget_maximum": 3.0,
+      "evidence": "../TT_GMG_STRATEGY.md#t-g1-measured-cpu-only-no-device--2026-07-03",
+      "id": "G1",
+      "label": "cold_host_setup",
+      "median": 8.25,
+      "metric": "seconds",
+      "note": "Exceeds the 3.0 s budget. Cacheability does not turn the cold gate green.",
+      "sample_count": 1,
+      "samples": [
+        8.25
+      ],
+      "status": "red"
+    },
+    {
+      "blockers": [
+        "median 0.547659 exceeds 0.3 seconds"
+      ],
+      "budget_maximum": 0.3,
+      "evidence": "../evidence/device_v1/brick_spmv_run66_canonical_packed_base_fallback_reverse_freshboot_infra_retry.log",
+      "id": "G2",
+      "label": "full_bf16x3_upload",
+      "median": 0.547659,
+      "metric": "seconds",
+      "note": "Run66 measured a complete exact canonical bf16x3 operator representation on all 8 chips. The 0.547659 s measurement is conservative: its 943,718,400-byte timed region includes all three replicated base palettes, all three partitioned fallback streams, all three resident packed input-vector streams, and zero-initialization of the fp32 output. It improves the previous 0.62 s complete-upload evidence but still exceeds the 0.3 s budget by 0.247659 s.",
+      "sample_count": 1,
+      "samples": [
+        0.547659
+      ],
+      "status": "red"
+    },
+    {
+      "blockers": [],
+      "budget_maximum": 0.003,
+      "evidence": "../evidence/device_v1/brick_spmv_run66_canonical_packed_base_fallback_reverse_freshboot_infra_retry.log",
+      "id": "G3",
+      "label": "correct_persistent_resident_x_fine_spmv",
+      "median": 0.001858679,
+      "metric": "seconds",
+      "note": "Run66 is the first G3-green hardware bundle: correct full bf16x3 reverse-order canonical base-palette plus exact fallback apply across all 8 Wormhole chips, with resident packed input vectors, a persistent program, and no host x/y round trip. Samples were 1.945499/1.822259/1.858679 ms (median 1.858679 ms); warmup and all samples matched the dense fp32 reference with L2 relative error 9.314343407e-7, max relative error 1.590476355e-6, max absolute error 1.525878906e-4, and no non-finite values. Run65 was an infrastructure-only Ethernet-core timeout before kernel execution and contributes no candidate timing or correctness claim.",
+      "sample_count": 3,
+      "samples": [
+        0.001945499,
+        0.001822259,
+        0.001858679
+      ],
+      "status": "green"
+    },
+    {
+      "blockers": [
+        "needs 3 sample(s), has 0",
+        "missing evidence tags: real_row236, real_8x_wormhole, complete_pcg, device_resident_vectors, fp64_true_residual_gate, correct_output, measured, durable"
+      ],
+      "budget_maximum": 1.0,
+      "evidence": "../../resume.md#10-the-remaining-work-exact-next-steps-to-close-the-4-timing-gates",
+      "id": "G4",
+      "label": "complete_accelerated_pcg",
+      "median": null,
+      "metric": "seconds",
+      "note": "Only a projection exists; resident-vector PCG is not implemented.",
+      "sample_count": 0,
+      "samples": [],
+      "status": "open"
+    },
+    {
+      "blockers": [],
+      "budget_maximum": 0.2,
+      "evidence": "../../resume.md#1-the-8-gates-from-tt_gmg_strategymd-lines-48-60",
+      "id": "G5",
+      "label": "solution_download_and_unpermute",
+      "median": 0.013,
+      "metric": "seconds",
+      "note": "Component-scope pass; remeasure in the final acceptance bundle.",
+      "sample_count": 1,
+      "samples": [
+        0.013
+      ],
+      "status": "green"
+    },
+    {
+      "blockers": [
+        "needs 3 sample(s), has 0",
+        "missing evidence tags: real_row236, real_8x_wormhole, complete_solver_run, cold_setup, full_upload, fp64_true_residual_gate, correct_output, measured, durable"
+      ],
+      "budget_maximum": 5.0,
+      "evidence": "../../resume.md",
+      "id": "COLD",
+      "label": "cold_complete_solver_run",
+      "median": null,
+      "metric": "seconds",
+      "note": "Unmeasured.",
+      "sample_count": 0,
+      "samples": [],
+      "status": "open"
+    },
+    {
+      "blockers": [
+        "needs 3 sample(s), has 0",
+        "missing evidence tags: real_row236, real_8x_wormhole, complete_solver_run, cache_hit_proven, operator_resident, fp64_true_residual_gate, correct_output, measured, durable"
+      ],
+      "budget_maximum": 1.5,
+      "evidence": "../../resume.md",
+      "id": "WARM",
+      "label": "warm_complete_solver_run",
+      "median": null,
+      "metric": "seconds",
+      "note": "Unmeasured; no cache-hit proof.",
+      "sample_count": 0,
+      "samples": [],
+      "status": "open"
+    },
+    {
+      "blockers": [
+        "needs 3 sample(s), has 0",
+        "missing evidence tags: real_row236, real_8x_wormhole, complete_solver_run, cold_setup, full_upload, overlap_measured, critical_path_reported, fp64_true_residual_gate, correct_output, measured, durable"
+      ],
+      "budget_maximum": 2.0,
+      "evidence": "../../resume.md",
+      "id": "STRETCH",
+      "label": "cold_overlapped_complete_solver_run",
+      "median": null,
+      "metric": "seconds",
+      "note": "Unmeasured; no overlap proof.",
+      "sample_count": 0,
+      "samples": [],
+      "status": "open"
+    }
+  ],
+  "performance_score": {
+    "green": 2,
+    "total": 8
+  },
+  "schema": "tt_gmg_gate_report_v1",
+  "target": "row236_8x_wormhole"
+}

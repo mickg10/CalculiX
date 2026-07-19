@@ -1,0 +1,60 @@
+{
+  "brick_operator": "/home/ttuser/ttgmg/staged/row236_brick_v1.bin",
+  "fine_dump": "/home/ttuser/ttgmg/staged/row236_fine.bin",
+  "metadata": {
+    "active_nodes": 1290738,
+    "occupancy_count": 1290738,
+    "pass": true,
+    "roundtrip_ok": true
+  },
+  "pass": true,
+  "schema": "tt_gmg_brick_operator_verification_v1",
+  "thresholds": {
+    "constant_max_error_over_term_scale": 2e-06,
+    "l2_relative": 2e-05,
+    "max_relative": 5e-05
+  },
+  "vectors": [
+    {
+      "brick_oracle_seconds": 7.434978246688843,
+      "l2_relative": 1.4530037482498546e-07,
+      "max_absolute": 3.680495275659723e-05,
+      "max_error_over_term_scale": 1.963362406697458e-08,
+      "max_relative": 3.8363067391420775e-07,
+      "name": "random",
+      "pass": true,
+      "reference_seconds": 1.2209219932556152
+    },
+    {
+      "brick_oracle_seconds": 7.43400239944458,
+      "l2_relative": 5.677920059753082e-06,
+      "max_absolute": 1.0132789611150272e-05,
+      "max_error_over_term_scale": 2.645200920134236e-08,
+      "max_relative": 6.84598806800237e-07,
+      "name": "smooth",
+      "pass": true,
+      "reference_seconds": 1.0068004131317139
+    },
+    {
+      "brick_oracle_seconds": 7.38765549659729,
+      "l2_relative": 1.2102066273815126e-07,
+      "max_absolute": 1.777335693020632e-05,
+      "max_error_over_term_scale": 1.070192885818527e-08,
+      "max_relative": 2.5944221254596724e-07,
+      "name": "boundary",
+      "pass": true,
+      "reference_seconds": 1.0079407691955566
+    },
+    {
+      "brick_oracle_seconds": 7.3411171436309814,
+      "l2_relative": 9.89581200507358e-06,
+      "max_absolute": 4.7087669450274205e-06,
+      "max_error_over_term_scale": 1.3789431501749933e-08,
+      "max_relative": 2.697332965946918e-07,
+      "name": "constant",
+      "pass": true,
+      "reference_seconds": 1.0273423194885254
+    }
+  ],
+  "verification_seconds": 35.607882022857666
+}

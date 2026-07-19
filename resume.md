@@ -1,21 +1,68 @@
 # TT-GMG row236 — RESUME STATE (ultra-thorough handoff)
 
+> **CURRENT CORRECTION — read this before the historical handoff below (2026-07-15, Run67 update):** this file captured an
+> optimistic earlier checkpoint. `tt_gmg/GATE_CONTRACT.md`, `tt_gmg/gates/gate_contract.json`, and the generated
+> `tt_gmg/gates/current_report.md` are now authoritative. The original program has eight performance gates;
+> correctness is a separate invariant. The honest score is **2/8 green** (G3 and G5), with reduced-dump
+> correctness separately green. G1 is red at about `8.25 s`; G2 is red at Run66's measured `0.547659 s`; and G3
+> is green from Run66's correct persistent fixed-resident-x samples `1.945499/1.822259/1.858679 ms`, median
+> `1.858679 ms` versus `3 ms`. G4, cold, warm, stretch, and full-CCX acceptance remain open. Any `4/8`, `5/8`,
+> “G1/G2 closed,” projected-pass, or “single remaining uncertainty” wording below is superseded history.
+>
+> **Current implementation state after Run67:** Run66 remains the qualifying G3 frontier. The affine A-low family
+> was vectorized/precomputed, but run54 deadlocked and runs55–57 repeated the same two device errors under fixed,
+> zero, and dummy-NOC cadence; that family is closed device-incorrect. Run58/58b and run59 were infrastructure-only
+> negatives. The split-A retry run59b was correct but slower (`3.505936 ms` median). A complete raw-operator audit
+> then proved every corner entry is one of three exact BF16x3 triples sharing one presence pattern. The lossless
+> compressed-buffer run60 was correct but slower (`3.532192 ms`); the fixed-27-page, original-buffer reuse run61
+> removed its CB/source-switch cost but still measured `3.405163 ms`. Exact corner-coefficient traffic is therefore
+> closed as the G3 wall. A joint inversion-symmetric A-low/B-low host search found four-vector-green masks, but the
+> precision ceiling is only 36 omitted low products versus run52's 18—far too little at the measured slope to
+> justify another disruptive boot. Run66 then changed the representation to canonical-base plus exact
+> dense-fallback and closed G3. The exact changing-x page reader then reached hardware in Run67: plan preflight
+> passed; upload measured `282.974 ms` for `411,188,224` bytes; build measured `7.103 ms`; warmup correctness was
+> RED with `50,858` nonfinite outputs. The failure is diagnosed as a Tenstorrent circular-buffer cycle violation:
+> variable `7..62` page advances crossed a 62-page staging CB end, and compact mode-3 `1/2/3` low-split advances
+> crossed a three-page CB end. The group-84 `-inf` concentration matches the simulated crossing. The local fix
+> reserves each complete stage allocation once as fixed-address L1 scratch, never pushes that scratch CB, and uses
+> full three-page low-split publish cycles; all `29/29` local tests pass.
+> Remote host/offline compilation and a new fresh-boot device confirmation are pending. Persistent device-vector
+> PCG/G4 remains gated on that correctness proof, adjacent-chip halo exchange, resident vector operations/reductions,
+> and the complete fp64 true-residual path. See `tt_gmg/RUN67_CANONICAL_DYNAMIC_CB_FAILURE_ANALYSIS.md`.
+>
+> **Names/infrastructure:** “BNC” means the QuietBox **BMC**; “GVM” means the GL.iNet **KVM** (`glmkvmigor`);
+> **GMG** is geometric multigrid. There is no GVM compute subsystem. A live AWS `default` IAM-user profile is
+> present and STS identity succeeds, but that principal is denied billing and global resource discovery, so account
+> existence is proven while inventory and spend remain unknown. The reachable solver path is private physical/
+> virtual compute. See
+> `tt_gmg/CLOUD_AND_MANAGEMENT_AUDIT_2026-07-14.md`. Passwordless SSH and `sudo -n` are sufficient; no supplied
+> password is needed or recorded. BMC cycles remain subject to the strict idle/jobs/D-state/holder preflight,
+> `tt-fold` must be restored after every hardware window, and `tt-smi -r` remains forbidden.
+>
+> **Current site reachability:** after Run67's runner restored and verified `tt-fold`, both `tt-quietbox` and
+> `glmkvmigor` went tailnet-offline within 12 seconds of each other (last seen `15:59:50.1Z` and `15:59:38.1Z`).
+> The Mac Tailscale backend and unrelated peers remain healthy. Treat this as a shared remote-site power/WAN/LAN/
+> Tailscale-path outage until one management path returns. Do not issue a blind power action. The Run67/BMC logs
+> remain remote and must be recovered verbatim rather than reconstructed.
+
 ## THE GOAL (the standing directive this work was driving toward — recorded verbatim)
 
 > read and reread calculix-fork/TT_GMG_STRATEGY.md. Make sure to require ALL gates it says. Do not complete until
 > done. DO NOT GIVE UP - IF YOU LOOK AT a 3 month integration - GO AHEAD AND PLOW INTO IT! You like hard problems -
 > diving into hard things is your job!
 
-Meaning: close ALL 8 gates in `TT_GMG_STRATEGY.md` (G1 setup ≤3s, G2 upload ≤0.3s, G3-correctness maxU=golden,
-G3-timing ≤3ms, G4 PCG-solve ≤1s, G5 output ≤0.2s, TOTAL cold ≤5s, TOTAL warm ≤1.5s, stretch ≤2s) for row236 on
-the 8×Wormhole tt-quietbox — do not stop until every gate is measured-closed on hardware. Status at handoff: 4/8
-closed (G1, G2, G3-correctness, G5); 4/8 timing gates de-risked to measured facts but NOT formally closed (need
-the brick-stencil resident-x SpMV + x-resident PCG + full-solve measurement — the multi-day integration in §10).
-(This goal was `/goal clear`-ed at session end; recorded here so the resume is self-contained.)
+Meaning under the reconciled contract: close all eight **performance** gates (G1–G5, cold, warm, stretch) for
+row236 on the 8×Wormhole QuietBox while retaining correctness as a separate mandatory acceptance invariant. Current
+status is 2/8 green, not 4/8. G3/G5 are green; G1/G2 are measured red; G4/cold/warm/stretch are open; reduced-dump
+correctness is separately green; full-CCX correctness/integration is open. (The old goal was `/goal clear`-ed at that
+session end; the directive is retained here so the resume is self-contained, but status comes from the gate report.)
 
 ---
 
-**Last updated:** 2026-07-14 (session end). **Branch:** `accel-gmg-backend` (fork `github.com/mickg10/CalculiX.git`).
+**Last updated:** 2026-07-19 (publication audit). **Branch:**
+`tt-gmg-run67-pack-registry-20260719` (fork
+`github.com/mickg10/CalculiX.git`, branched from `accel-gmg-backend` at
+`7c77acff8df18a9edd5fe995db6974cd02d086a8`).
 **Goal file:** `calculix-fork/TT_GMG_STRATEGY.md` (the 8 gates). **Forensic trail:** `tt_gmg/GATHER_DESIGN.md`.
 **Executable plan:** `tt_gmg/stencil/IMPLEMENTATION_PLAN.md`.
 
@@ -23,15 +70,17 @@ the brick-stencil resident-x SpMV + x-resident PCG + full-solve measurement — 
 
 ## 0. ONE-PARAGRAPH SUMMARY
 
-Task: close ALL 8 gates in `TT_GMG_STRATEGY.md` for row236 (3.87M-DOF near-singular grid elasticity) on the
-8×Wormhole tt-quietbox. **4/8 gates are CLOSED and banked on real silicon** (G1 setup, G2 upload, G3-CORRECTNESS
-`maxU=95.8129714==golden`, G5 output). **4/8 timing gates are NOT closed** (G3-timing ≤3ms, G4 ≤1s, cold ≤5s,
-warm ≤1.5s, stretch ≤2s) but are **de-risked to measured facts on hardware**: the fine-SpMV wall was broken **9×
-(40ms → 4.4ms)** by swapping the scalar b-materialize for the DMA-tile `mac_reader`; the a-stream floor is 2.8ms;
-the operator is a validated (machine-exact, rel_err 3.83e-16) 27-point stencil with 101 distinct 3×3 blocks; and
-≤3ms is achievable at the BW the strategy's own `spmv_mac` (3.46ms) already demonstrated. The REMAINING WORK is a
-multi-day integration: the correct **brick-stencil SpMV** (box-ordered output, resident-x shift-produced b) +
-**batched-DMA** to hit peak BW + **x-resident PCG** loop + a **full solve to golden under budget**.
+Task: close the exact eight-gate TT contract for row236 (3.87M-DOF near-singular grid elasticity). The brick-major
+resident-x implementation is real and correct, not projected. Run66 is the current G3 frontier at a `1.858679 ms`
+median on all eight chips, below the `3 ms` budget. It uses the canonical-base plus exact dense-fallback packed
+operator and one fixed pre-shifted resident vector. Runs54–61 close affine folding, split-A redistribution, and exact
+corner-coefficient compression as device-negative/slower lever families; Run52 remains historical arithmetic
+evidence. The exact host changing-x map and selected page plan replay the fixed-vector bundle bit-for-bit. Run67
+measured its upload inside G2's budget but failed the first device apply because of the now-fixed CB cycle defect.
+The current durable score remains **2/8** (G3 and G5), with reduced-dump correctness green, until the original
+Run67 log is recovered and hashed. The program still needs fixed-reader device correctness, resident device-vector
+PCG, full-CCX integration, and separate cold/cache-hit-warm/overlap measurements. No estimate, missing log,
+timeout, infrastructure failure, or host-only plan is a pass.
 
 ---
 
@@ -41,34 +90,36 @@ North-star: solve row236 in ≤5s cold, golden `maxU`, fp64 outer PCG + true-res
 
 | id | what | budget | STATUS |
 |----|------|-------:|--------|
-| G1 | setup (host: hierarchy + BCSR + bf16×3 terms) | ≤3.0s | ✅ CLOSED (cacheable; 7.7s incl 2.6GB dump read, hierarchy ~3s) |
-| G2 | matrix upload host→8 chips (one-time) | ≤0.3s | ✅ CLOSED (0.116s measured) |
-| G3-correctness | maxU==golden, true_rel<min(2·tol,1e-2) | — | ✅ CLOSED, banked e2e on silicon (maxU=95.8129714, true_rel 1.13e-6, ~89 iters) |
-| G3-timing | one fine SpMV (8-chip, bf16×3) | ≤3ms | ❌ NOT closed — measured 4.4ms (a+b), 2.8ms (a-only floor); brick-stencil ~2.3-3.7ms BW-dependent |
-| G4 | PCG solve (228 SpMVs + host fp64 PCG + PCIe residual) | ≤1.0s | ❌ NOT closed — needs ≤3ms SpMV + x-resident PCG (est ~0.68s) |
-| G5 | output / un-permute | ≤0.2s | ✅ CLOSED (0.013s measured) |
-| TOTAL cold | | ≤5.0s | ❌ NOT closed (est ~3.7s with the above) |
-| TOTAL warm (setup cached) | | ≤1.5s | ❌ NOT closed (est ~0.68s) |
-| Stretch cold | | ≤2.0s | ❌ NOT closed |
+| G1 | setup (host: hierarchy + BCSR + bf16×3 terms) | ≤3.0s | RED — `8.25 s` cold. Cacheability does not close a cold gate. |
+| G2 | complete matrix upload host→8 chips | ≤0.3s | RED in the durable report at Run66 `0.547659 s`; Run67 measured `0.282974 s` for `411,188,224` bytes, but the original log is still remote and must be recovered/hashed before banking the independent G2 gate. |
+| G3 | correct persistent resident-x fine SpMV | ≤3ms | GREEN — Run66 median `1.858679 ms` from three correct samples. |
+| G4 | PCG solve including device vectors + fp64 true-residual decision | ≤1.0s | OPEN — persistent device-vector PCG not implemented/measured. |
+| G5 | output / un-permute | ≤0.2s | GREEN — `0.013 s`, component scope; remeasure in final bundle. |
+| COLD | full accelerated first run | ≤5.0s | OPEN — no qualifying complete run. |
+| WARM | full accelerated cache-hit run | ≤1.5s | OPEN — no proven cache-hit/resident-operator complete run. |
+| STRETCH | cold run with measured setup/upload overlap | ≤2.0s | OPEN — no overlap/critical-path report. |
 
 **Golden note:** strategy line 6 says `maxU=107.0569734213` for the FULL row236; the DUMP on the box
 (`row236_fine.bin`) is the REDUCED problem with golden `maxU=95.8129714`. The solve_driver labels 95.8129714 as
-GOLDEN. G3-correctness is banked for the reduced dump (that's what's on the box).
+GOLDEN. Reduced-dump correctness is banked separately (that's what's on the box). It is not a performance point and
+does not close the full-CCX golden/output-path invariant.
 
 ---
 
 ## 2. HARDWARE / ACCESS (all verified this session)
 
-- **Box:** tt-quietbox = 8×Wormhole (4× n300 boards → `/dev/tenstorrent/0..3`, 2 chips each). SSH:
-  `ssh -i ~/.ssh/id_rsa ttuser@100.117.137.85`. CPU: **AMD EPYC 8124P 16-core / 32 threads**.
-- **tt-metal:** `~/src/tt-metal`, v0.73.1, commit `25888ec`, build at `build_Release/build_Release`. Has fabric.hpp.
-  Python env: `/home/ttuser/src/tt-metal/python_env/bin/python` (numpy 1.26.4).
+- **Box:** tt-quietbox = 8×Wormhole (4× n300 boards → `/dev/tenstorrent/0..3`, 2 chips each). The currently
+  reliable SSH path uses `glmkvmigor` as a key-authenticated `ProxyCommand`; see §11. CPU:
+  **AMD EPYC 8124P 16-core / 32 threads**.
+- **tt-metal:** `/home/ttuser/src/tt-metal-073`, v0.73.1; build target at
+  `build_Release/programming_examples/metal_example_brick_spmv`. Do not substitute the older `~/src/tt-metal` tree.
 - **g++:** Ubuntu 13.3.0. LAPACK/BLAS: `liblapack libopenblas libblas` present.
 - **PASSWORDLESS SUDO WORKS** on the box: `sudo -n ipmitool ...`, `sudo -n systemctl ...`, `sudo -n fuser ...`
   all work with no password. (This is how device recovery + tt-fold management were done — no password ever
   written to a file.)
-- **BMC:** LAN 10.0.0.48. Recovery for a wedged device = `sudo -n ipmitool chassis power cycle` (retry through
-  the transient `0x91`/"unexpected ID" KCS desync — issue repeatedly until it acks "Chassis Power Control: Cycle").
+- **BMC:** ASRock Rack/SIENAD8-2L2T, firmware 2.05, IPMI 2.0, LAN 10.0.0.48. Recovery for a genuinely wedged
+  device is passwordless `sudo -n ipmitool chassis power cycle`, but only after the strict jobs/workload/D-state/
+  foreign-holder/users preflight. Do not issue repeated cycles casually; one acknowledged cycle is disruptive.
   DO NOT use `tt-smi -r` (re-wedges healthy cards via AER). After cycling, poll `test -e /dev/tenstorrent/0`;
   server cold-boot POST+boot ~150-170s.
 - **tt-fold** = the USER'S OTHER PROJECT ("TT-Fold portal — tt-bio controller (loopback) + FastAPI gateway
@@ -83,7 +134,7 @@ GOLDEN. G3-correctness is banked for the reduced dump (that's what's on the box)
 - Do NOT use `tt-smi -r`.
 - `pkill -9 -f <pattern>` can MATCH THE SSH COMMAND'S OWN cmdline → kills its own shell → truncated output. Kill by
   exact PID, or use a pattern the launch cmd doesn't contain, or `for p in $(pgrep -f solve_driver); do kill $p; done`.
-- **NEVER `kill -9` a multi-chip run MID-WORKLOAD.** It leaves Tensix cores in a bad run-state → EVERY later run
+- **NEVER manually interrupt a multi-chip run MID-WORKLOAD.** It leaves Tensix cores in a bad run-state → EVERY later run
   (incl. known-good) hangs at first apply with `TT_FATAL Read unexpected run_mailbox value 0x40`. Only recovery =
   BMC cold-cycle. Let the whrun 850s `timeout` end a hang (exit=124) — that path kept the device healthy.
 - A timed-out multi-chip run can leave a D-state proc holding all `CHIP_IN_USE_*_PCIe` locks; only BMC recovers.
@@ -127,7 +178,10 @@ GOLDEN. G3-correctness is banked for the reduced dump (that's what's on the box)
   with lattice lin-index (mostly z-fastest, gaps from inactive voxels).
 - **Grid box = nx×ny×nz = 559×273×229 = 34,947,003 voxels.** Active nb = 1,290,738 → **density 3.7%** (a lattice-
   cloud holder, mostly air).
-- **Only 101 DISTINCT 3×3 blocks** among all 33M (→ a 2-byte, actually 1-byte since <256, dictionary index/block).
+- The historical **“101 distinct 3×3 blocks”** statement was not computed: `stencil_poc.py` printed the literal
+  value. A full BF16x3 audit found many raw noise-distinct blocks, while the eight corner offsets alone have the
+  narrower exact three-triple structure used by runs60/61. Do not claim a global 101-entry dictionary without a
+  new measured canonicalization contract.
 - **Stencil-shift SpMV reproduces bspmv MACHINE-EXACT: rel_err 2.97e-16 (untiled) / 3.83e-16 (tiled 4^3 w/ halos).**
   (Validated on host in `stencil_poc.py` / `build_tiled_stencil.py`. The einsum must be `nj,nij->ni` = A·x, not Aᵀ·x.)
 - **Brick occupancy (spatial coherence):** 4^3 bricks → 25,284 occupied, covered_vol=1.62M = **1.3× active** (only
@@ -254,64 +308,60 @@ bf16×2-b for the b-stream cuts 1/3 of the b traffic; but a-only (resident-x) is
 
 ---
 
-## 10. THE REMAINING WORK — exact next steps to close the 4 timing gates
+## 10. THE REMAINING WORK — current measured route
 
-(From `tt_gmg/stencil/IMPLEMENTATION_PLAN.md`, refined by this session's measurements.)
+The original brick-major Step A is superseded by Run66's canonical packed base/fallback kernel. Run66 is correct,
+persistent, and G3-green at a `1.858679 ms` median. Its input is still one fixed pre-shifted vector, so it does not
+close changing-x residency or G4.
 
-### STEP A — verify G3-timing ≤3ms with a REAL correct b (the crux)
-Two sub-options; A2 is the real target:
-- **A1 (quick sanity):** pre-store the REAL b (host gather `b[e,k]=x[nbr[e,k]]` in the a tile-major layout), run
-  `SPMV_MAC_READER=1` → get a CORRECT SpMV at ~4.4ms (bf16×3) confirming the structure end-to-end. (b upload is
-  1.8GB/apply — fine for a one-shot benchmark, NOT the solve.) Then bf16×2-b → ~3.67ms; still >3ms → confirms A2 needed.
-- **A2 (the real kernel):** build the **brick-stencil resident-x SpMV**:
-  1. Serialize the tiled operator: `tt_gmg/stencil/serialize_tiled.py` writes `/tmp/row236_stencil.bin` (1.89GB
-     actual / 2.36GB padded): header(nb,nbrick,B=4,nx,ny,nz) + brick coords + 27-way brick-neighbor table +
-     node→brick map + A27 (per active node, 27 offsets × 3×3, bf16×3 split hi/mid/lo).
-  2. Lay out **x on the dense brick-box** (occupied 4^3 bricks, 1.3× active ≈ 1.62M positions × bf16×3 ≈ 30MB) —
-     RESIDENT in SRAM (26MB/chip < 120MB). Output ALSO box-ordered (occupied bricks) so b is a contiguous shift.
-  3. Reader: stream a (brick-stencil, 2.36GB) + read b = x[node+offset_o] from RESIDENT brick x (in-brick contiguous
-     tile read + 1-voxel halo from neighbor brick via brick_nbr). Element-level misalignment (offset mod tile):
-     read 2 adjacent pages + realign (unpacker/tilize). NO scalar loop, NO b-materialize, NO b DRAM stream.
-  4. **Batched-DMA:** read multiple tiles per noc_async_read to lift BW from ~80-100 to the strategy's ~130
-     GB/s/chip → brick-a 2.36GB → ~2.27ms ≤3ms. THIS is the uncertain lever — must measure.
-  5. MAC = the existing bf16×3 compensated mac_compute (6 terms).
-  6. Validate the CORRECT output vs the machine-exact host reference (stencil_poc.py) — must match.
+### STEP A — G3 complete; changing-x reader hardware fix pending
 
-### STEP B — x-resident PCG (closes G4/cold/warm)
-Keep x/y RESIDENT on device across PCG iters; ship only the scalar dot-products over PCIe (device reduction, or a
-tiny read). Removes the measured xwrite=5.1 + readback=8.9 + host round-trip per apply. Touches `gmg_solve.cpp`
-(the PCG loop / g_tt_fine_spmv interface) + `tt_spmv.cpp` (keep x/y resident, expose scalar dots). Then per-apply
-≈ workload + scalars ≈ 3-5ms → G4 ≈ 228×3-5ms ≈ 0.68-1.14s.
+Run66 is the measured frontier; Run52 and Runs59b–61 remain closed historical evidence. The default-off dynamic
+page reader specified in `tt_gmg/CANONICAL_PCG_RESIDENCY_DESIGN.md` has now reached hardware. Its host contract is
+complete: all `314,523,648` fixed-vector BF16 words replay exactly; raw, unique-node, and page-stream maps reconstruct
+with zero mismatches; canonical order has better chip locality than a second spatial vector. Run67 exposed and
+localized the device CB-cycle bug described above. The fix is locally tested. Before another workload, rebuild the
+host harness, repeat host preflight, and compile both dynamic BRISC/TRISC role sets offline on QuietBox.
 
-### STEP C — full solve to golden + measure all budgets
-Run `ccx_gmg_solve_from_dump` with the A2 kernel + B resident PCG, confirm `maxU=95.8129714` (true_rel<3e-3) AND
-measure G3-timing (one SpMV), G4 (PCG solve), cold (total), warm (setup cached). Report each vs its budget.
+### STEP B — persistent device-vector PCG
+
+G3 is green. Keep canonical PCG vectors on device, implement adjacent-chip halo exchange plus device vector
+operations/reductions, and include scalar transfer and the fp64 true-residual decision in the G4 timing boundary.
+No traffic projection closes G2 or G4.
+
+### STEP C — full acceptance bundle
+
+Run the unchanged opt-in CCX path, verify reduced and full goldens at their proper scopes, exercise CPU fallback,
+and collect separate three-sample G4, cold, proven-cache-hit warm, and explicit setup/upload-overlap reports. Re-run
+G5 in the final bundle. Generate the score only with `tt_gmg/gates/evaluate_gates.py`.
 
 ---
 
-## 11. COMMANDS CHEAT-SHEET (verified this session)
+## 11. SAFE COMMANDS CHEAT-SHEET (current)
 
 ```bash
-TT="ttuser@100.117.137.85"; K=~/.ssh/id_rsa
-# device health
-ssh -i $K $TT 'for d in 0 1 2 3; do test -e /dev/tenstorrent/$d && echo -n "d$d=OK ";done;echo; echo "tt-fold=$(systemctl is-active tt-fold) busy=$(ls /tmp/*IN_USE* 2>/dev/null|wc -l) dstate=$(ps -eo stat|grep -c "^D")"'
-# free devices for a run
-ssh -i $K $TT 'sudo -n systemctl stop tt-fold; sleep 5; for d in 0 1 2 3; do sudo -n fuser /dev/tenstorrent/$d >/dev/null 2>&1 && echo -n h||echo -n F;done;echo'
-# RESTORE after (ALWAYS)
-ssh -i $K $TT 'sudo -n systemctl start tt-fold; sleep 8; echo tt-fold=$(systemctl is-active tt-fold)'
-# re-stage /tmp after reboot (symlinks, not copies!)
-ssh -i $K $TT 'mkdir -p /tmp/kernels; ln -sf ~/ttgmg/staged/row236_real_op.bin /tmp/row236_real_op.bin; ln -sf ~/ttgmg/staged/row236_nbr.bin /tmp/row236_nbr.bin'
-# BMC recovery (ONLY if wedged: run_mailbox 0x40 on every run)
-ssh -i $K $TT 'for t in 1 2 3 4 5 6; do sudo -n ipmitool chassis power cycle 2>&1|tail -1|grep -qi cycle && break; sleep 4; done'  # then wait ~170s, poll /dev/tenstorrent/0
-# deploy + run (from local repo dir)
-B64=$(base64 < tt_gmg/tt_spmv.cpp|tr -d '\n'); ssh -i $K $TT "echo $B64|base64 -d >/tmp/tt_spmv.cpp"
-# ... deploy kernels to /tmp/kernels/*.cpp similarly ...
-ssh -i $K $TT 'rm -rf /tmp/whhome; mkdir -p /tmp/whhome/.cache/tt-metal-cache; nohup bash /tmp/whrun_solve.sh FABRIC_1D 8 >/tmp/run.log 2>&1 & echo launched'
-# read PHASE timing (workload = G3-timing proxy)
-ssh -i $K $TT 'grep -aE "PHASE|SOLVE|maxU|GOLDEN|applies=" /tmp/wh.err /tmp/wh.out 2>/dev/null | grep -aviE "0x[0-9a-f]{6}"|tail -6'
-# CPU-GMG baseline (no device, tt-fold undisturbed)
-ssh -i $K $TT 'cd /tmp && OMP_NUM_THREADS=16 /home/ttuser/src/tt-metal/python_env/bin/python /tmp/cpu_solve.py'  # ~20s, maxU=95.8129717
+TT="ttuser@100.117.137.85"
+PROXY="ssh -i ~/.ssh/glmkvm -o BatchMode=yes -W %h:%p root@glmkvmigor"
+
+# Read-only health. Seeing this command itself in pgrep output is harmless.
+ssh -i ~/.ssh/id_rsa -o BatchMode=yes -o "ProxyCommand=$PROXY" "$TT" \
+  'cat /proc/sys/kernel/random/boot_id; systemctl is-active tt-fold; \
+   curl -fsS http://100.117.137.85:8099/api/jobs; \
+   ps -eo stat= | awk '\''/^D/{n++} END{print "dstate=" n+0}'\''; \
+   pgrep -af "metal_example_brick_spmv|run_brick_hw" || true'
+
+# Hardware workloads use only the hardened runner. It checks empty jobs, a fresh boot ID,
+# service settle time, conflicts, D-state, holders, and devices; its EXIT trap restores tt-fold.
+ssh -i ~/.ssh/id_rsa -o BatchMode=yes -o "ProxyCommand=$PROXY" "$TT" \
+  '/home/ttuser/ttgmg/brick_v1/run_brick_hw.sh \
+   /home/ttuser/ttgmg/evidence/device_v1 <new_unique_run_tag>'
 ```
+
+Never manually interrupt the TT workload, never run a second TT workload on the same boot ID, and never use
+`tt-smi -r`. A BMC cold cycle is not a routine pre-run step: use passwordless `sudo -n ipmitool` only after a
+separate strict portal-jobs/workload/D-state/foreign-holder/users audit. The BMC can reboot the user's `tt-fold`
+host, so confirm the portal returns active with empty jobs afterward. The runner, not an ad-hoc `stop/start`, owns
+normal service restoration.
 
 ---
 
@@ -321,7 +371,8 @@ ssh -i $K $TT 'cd /tmp && OMP_NUM_THREADS=16 /home/ttuser/src/tt-metal/python_en
 - `SPMV_MAC_READER path` (pre-stored-b DMA reader) + `deep CB prefetch depth 24`.
 - `*** GATES REACHABLE ***` (4^3 tiled stencil-shift 1.3× active → 2.36GB → ~1.4ms) + retracts impossibility.
 - `serialize tiled-stencil operator to TT-uploadable binary` + `build+validate tiled-stencil (rel_err 3.83e-16)`.
-- `*** BREAKTHROUGH: timing gates ARE reachable ***` (27-pt stencil, 101 blocks, machine-exact).
+- `*** BREAKTHROUGH: timing gates ARE reachable ***` (historical commit title; its 27-offset/exact-shift result is
+  valid, but the literal “101 blocks” subclaim is retracted by the full audit).
 - `CORRECT earlier error (nbr is column-sorted, not geometric)` + `3.7%-dense grid root cause`.
 - `IMPLEMENTATION_PLAN.md` (Step 1/2/3, exact edits).
 - `device recovered via BMC cold-cycle; both readers re-validated on silicon; 3 stale repo-kernel bugs fixed`.
@@ -333,18 +384,47 @@ All pushed to `origin/accel-gmg-backend`.
 
 ---
 
-## 13. STATE AT SESSION END (verified)
-- Device: all 4 boards OK, healthy, NOT wedged.
-- tt-fold: **active** (restored), holders=1 (reclaiming devices).
-- Repo working tree: proven per-node gather_reader + depth-3 gather CB restored as the default (gather path); the
-  SPMV_MAC_READER/depth-24 path is behind env flags. All committed + pushed. HEAD is the mac_reader-measurement commit.
-- The a-only diagnostic kernels (`mac_reader_aonly`, `mac_compute_aonly`) were left on `/tmp/kernels/` on the box
-  and are NOT in the repo — recreate from §6 / GATHER_DESIGN.md if needed. The box `/tmp/kernels/mac_reader.cpp`
-  and `mac_compute.cpp` were last the a-only diagnostic versions; **re-deploy the repo mac_compute.cpp (6-term)
-  and the box's mac_reader.cpp before any correctness run.**
+## 13. CURRENT STATE (verified 2026-07-15)
+
+- The best durable qualifying evidence is run66, correct at a `1.858679 ms` median. The generated gate evaluator
+  reports exactly `2/8` green and acceptance false.
+- Run52's selective b-low path retains `63/81` low-term products, passes all four host vectors, and is default-off.
+  Its device L2 relative error is `9.338409427e-7`.
+- Runs54–57 close affine A-low as device-incorrect. Run59b closes split-A as correct but slower. Runs60/61 close
+  exact corner compression/reuse as correct but slower. The host-only joint-mask search raises the omission ceiling
+  from 18 to 36 low products but is far too small at the measured slope to merit a hardware run.
+- Run66 consumed QuietBox boot ID `b9b8dca3-ec0a-49a8-9635-2789d6d17841`; it is **not** reusable. The final
+  closeout restored `tt-fold` with three online workers and three device holders; global controller/portal state is
+  idle.
+- Run67 consumed fresh boot `c94ec4dd-...`; it is **not** reusable. Its runner restored `tt-fold` and verified the
+  service/API/workers/holders/jobs state before the later simultaneous QuietBox/KVM outage. Recover the original
+  logs after the site reconnects; do not fabricate them from this handoff.
+- Runs45/46/48 are durable negative logs. Run49 repeated their exact fault after explicit FP32 DEST clearing, but
+  its raw tee was not retained or recoverable; it is recorded as an observation, never fabricated as a log.
+- Physical holder geometry and the Row681/Row682 authority were not modified by this APHYSICAL solver investigation.
 
 ## 14. THE SINGLE MOST IMPORTANT NEXT ACTION
-Build **Step A2** (brick-stencil resident-x SpMV) + **batched-DMA**, measure ONE correct SpMV's workload on
-hardware. If ≤3ms → G3-timing closes and the cascade (+Step B x-resident PCG) closes G4/cold/warm. If ~3.67ms →
-the batched-DMA BW tuning is the make-or-break lever (the strategy proved 130 GB/s/chip is attainable). This is
-the ONE remaining uncertainty; everything else (correctness, structure, the 9× wall-break) is measured and solid.
+
+Keep Run66 as the G3 frontier. Wait for the shared QuietBox/KVM site path to return; recover and hash the original
+Run67/BMC logs; verify `tt-fold`, global portal/controller state, session jobs, D-state, workload, and holders
+read-only. Deploy the CB-cycle fix, rebuild the host harness, run host preflight, and offline-compile both dynamic
+role sets. Only then use one strict BMC cycle and one guarded fresh boot for the fixed changing-x measurement. If it
+is correct and the measured budget supports G4, proceed to adjacent-chip halo exchange, persistent device vector
+operations, complete PCG, and the fp64 true-residual gate. Do not claim G2 before its original durable log is
+indexed, and do not claim G4/cold/warm/stretch/full CCX from Run67.
+
+## 15. RUN66 / RUN67 PCG RESIDENCY CHECKPOINT (2026-07-15)
+
+- Run66 G3: `1.858679 ms` median, correct; G2: `0.547659 s`, red.
+- Exact dynamic map report: `tt_gmg/evidence/device_v1/canonical_pcg_gather_analysis_v1.json`.
+- Selected design: `tt_gmg/CANONICAL_PCG_RESIDENCY_DESIGN.md`.
+- Same-chip references: `97.9591%`; adjacent-chip halo: `88,776` nodes / `1.598 MB` BF16×3.
+- Device page plan: `70.330180 MB` (`70.329036 MB` unpadded host factorization); vector page stream:
+  `344.181 MB/apply`; all reconstructions and all-word replay green.
+- Run67: upload `0.282974 s` / `411,188,224` bytes, build `0.007103 s`, warmup correctness red with `50,858`
+  nonfinite outputs; CB-cycle source fix locally green `29/29`, device rerun pending.
+- Local Row236 dump hashes match the QuietBox exactly; unmodified macOS CPU solve is `rc=0`, reduced
+  `maxU=95.8129717`, true relative residual `1.02e-6`.
+- AWS identity is live but inventory/billing authorization is denied; resource count and spend remain unknown.
+  BMC/KVM are private management paths, not compute clouds. The physical lattice cloud remains Row681 v18b;
+  Row236 is an APHYSICAL sparse voxel/operator workload.
