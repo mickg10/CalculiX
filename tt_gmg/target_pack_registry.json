@@ -1,19 +1,31 @@
 {
   "schema": "tt_gmg_target_pack_registry_pointer_v1",
   "repository": "https://github.com/mickg10/calculi_target_packs",
-  "registry_commit": "1fb01bf0d908ae9b555ce118a4db9fb9b06e3fa7",
-  "release_tag": "packs-v1-20260719",
+  "registry_commit": "05c17199de4a32f655b3c7949cedd1af18d19229",
+  "release_tag": "packs-v2-20260720",
+  "index_path": "packs/index.json",
+  "index_sha256": "7b4485811f214262232eb52e809ceed928e47b57582080cde1efac35560a5e84",
   "packs": {
     "matrix_free_payloaded_transfer_wip_20260719": {
-      "manifest_sha256": "9ebd9cfe01fa9ba57f1ffcf97e91f46f57f229802c5110f4a59935cea45bdad0",
+      "manifest_sha256": "7813f50775c665d698fd18ac082950b867945803bc9e6b3201d7c756ab74ce79",
       "status": "work_in_progress"
+    },
+    "matrix_free_payloaded_transfer_wip_20260720": {
+      "manifest_sha256": "d09b727e446c040b6f507bebeca35d729c56c0e7d0302787ed30f909328fb8e7",
+      "status": "work_in_progress",
+      "primary_object": {
+        "sha256": "311ab505657337acbd948d3e55549a631ba6bad28763500f4c8ca25e5c56d65d",
+        "bytes": 10582034,
+        "unpacked_sha256": "8edfbd2cad1fbda4626b7883b271bd5a47909d3da2dec54ac30db4683f83fb62",
+        "unpacked_bytes": 76482560
+      }
     },
     "modal_v18b_solver_targets_20260715": {
       "manifest_sha256": "cc3e4678f72ab25fcba17e71da90a209ab8d609e3852ed2c74b055f3acab3251",
       "status": "frozen"
     },
     "payloaded_modal_v18b_exact_decks_20260716": {
-      "manifest_sha256": "b958ec3447c9f1d45c38f3ee5b20a42932c597e7bcf051c514a9fe734fb4ef84",
+      "manifest_sha256": "1bd1d1c087e15cac5ebf36796d0d3aa012023f2c8ac54c6081f97130a9811192",
       "status": "frozen"
     },
     "rigid_body_modal_c3d8_20260716": {
