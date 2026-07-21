@@ -1,0 +1,27 @@
+{
+  "checks": {
+    "base_groups_contain_only_base_lanes": true,
+    "fallback_groups_contain_only_nonbase_lanes": true,
+    "fallback_operator_bitwise_exact": true,
+    "independent_q1e7_classification_exact": true,
+    "palette_and_schedule_bitwise_exact": true,
+    "permutation_bijective_on_active_lanes": true
+  },
+  "classification_mismatch_count": 0,
+  "created_unix_s": 1784119942.8370314,
+  "fallback_bit_mismatches_by_split": [
+    0,
+    0,
+    0
+  ],
+  "host_only": true,
+  "layout_manifest": {
+    "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_packed_layout.json",
+    "sha256": "a32fcd5fa2a00687488449aae7f1ac18acc2f1a96eac88d1ff367fda5b581f6e"
+  },
+  "palette_mismatches": 0,
+  "passing": true,
+  "schema": "tt_gmg_canonical_packed_layout_verification_v1",
+  "verified_active_lanes": 1290738,
+  "verify_seconds": 4.995065212249756
+}

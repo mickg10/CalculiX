@@ -1,0 +1,209 @@
+{
+  "brick_operator": {
+    "active_nodes": 1290738,
+    "path": "/home/ttuser/ttgmg/staged/row236_brick_v1.bin",
+    "sha256": "f1a956701882a164c3ddb62e522bbe1dc4111d2ce37990c746f7860b69fe4674",
+    "source_groups": 1581
+  },
+  "build_seconds": 7.330968856811523,
+  "canonical_export": {
+    "mask_path": "/home/ttuser/ttgmg/evidence/canonical_base_v1/canonical_base_lane_mask.u8",
+    "mask_sha256": "1866dd7e56e3af50fe47a291a37a74a78d4ad41760df1f9f92b96be6f564f40a",
+    "metadata_path": "/home/ttuser/ttgmg/evidence/canonical_base_v1/canonical_base_metadata.json",
+    "metadata_sha256": "ef949569ca2a18bd8f437d18e26bbbd6866c50e32b5c151cf0618cbd117655b2",
+    "quantum": 1e-07,
+    "signature_path": "/home/ttuser/ttgmg/evidence/canonical_base_v1/canonical_base_signature_q1e7.i32",
+    "signature_sha256": "689ece8f730617ead3afc09459f721f531dee3008f06f88056525c339f3b5ac8"
+  },
+  "created_unix_s": 1784119909.2034905,
+  "fallback_operator_layout": {
+    "order": "[chip][fallback_group][term][out_component][lane]",
+    "shape": [
+      8,
+      25,
+      81,
+      3,
+      1024
+    ]
+  },
+  "files": {
+    "fallback_a0": {
+      "bytes": 99532800,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/fallback_operator_a0.bf16",
+      "sha256": "b951d510f6a3a126aa2db6d8b2de0547982d41040578e8c153ac434bff6f5021",
+      "shape": [
+        8,
+        25,
+        81,
+        3,
+        1024
+      ]
+    },
+    "fallback_a1": {
+      "bytes": 99532800,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/fallback_operator_a1.bf16",
+      "sha256": "f1b5927f188e84beb1df42a07de9c9b403cf513ba9ac6545cfd497c0aa33d84f",
+      "shape": [
+        8,
+        25,
+        81,
+        3,
+        1024
+      ]
+    },
+    "fallback_a2": {
+      "bytes": 99532800,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/fallback_operator_a2.bf16",
+      "sha256": "05d539c92af411dea0487a5657fa8b65ed99c0f22d04626619ef224e8825212a",
+      "shape": [
+        8,
+        25,
+        81,
+        3,
+        1024
+      ]
+    },
+    "group_class": {
+      "bytes": 1264,
+      "dtype": "|u1",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/packed_group_class.u8",
+      "sha256": "9b04dc3b03cf29e9c0c973e75c55726673ec89aa18ac1330dcae87ad22069c28",
+      "shape": [
+        8,
+        158
+      ]
+    },
+    "packed_to_source": {
+      "bytes": 5177344,
+      "dtype": "<i4",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/packed_to_source_position.i32",
+      "sha256": "76d8cf292946751199cf65da3fc744d542054f4a664d5805f72e7b67886c1ef3",
+      "shape": [
+        8,
+        158,
+        1024
+      ]
+    },
+    "palette_a0": {
+      "bytes": 22528,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_base_palette_a0.bf16",
+      "sha256": "13aea3cebe12e1d7355955b6e73f4795aa661e86e7958c1f462f87bcdabf044a",
+      "shape": [
+        11,
+        1024
+      ]
+    },
+    "palette_a1": {
+      "bytes": 22528,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_base_palette_a1.bf16",
+      "sha256": "09245455e132ec8f7bd45e53ce399e1dc889183a8a92b8c09638688219a7733a",
+      "shape": [
+        11,
+        1024
+      ]
+    },
+    "palette_a2": {
+      "bytes": 22528,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_base_palette_a2.bf16",
+      "sha256": "bdc1a407616db228fa3dedded0c4444c01cfbf42638eeb4bf1aef180321c257b",
+      "shape": [
+        11,
+        1024
+      ]
+    },
+    "palette_q1e7": {
+      "bytes": 44,
+      "dtype": "<i4",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_base_palette_q1e7.i32",
+      "sha256": "89df8f9b2712f979360bdc7857c1b49b4dcfebb764b87e14266b2428800ebf85",
+      "shape": [
+        11
+      ]
+    },
+    "palette_schedule": {
+      "bytes": 243,
+      "dtype": "|u1",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_base_palette_index.u8",
+      "sha256": "70b9b1500aa2aee3f20e743f2f1682b6f3b06c8a0383d29010af22015575c335",
+      "shape": [
+        81,
+        3
+      ]
+    },
+    "source_to_packed": {
+      "bytes": 6488064,
+      "dtype": "<i4",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/source_to_packed_position.i32",
+      "sha256": "ac060fb9af50ac1d8b4a55d7411d18b814ac7896d1fe2d7abccb476cb4739e4d",
+      "shape": [
+        1622016
+      ]
+    }
+  },
+  "host_only": true,
+  "palette": {
+    "nonzero_scalar_planes": 153,
+    "size_including_zero": 11,
+    "term_output_schedule_shape": [
+      81,
+      3
+    ],
+    "zero_index": 5
+  },
+  "plan": {
+    "active_lanes": 1290738,
+    "base_groups_per_chip": [
+      133,
+      133,
+      133,
+      133,
+      133,
+      133,
+      133,
+      133
+    ],
+    "base_lanes": 1089163,
+    "base_tiles": 1064,
+    "chips": 8,
+    "fallback_groups_per_chip": [
+      25,
+      25,
+      25,
+      25,
+      25,
+      24,
+      24,
+      24
+    ],
+    "fallback_lanes": 201575,
+    "fallback_tiles": 197,
+    "groups_per_chip": 158,
+    "lanes_per_group": 1024,
+    "packed_padding_lanes": 3598,
+    "packed_tiles": 1261,
+    "schema": "tt_gmg_canonical_packed_plan_v1",
+    "source_lanes": 1622016,
+    "total_groups_per_chip": [
+      158,
+      158,
+      158,
+      158,
+      158,
+      157,
+      157,
+      157
+    ]
+  },
+  "schema": "tt_gmg_canonical_packed_layout_v1",
+  "source_device_layout": {
+    "groups_per_chip": 198,
+    "path": "/home/ttuser/ttgmg/device_v1/device_layout.json",
+    "sha256": "3a91a3550f880c7d839154e5ec133685e99a49b4b1797ee52d7d3a6a130402ae"
+  }
+}

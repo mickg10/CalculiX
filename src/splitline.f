@@ -30,6 +30,10 @@
       character*132 textpart(16)
       character*1320 text
 !
+#ifdef CCX_FAST_PARSE
+      call ccxsplit(text,textpart,n)
+      return
+#endif
       n=1
       j=0
       do i=1,1320

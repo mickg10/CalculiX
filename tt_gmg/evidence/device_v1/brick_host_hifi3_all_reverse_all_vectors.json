@@ -1,0 +1,98 @@
+{
+  "brick_operator": "/home/ttuser/ttgmg/staged/row236_brick_v1.bin",
+  "device_mac": {
+    "a_bf16_splits": 3,
+    "accumulator_bias": 0.0,
+    "accumulator_bias_scale": 0.0,
+    "accumulator_chunk_terms": 0,
+    "b_bf16_splits": 3,
+    "b_low_terms": null,
+    "cross_terms": 6,
+    "fidelity_batch_terms": 0,
+    "hifi2_products": [],
+    "hifi3_products": [],
+    "math_fidelity": 3,
+    "term_order": "reverse"
+  },
+  "fine_dump": "/home/ttuser/ttgmg/staged/row236_fine.bin",
+  "metadata": {
+    "active_nodes": 1290738,
+    "occupancy_count": 1290738,
+    "pass": true,
+    "roundtrip_ok": true
+  },
+  "pass": false,
+  "schema": "tt_gmg_brick_operator_verification_v1",
+  "thresholds": {
+    "constant_max_error_over_term_scale": 2e-06,
+    "l2_relative": 2e-05,
+    "max_relative": 5e-05
+  },
+  "vectors": [
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 91.9156723022461,
+        "minimum": -97.03202056884766
+      },
+      "brick_oracle_seconds": 24.877903938293457,
+      "l2_relative": 0.00011857879633105756,
+      "max_absolute": 0.013236986246013771,
+      "max_error_over_term_scale": 7.061278232108655e-06,
+      "max_relative": 0.00013797365772303885,
+      "name": "random",
+      "pass": false,
+      "reference_seconds": 3.6339850425720215,
+      "vector_max_absolute": 5.489653829320215
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 28.085355758666992,
+        "minimum": -15.598045349121094
+      },
+      "brick_oracle_seconds": 17.506925582885742,
+      "l2_relative": 0.006352834203836267,
+      "max_absolute": 0.007388570811592721,
+      "max_error_over_term_scale": 1.9288128007508648e-05,
+      "max_relative": 0.0004991919259834735,
+      "name": "smooth",
+      "pass": false,
+      "reference_seconds": 0.981497049331665,
+      "vector_max_absolute": 1.121784735399536
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 68.50379180908203,
+        "minimum": -66.96875
+      },
+      "brick_oracle_seconds": 17.42231035232544,
+      "l2_relative": 0.00012642197396406908,
+      "max_absolute": 0.010672137228169731,
+      "max_error_over_term_scale": 6.426048485334571e-06,
+      "max_relative": 0.0001557839020475014,
+      "name": "boundary",
+      "pass": false,
+      "reference_seconds": 0.9897618293762207,
+      "vector_max_absolute": 4.863473666854254
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 32.378822326660156,
+        "minimum": -17.897090911865234
+      },
+      "brick_oracle_seconds": 17.18752956390381,
+      "l2_relative": 9.573583382518696e-06,
+      "max_absolute": 4.437501428089519e-06,
+      "max_error_over_term_scale": 1.299504152486816e-08,
+      "max_relative": 2.541943363976083e-07,
+      "name": "constant",
+      "pass": true,
+      "reference_seconds": 0.9635212421417236,
+      "vector_max_absolute": 1.0
+    }
+  ],
+  "verification_seconds": 85.57327318191528
+}

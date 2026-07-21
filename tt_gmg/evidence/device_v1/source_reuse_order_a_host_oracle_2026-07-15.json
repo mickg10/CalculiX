@@ -1,0 +1,215 @@
+{
+  "brick_operator": "/home/ttuser/ttgmg/staged/row236_brick_v1.bin",
+  "device_mac": {
+    "a_bf16_splits": 3,
+    "a_low_affine_corner_fold": false,
+    "a_low_terms": null,
+    "accumulator_bias": 0.0,
+    "accumulator_bias_scale": 0.0,
+    "accumulator_chunk_terms": 0,
+    "b_bf16_splits": 3,
+    "b_low_terms": [
+      3,
+      4,
+      5,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      75,
+      76,
+      77
+    ],
+    "compensated_product_order": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "compensated_product_order_no_blow": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        1
+      ]
+    ],
+    "cross_terms": "mixed_low_products",
+    "fidelity_batch_terms": 0,
+    "fixed_hifi2_exact_leading": false,
+    "fixed_hifi2_fidelity_phases_per_compensated_term": null,
+    "fixed_hifi2_mac_calls_per_compensated_term": null,
+    "hifi2_products": [],
+    "hifi3_products": [],
+    "math_fidelity": 4,
+    "term_order": "reverse"
+  },
+  "fine_dump": "/home/ttuser/ttgmg/staged/row236_fine.bin",
+  "metadata": {
+    "active_nodes": 1290738,
+    "occupancy_count": 1290738,
+    "pass": true,
+    "roundtrip_ok": true
+  },
+  "pass": true,
+  "schema": "tt_gmg_brick_operator_verification_v1",
+  "thresholds": {
+    "constant_max_error_over_term_scale": 2e-06,
+    "l2_relative": 2e-05,
+    "max_relative": 5e-05
+  },
+  "vectors": [
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 91.9223403930664,
+        "minimum": -97.0357666015625
+      },
+      "brick_oracle_seconds": 16.260513067245483,
+      "l2_relative": 3.966502743539642e-07,
+      "max_absolute": 6.545197990703855e-05,
+      "max_error_over_term_scale": 3.491539783877657e-08,
+      "max_relative": 6.822284850306068e-07,
+      "name": "random",
+      "pass": true,
+      "reference_seconds": 3.554673194885254,
+      "vector_max_absolute": 5.489653829320215
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 28.088510513305664,
+        "minimum": -15.601484298706055
+      },
+      "brick_oracle_seconds": 9.476557493209839,
+      "l2_relative": 1.7720114505099243e-05,
+      "max_absolute": 3.0094292017612823e-05,
+      "max_error_over_term_scale": 7.856222421531264e-08,
+      "max_relative": 2.03325216424945e-06,
+      "name": "smooth",
+      "pass": true,
+      "reference_seconds": 0.9798262119293213,
+      "vector_max_absolute": 1.121784735399536
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 68.50811767578125,
+        "minimum": -66.97138214111328
+      },
+      "brick_oracle_seconds": 9.455964088439941,
+      "l2_relative": 3.939176610720836e-07,
+      "max_absolute": 3.933750534201863e-05,
+      "max_error_over_term_scale": 2.368641924437397e-08,
+      "max_relative": 5.74219572703627e-07,
+      "name": "boundary",
+      "pass": true,
+      "reference_seconds": 0.9743571281433105,
+      "vector_max_absolute": 4.863473666854254
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 32.378822326660156,
+        "minimum": -17.897090911865234
+      },
+      "brick_oracle_seconds": 9.449034929275513,
+      "l2_relative": 9.574714449712836e-06,
+      "max_absolute": 4.437501428089519e-06,
+      "max_error_over_term_scale": 1.299504152486816e-08,
+      "max_relative": 2.541943363976083e-07,
+      "name": "constant",
+      "pass": true,
+      "reference_seconds": 0.9736952781677246,
+      "vector_max_absolute": 1.0
+    }
+  ],
+  "verification_seconds": 53.05018734931946
+}

@@ -1,0 +1,34 @@
+{
+  "compared_bytes": 788299776,
+  "compared_u64_words": 98537472,
+  "device_opened": false,
+  "manifest": "/home/ttuser/ttgmg/device_v1/preexpanded_b_random_seed351.json",
+  "pass": true,
+  "scalar_kernel_address_formula_replayed": true,
+  "schema": "tt_gmg_preexpanded_resident_vector_verification_v1",
+  "source_halo": "/home/ttuser/ttgmg/device_v1/halo_random_seed351.bf16",
+  "source_layout": "/home/ttuser/ttgmg/device_v1/device_layout.json",
+  "splits": [
+    {
+      "bitwise_match": true,
+      "bytes": 262766592,
+      "path": "/home/ttuser/ttgmg/device_v1/shifted_b0_random_seed351.bf16",
+      "sha256": "aa4f49cfad55f001986b3c37b77bbf37e3b5c3ae3d4a9539540f2f849a62acee",
+      "split": 0
+    },
+    {
+      "bitwise_match": true,
+      "bytes": 262766592,
+      "path": "/home/ttuser/ttgmg/device_v1/shifted_b1_random_seed351.bf16",
+      "sha256": "03607c2a3df8e591e959da68e1afde795c63d31f34ce21eca33956c81a772e68",
+      "split": 1
+    },
+    {
+      "bitwise_match": true,
+      "bytes": 262766592,
+      "path": "/home/ttuser/ttgmg/device_v1/shifted_b2_random_seed351.bf16",
+      "sha256": "26dc2984854246c2c01be8dbd61f7164445f611be9530a4528d315033bc9476a",
+      "split": 2
+    }
+  ]
+}

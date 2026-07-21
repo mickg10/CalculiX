@@ -1,0 +1,109 @@
+{
+  "brick_operator": "/home/ttuser/ttgmg/staged/row236_brick_v1.bin",
+  "device_mac": {
+    "a_bf16_splits": 3,
+    "accumulator_bias": 0.0,
+    "accumulator_bias_scale": 0.0,
+    "accumulator_chunk_terms": 0,
+    "b_bf16_splits": 3,
+    "b_low_terms": null,
+    "cross_terms": 6,
+    "hifi3_products": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        0
+      ]
+    ],
+    "math_fidelity": 4,
+    "term_order": "reverse"
+  },
+  "fine_dump": "/home/ttuser/ttgmg/staged/row236_fine.bin",
+  "metadata": {
+    "active_nodes": 1290738,
+    "occupancy_count": 1290738,
+    "pass": true,
+    "roundtrip_ok": true
+  },
+  "pass": true,
+  "schema": "tt_gmg_brick_operator_verification_v1",
+  "thresholds": {
+    "constant_max_error_over_term_scale": 2e-06,
+    "l2_relative": 2e-05,
+    "max_relative": 5e-05
+  },
+  "vectors": [
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 91.92232513427734,
+        "minimum": -97.0356216430664
+      },
+      "brick_oracle_seconds": 14.001693725585938,
+      "l2_relative": 2.786038959243927e-07,
+      "max_absolute": 6.545197990703855e-05,
+      "max_error_over_term_scale": 3.491539783877657e-08,
+      "max_relative": 6.822284850306068e-07,
+      "name": "random",
+      "pass": true,
+      "reference_seconds": 1.172605037689209,
+      "vector_max_absolute": 5.489653829320215
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 28.087432861328125,
+        "minimum": -15.601178169250488
+      },
+      "brick_oracle_seconds": 14.049487590789795,
+      "l2_relative": 9.767384264636835e-06,
+      "max_absolute": 1.7159705751335075e-05,
+      "max_error_over_term_scale": 4.479602477161422e-08,
+      "max_relative": 1.1593563602149617e-06,
+      "name": "smooth",
+      "pass": true,
+      "reference_seconds": 0.995708703994751,
+      "vector_max_absolute": 1.121784735399536
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 68.50713348388672,
+        "minimum": -66.97138214111328
+      },
+      "brick_oracle_seconds": 13.999549627304077,
+      "l2_relative": 2.263986835612494e-07,
+      "max_absolute": 3.734306606162363e-05,
+      "max_error_over_term_scale": 2.2485501073733834e-08,
+      "max_relative": 5.451062351542718e-07,
+      "name": "boundary",
+      "pass": true,
+      "reference_seconds": 0.9740173816680908,
+      "vector_max_absolute": 4.863473666854254
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 32.378822326660156,
+        "minimum": -17.897090911865234
+      },
+      "brick_oracle_seconds": 14.076958179473877,
+      "l2_relative": 9.573583382518696e-06,
+      "max_absolute": 4.437501428089519e-06,
+      "max_error_over_term_scale": 1.299504152486816e-08,
+      "max_relative": 2.541943363976083e-07,
+      "name": "constant",
+      "pass": true,
+      "reference_seconds": 0.9925796985626221,
+      "vector_max_absolute": 1.0
+    }
+  ],
+  "verification_seconds": 62.0038001537323
+}

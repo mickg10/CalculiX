@@ -1,0 +1,50 @@
+{
+  "arithmetic": "run52_bf16x3_selective_blow",
+  "base_coefficient_quantum": 1e-07,
+  "candidate_output": null,
+  "checks": {
+    "l2_relative_le_2e_5": true,
+    "max_relative_le_5e_5": true,
+    "sparse_zero_skip_bitwise_identical_to_dense_base": true,
+    "sparse_zero_skip_numerically_identical_to_dense_base": true
+  },
+  "created_unix_s": 1784120389.841647,
+  "dense_base_bit_mismatches": 0,
+  "dense_base_numeric_mismatches": 0,
+  "fallback_coefficients": "exact_source_bf16x3",
+  "host_only": true,
+  "l2_relative": 4.465183759767603e-07,
+  "layout_manifest": {
+    "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_packed_layout.json",
+    "sha256": "a32fcd5fa2a00687488449aae7f1ac18acc2f1a96eac88d1ff367fda5b581f6e"
+  },
+  "max_relative": 6.704879263562881e-07,
+  "oracle_seconds": 3.059150218963623,
+  "passing": true,
+  "per_component": {
+    "0": {
+      "l2_relative": 4.447421464122625e-07,
+      "max_relative": 7.003244730615416e-07
+    },
+    "1": {
+      "l2_relative": 4.473249711046409e-07,
+      "max_relative": 6.704879263562881e-07
+    },
+    "2": {
+      "l2_relative": 4.474928494458352e-07,
+      "max_relative": 7.489148691617639e-07
+    }
+  },
+  "schema": "tt_gmg_canonical_packed_host_oracle_v1",
+  "term_order": "reverse",
+  "thresholds": {
+    "basis": "established_four_vector_brick_host_oracle",
+    "l2_relative": 2e-05,
+    "max_relative": 5e-05
+  },
+  "vector_manifest": {
+    "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_packed_vector_boundary_seed351.json",
+    "sha256": "f3847eb4601dc3be5ec9cb47a91a423a724b984712391d9d3df68c4139809d52"
+  },
+  "vector_tag": "boundary_seed351"
+}
