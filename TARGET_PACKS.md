@@ -5,10 +5,10 @@ fork in the content-addressed repository:
 
 - repository: `https://github.com/mickg10/calculi_target_packs`;
 - registry commit:
-  `24e51b20038184f7bd04ecb801396ba8b3b222f6`;
-- immutable release tag: `packs-v5-20260721`;
+  `18a2be4fceae92fa1e0a029016a2a72798f20773`;
+- immutable release tag: `packs-v6-20260721`;
 - index SHA-256:
-  `c6d11a58987eeff6b54f0f2b76a707d80d72985fe77897f714400d2b41a62556`;
+  `033a28f25b460294c483b0448b100781f6c82f3ab73f06669b78c919d86e7a1c`;
 - machine-readable binding: `tt_gmg/target_pack_registry.json`.
 
 Do not identify a target by a local pathname, a branch, “latest,” or a release
@@ -28,7 +28,8 @@ each manifest then binds every release object by full SHA-256 and byte count.
 | `matrix_free_payloaded_transfer_wip_20260720` | superseded work-in-progress continuation pack; scalar Stage 1 red | `d09b727e446c040b6f507bebeca35d729c56c0e7d0302787ed30f909328fb8e7` |
 | `matrix_free_payloaded_transfer_block_schwarz_wip_20260720` | superseded generation-2 WIP; p010 topology storage green, Stage 1 convergence red | `d4f373fc1745bcdbdce3dc451e756447f583ee30ff63af4e0574603ccf27e6b0` |
 | `matrix_free_payloaded_transfer_modal_schwarz_red_wip_20260721` | superseded generation-3 WIP; exact modal-Schwarz algebra green, Stage 1 convergence red and consumed | `d3122b2855a08908e46a57d3feea67964d372ba280a2390d5a3dcd8df106223b` |
-| `matrix_free_payloaded_transfer_smoothed_aggregation_red_wip_20260721` | current generation-4 WIP; p035/p030 fixed calibration complete, no candidate selected, no target response | `fd5502b9a6f4f2f46069a6f5d107c7b021c908cb456c3f3b0ad88cd096a73ffa` |
+| `matrix_free_payloaded_transfer_smoothed_aggregation_red_wip_20260721` | superseded generation-4 WIP; p035/p030 fixed calibration complete, no candidate selected, no target response | `fd5502b9a6f4f2f46069a6f5d107c7b021c908cb456c3f3b0ad88cd096a73ffa` |
+| `matrix_free_payloaded_transfer_coarse_polynomial_red_wip_20260721` | current generation-6 WIP; P1 consumed terminal RED before PCG, no candidate selected, no p010 or target response | `e42e667f2a14da4f4e368fc499a44db0ad68f2e8ede6f25603ca9e3ddc2ddd9f` |
 
 The primary TT-GMG target is the compressed row236 fine dump:
 
@@ -44,35 +45,38 @@ The primary TT-GMG target is the compressed row236 fine dump:
 ```sh
 git clone https://github.com/mickg10/calculi_target_packs.git
 cd calculi_target_packs
-git checkout 24e51b20038184f7bd04ecb801396ba8b3b222f6
+git checkout 18a2be4fceae92fa1e0a029016a2a72798f20773
 python3 scripts/rebuild_index.py --check
 python3 scripts/verify_registry.py
 python3 scripts/fetch_pack.py row236_ttgmg_fine_v1 --dest downloads
 ```
 
-For the current transfer continuation, fetch the SHA-bound generation-4
+For the current transfer continuation, fetch the SHA-bound generation-6
 source/evidence archive and the unchanged p010 model and payload together:
 
 ```sh
 python3 scripts/fetch_pack.py \
-  matrix_free_payloaded_transfer_smoothed_aggregation_red_wip_20260721 \
+  matrix_free_payloaded_transfer_coarse_polynomial_red_wip_20260721 \
   --dest downloads --extract
 ```
 
 Its archive SHA-256 is
-`fe2b0138c70291c50b5d5e8d0b5cabe559d50ab2282a8878033036847722f814`;
+`05552e852a569ecfee8c9318766a87dbdb8bc27d6b0c8f727234180b9e87972e`;
 the compressed p010 model/payload SHAs are
 `1515b4d2b1385a5303ffbe65b22094a298f7e156c709ac65b3328894cf63679a`
 and `397fb88719d1e041e628bb001f1dd98a251fe7bbb403441aa8b31126609ded8f`.
-The p010 objects remain immutable v3 release objects; v5 references rather
-than duplicates them. Generation 4 did not scan or evaluate them. Its exact
-response-blind p035/p030 grid completed 20 files / 180 fixed solves, then
-returned `red_no_fixed_budget_candidate`: the best candidate maximum residual
-was `0.8871670367333677` versus Generation 2's `0.7594952931690948`, and the
-matching-memory gate also failed. A fresh public clone/download passed
-`198/198` tests and `198/198` again recursively. This pack is
-transport/evidence, not T5 or product authority; calibration rerun,
-qualification, p010 scan, and target response are forbidden.
+The p010 objects remain immutable v3 release objects; v6 references rather
+than duplicates them. Generation 6 did not scan or evaluate them. Its exact
+ten-case p035 P1 screen consumed all ten markers once, but every native
+process returned `1` before any PCG iteration: six cases failed the
+production-size Rademacher unit-norm guard and four distributed six-field
+cases failed a generic response-blind setup gate before emitting its
+individual predicate. No final JSONL, convergence value, candidate selection,
+p010 scan, or target response exists. A fresh public clone/download verified
+all compressed/decompressed objects and passed `223/223` tests plus `223/223`
+again recursively. This pack is transport/evidence, not T5 or product
+authority; P1 rerun, P2, selection, P3, p010, and target response are
+forbidden.
 
 The fetcher selects the exact release tag/asset from the pinned manifest and
 checks compressed identity plus the declared unpacked identity before safe
