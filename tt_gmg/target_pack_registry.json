@@ -1,10 +1,10 @@
 {
   "schema": "tt_gmg_target_pack_registry_pointer_v1",
   "repository": "https://github.com/mickg10/calculi_target_packs",
-  "registry_commit": "12ad4bd472bd2ed4ba097275026b7d8e6106994e",
-  "release_tag": "packs-v4-20260721",
+  "registry_commit": "24e51b20038184f7bd04ecb801396ba8b3b222f6",
+  "release_tag": "packs-v5-20260721",
   "index_path": "packs/index.json",
-  "index_sha256": "5a9486b7e5459b1e214650b029a9f771a2136e96e2d5ef2a30572fece01ce472",
+  "index_sha256": "c6d11a58987eeff6b54f0f2b76a707d80d72985fe77897f714400d2b41a62556",
   "packs": {
     "matrix_free_payloaded_transfer_wip_20260719": {
       "manifest_sha256": "7813f50775c665d698fd18ac082950b867945803bc9e6b3201d7c756ab74ce79",
@@ -91,6 +91,54 @@
         "iterations": 240,
         "gate": 1e-8,
         "stage2_run": false
+      }
+    },
+    "matrix_free_payloaded_transfer_smoothed_aggregation_red_wip_20260721": {
+      "manifest_sha256": "fd5502b9a6f4f2f46069a6f5d107c7b021c908cb456c3f3b0ad88cd096a73ffa",
+      "status": "work_in_progress",
+      "authority": "generation4_smoothed_aggregation_fixed_calibration_red_no_candidate_no_target_response_not_T5",
+      "objects": {
+        "source_archive": {
+          "release_tag": "packs-v5-20260721",
+          "sha256": "fe2b0138c70291c50b5d5e8d0b5cabe559d50ab2282a8878033036847722f814",
+          "bytes": 10947297,
+          "unpacked_sha256": "f72db1329c5975374451a7bc10dd00ed70363ad73bb44c2a0da7a5bdac7d319c",
+          "unpacked_bytes": 79104000,
+          "member_count": 390
+        },
+        "p010_model": {
+          "release_tag": "packs-v3-20260720",
+          "sha256": "1515b4d2b1385a5303ffbe65b22094a298f7e156c709ac65b3328894cf63679a",
+          "bytes": 4723841,
+          "unpacked_sha256": "7e8befe1d992ad75c2f6ae6c790291c5c41faf87980358b5205df7db8d326a4c",
+          "unpacked_bytes": 120334988
+        },
+        "p010_payload": {
+          "release_tag": "packs-v3-20260720",
+          "sha256": "397fb88719d1e041e628bb001f1dd98a251fe7bbb403441aa8b31126609ded8f",
+          "bytes": 409974,
+          "unpacked_sha256": "64bc1ac8118d558299fca43de91c490f67469eddeb6001848051f07783806720",
+          "unpacked_bytes": 5040280,
+          "total_kg": 0.372
+        }
+      },
+      "generation4_evidence": {
+        "plan_sha256": "e5aab709ece2e77205f88cfdd73a09f3e8c0740e4ee8a3d61c8f0cc15e8bf5d8",
+        "v1_invalidation_sha256": "910db9f5bc9f7f8af5e5578fda848cf2ceafeeaba6e323830c2336016b7cdedc",
+        "source_freeze_v2_sha256": "d48bdd7b75ce1fa34a4edb26bbc32b05716dcc0a7c264fbebb848fb65ac90a8e",
+        "fixed_audit_sha256": "021fa31252f22a7b548b7f6bb99f7b475ccd2630380a5e8720a86b310ffec0ee",
+        "portable_evidence_sha256": "c76e942fbde0bc1b992dd9645b794f94d02ec855a85f4f7a58cf9c7c517970f7",
+        "nested_evidence_archive_sha256": "c17f4f775711d52a181d47c0a9bec688b88b1f6de18af44ba84d46d6c917250d",
+        "closeout_verifier_log_sha256": "7c513ceff64c35b53812daeb0390c662ea4d5d92fa42185725b6f3872ab4a350",
+        "native_files": 20,
+        "fixed_solves": 180,
+        "decision": "red_no_fixed_budget_candidate",
+        "provisional_selected_candidate": null,
+        "maximum_resident_bytes": 1485770752,
+        "maximum_complete_preconditioner_persistent_bytes": 623956217,
+        "qualification_complete": false,
+        "p010_scan_run": false,
+        "target_response_run": false
       }
     },
     "modal_v18b_solver_targets_20260715": {
