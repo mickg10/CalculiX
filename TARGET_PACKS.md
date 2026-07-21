@@ -5,10 +5,10 @@ fork in the content-addressed repository:
 
 - repository: `https://github.com/mickg10/calculi_target_packs`;
 - registry commit:
-  `c8d18758dec3a793c34439cd9af84445de5cdfd4`;
-- immutable release tag: `packs-v3-20260720`;
+  `12ad4bd472bd2ed4ba097275026b7d8e6106994e`;
+- immutable release tag: `packs-v4-20260721`;
 - index SHA-256:
-  `dd19f117ff220b2eb61f5b50e1fd74fb68e2f41a40625a74524ecca7646c1f0c`;
+  `5a9486b7e5459b1e214650b029a9f771a2136e96e2d5ef2a30572fece01ce472`;
 - machine-readable binding: `tt_gmg/target_pack_registry.json`.
 
 Do not identify a target by a local pathname, a branch, “latest,” or a release
@@ -26,7 +26,8 @@ each manifest then binds every release object by full SHA-256 and byte count.
 | `payloaded_modal_v18b_exact_decks_20260716` | frozen exact anchors | `1bd1d1c087e15cac5ebf36796d0d3aa012023f2c8ac54c6081f97130a9811192` |
 | `matrix_free_payloaded_transfer_wip_20260719` | superseded work-in-progress transport snapshot | `7813f50775c665d698fd18ac082950b867945803bc9e6b3201d7c756ab74ce79` |
 | `matrix_free_payloaded_transfer_wip_20260720` | superseded work-in-progress continuation pack; scalar Stage 1 red | `d09b727e446c040b6f507bebeca35d729c56c0e7d0302787ed30f909328fb8e7` |
-| `matrix_free_payloaded_transfer_block_schwarz_wip_20260720` | current generation-2 WIP; p010 topology storage green, Stage 1 convergence red | `d4f373fc1745bcdbdce3dc451e756447f583ee30ff63af4e0574603ccf27e6b0` |
+| `matrix_free_payloaded_transfer_block_schwarz_wip_20260720` | superseded generation-2 WIP; p010 topology storage green, Stage 1 convergence red | `d4f373fc1745bcdbdce3dc451e756447f583ee30ff63af4e0574603ccf27e6b0` |
+| `matrix_free_payloaded_transfer_modal_schwarz_red_wip_20260721` | current generation-3 WIP; exact modal-Schwarz algebra green, Stage 1 convergence red and consumed | `d3122b2855a08908e46a57d3feea67964d372ba280a2390d5a3dcd8df106223b` |
 
 The primary TT-GMG target is the compressed row236 fine dump:
 
@@ -42,29 +43,33 @@ The primary TT-GMG target is the compressed row236 fine dump:
 ```sh
 git clone https://github.com/mickg10/calculi_target_packs.git
 cd calculi_target_packs
-git checkout c8d18758dec3a793c34439cd9af84445de5cdfd4
+git checkout 12ad4bd472bd2ed4ba097275026b7d8e6106994e
 python3 scripts/rebuild_index.py --check
 python3 scripts/verify_registry.py
 python3 scripts/fetch_pack.py row236_ttgmg_fine_v1 --dest downloads
 ```
 
-For the current transfer continuation, fetch the SHA-bound source archive,
-p010 model, and p010 payload together:
+For the current transfer continuation, fetch the SHA-bound generation-3
+source/evidence archive and the unchanged p010 model and payload together:
 
 ```sh
 python3 scripts/fetch_pack.py \
-  matrix_free_payloaded_transfer_block_schwarz_wip_20260720 \
+  matrix_free_payloaded_transfer_modal_schwarz_red_wip_20260721 \
   --dest downloads --extract
 ```
 
 Its archive SHA-256 is
-`be01b776e204af456a768de4734696257d2f8883d923633b3ee4331632c2f161`;
+`56eaea5b5dd15a0c52e020883152ec4f440888cb6dce7ee48c3cbbc8497f977c`;
 the compressed p010 model/payload SHAs are
 `1515b4d2b1385a5303ffbe65b22094a298f7e156c709ac65b3328894cf63679a`
 and `397fb88719d1e041e628bb001f1dd98a251fe7bbb403441aa8b31126609ded8f`.
-The included response authorization is already consumed. A fresh extraction
-must refuse the old Stage-1 plan; this pack is transport/evidence, not T5 or
-product authority.
+The p010 objects remain immutable v3 release objects; v4 references rather
+than duplicates them. The generation-3 response authorization is already
+consumed. A fresh extraction must refuse Stage 1 with exit `78`; the measured
+X-axis `200 Hz` solve ended RED at true residual
+`1.4585006059142965e-4` after 240 iterations. This pack is
+transport/evidence, not T5 or product authority, and it does not authorize
+Stage 2.
 
 The fetcher selects the exact release tag/asset from the pinned manifest and
 checks compressed identity plus the declared unpacked identity before safe
