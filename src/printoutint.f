@@ -37,6 +37,9 @@
      &  ielorien(mi(3),*),norien,konf(*),konl,indexe,m,iorien,iflag,
      &  ielmat(mi(3),*),nopes,mint2d,kk,ki,kl,nlayer,ilayer,
      &  null,ielprop(*),nelel,ithermal(*)
+#ifdef CCX_ACCEL
+      integer ccx_fastdat_active
+#endif
 !
       real*8 stx(6,mi(1),*),eei(6,mi(1),*),xstate(nstate_,mi(1),*),
      &  ener(2,mi(1),*),qfx(3,mi(1),*),xi,et,ze,xl(3,20),xsj,shp(4,20),
@@ -399,9 +402,25 @@ c     &   (lakon(nelel)(1:1).eq.'F')) then
             if(iorien.eq.0) then
 c               write(*,'(i10,1x,i3,1p,6(1x,e13.6))') nelem,j,
 c     &              (stx(k,j,nelel),k=1,6)
+#ifdef CCX_ACCEL
+               if((prlab(ii)(1:1).eq.'S').and.
+     &            (ccx_fastdat_active().ne.0)) then
+                  call ccx_fastdat_s(nelem,j,stx(1,j,nelel))
+               else
+                  write(5,'(i10,1x,i3,1p,6(1x,e13.6))') nelem,j,
+     &              (stx(k,j,nelel),k=1,6)
+               endif
+#else
                write(5,'(i10,1x,i3,1p,6(1x,e13.6))') nelem,j,
      &              (stx(k,j,nelel),k=1,6)
+#endif
             else
+#ifdef CCX_ACCEL
+               if((prlab(ii)(1:1).eq.'S').and.
+     &            (ccx_fastdat_active().ne.0)) then
+                  call ccx_fastdat_mark_oriented()
+               endif
+#endif
                call transformatrix(orab(1,iorien),coords(1,j),a)
                b(1,1)=stx(1,j,nelel)
                b(2,2)=stx(2,j,nelel)

@@ -1,0 +1,117 @@
+{
+  "brick": {
+    "count": 25284,
+    "covered_positions": 1618176,
+    "covered_to_active_ratio": 1.2536827768299996,
+    "groups": 1581,
+    "occupancy_fraction": 0.7976499466065496,
+    "padded_count": 25296,
+    "size": 4,
+    "slots": 64
+  },
+  "created_unix_s": 1784057489.9342499,
+  "file_bytes": 2375315456,
+  "format_magic": "TTB4SPV",
+  "format_version": 1,
+  "hashes": {
+    "output_sha256": "f1a956701882a164c3ddb62e522bbe1dc4111d2ce37990c746f7860b69fe4674",
+    "source_sha256": "e58c212d593dd39884f9806558f1bfc30e6f2456708e61ed2ca1f32220f13638"
+  },
+  "operator": {
+    "bf16_splits": 3,
+    "block_shape": [
+      3,
+      3
+    ],
+    "geometric_offsets": 27,
+    "layout": "coefficients[split][output_component*brick_groups+group][offset*3+input_component][16_bricks*64_slots]",
+    "output_tiles": 4743,
+    "payload_bytes": 2360420352,
+    "terms_per_output_component": 81
+  },
+  "output": "/home/ttuser/ttgmg/staged/row236_brick_v1.bin",
+  "schema": "tt_gmg_brick_operator_manifest_v1",
+  "sections": [
+    {
+      "bytes": 81,
+      "dtype": "|i1",
+      "name": "offsets",
+      "offset": 4096,
+      "shape": [
+        27,
+        3
+      ]
+    },
+    {
+      "bytes": 303552,
+      "dtype": "<i4",
+      "name": "brick_coords",
+      "offset": 8192,
+      "shape": [
+        25296,
+        3
+      ]
+    },
+    {
+      "bytes": 2731968,
+      "dtype": "<i4",
+      "name": "brick_nbr",
+      "offset": 315392,
+      "shape": [
+        25296,
+        27
+      ]
+    },
+    {
+      "bytes": 202368,
+      "dtype": "<u8",
+      "name": "occupancy",
+      "offset": 3047424,
+      "shape": [
+        25296
+      ]
+    },
+    {
+      "bytes": 6475776,
+      "dtype": "<i4",
+      "name": "slot_to_node",
+      "offset": 3252224,
+      "shape": [
+        25296,
+        64
+      ]
+    },
+    {
+      "bytes": 5162952,
+      "dtype": "<u4",
+      "name": "node_to_pos",
+      "offset": 9728000,
+      "shape": [
+        1290738
+      ]
+    },
+    {
+      "bytes": 2360420352,
+      "dtype": "<u2",
+      "name": "coefficients",
+      "offset": 14893056,
+      "shape": [
+        3,
+        4743,
+        81,
+        1024
+      ]
+    }
+  ],
+  "serialize_seconds": 17.550729751586914,
+  "source": {
+    "box": [
+      559,
+      273,
+      229
+    ],
+    "nb": 1290738,
+    "nblk": 32999884
+  },
+  "source_fine_dump": "/home/ttuser/ttgmg/staged/row236_fine.bin"
+}

@@ -1,0 +1,81 @@
+{
+  "created_unix_s": 1784119982.2515776,
+  "files": {
+    "packed_b0": {
+      "bytes": 209682432,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/packed_shifted_b0_random_seed351.bf16",
+      "sha256": "937a6dbf7e659a9290af6b6ea327b2d5f5855fd5555d897d68e7f5cdab610401",
+      "shape": [
+        8,
+        158,
+        81,
+        1024
+      ]
+    },
+    "packed_b1": {
+      "bytes": 209682432,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/packed_shifted_b1_random_seed351.bf16",
+      "sha256": "4c3d4d9971a624d7a5c3fa3774e15e1e6aac4b820a620253d3aca192bcb1e6b9",
+      "shape": [
+        8,
+        158,
+        81,
+        1024
+      ]
+    },
+    "packed_b2": {
+      "bytes": 209682432,
+      "dtype": "<u2",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/packed_shifted_b2_random_seed351.bf16",
+      "sha256": "0f5310d4cfd862e05da151732531e31fb2d14cd69b3fa9cf67e17c8aa34ac588",
+      "shape": [
+        8,
+        158,
+        81,
+        1024
+      ]
+    },
+    "packed_reference": {
+      "bytes": 15532032,
+      "dtype": "<f4",
+      "path": "/home/ttuser/ttgmg/canonical_packed_v1/packed_reference_random_seed351.fp32",
+      "sha256": "deb610d0d22bd333003bc807b54e5794e6f85b1c9dd2db27f1ca726566b720ab",
+      "shape": [
+        8,
+        158,
+        3,
+        1024
+      ]
+    }
+  },
+  "host_only": true,
+  "layout_manifest": {
+    "path": "/home/ttuser/ttgmg/canonical_packed_v1/canonical_packed_layout.json",
+    "sha256": "a32fcd5fa2a00687488449aae7f1ac18acc2f1a96eac88d1ff367fda5b581f6e"
+  },
+  "pack_seconds": 5.795405864715576,
+  "schema": "tt_gmg_canonical_packed_vector_v1",
+  "source": {
+    "reference": {
+      "path": "/home/ttuser/ttgmg/device_v1/reference_random_seed351.fp32",
+      "sha256": "8ef73629d947aa40aa980dad2ae67970dc0d2efca697a95126e6cfa7b297cff1"
+    },
+    "shifted_b": [
+      {
+        "path": "/home/ttuser/ttgmg/device_v1/shifted_b0_random_seed351.bf16",
+        "sha256": "aa4f49cfad55f001986b3c37b77bbf37e3b5c3ae3d4a9539540f2f849a62acee"
+      },
+      {
+        "path": "/home/ttuser/ttgmg/device_v1/shifted_b1_random_seed351.bf16",
+        "sha256": "03607c2a3df8e591e959da68e1afde795c63d31f34ce21eca33956c81a772e68"
+      },
+      {
+        "path": "/home/ttuser/ttgmg/device_v1/shifted_b2_random_seed351.bf16",
+        "sha256": "26dc2984854246c2c01be8dbd61f7164445f611be9530a4528d315033bc9476a"
+      }
+    ]
+  },
+  "vector_tag": "random_seed351"
+}

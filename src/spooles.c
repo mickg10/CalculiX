@@ -39,6 +39,9 @@
 #include <unistd.h>
 #include "CalculiX.h"
 #include "spooles.h"
+#ifdef CCX_ACCEL
+#include "accel.h"
+#endif
 
 #if USE_MT
 int num_cpus = -1;
@@ -1156,6 +1159,13 @@ void spooles(double *ad, double *au, double *adb, double *aub, double *sigma,
 	b[0]/=ad[0];
 	return;
     }
+
+#ifdef CCX_ACCEL
+    /* optional Apple Accelerate / geometric-multigrid symmetric solve (env-gated, default off at run time).
+       inputformat==0 is the symmetric lower-CSC contract accel_spooles expects; on success it fills b and
+       returns, otherwise we fall through to the SPOOLES factor/solve below. */
+    if(*inputformat==0 && accel_spooles(ad,au,adb,sigma,b,icol,irow,neq,nzs)==0) return;
+#endif
 
     /*    FORTRAN(spooles_write,(ad,au,adb,aub,sigma,b,icol,irow,neq,nzs,
 	  symmetryflag,inputformat,nzs3));*/

@@ -21,6 +21,19 @@
 #include <string.h>
 #include <ctype.h>
 #include "CalculiX.h"
+#ifdef CCX_ACCEL
+#include "accel.h"
+/* transparent gz/zstd streaming for the input deck + *INCLUDE files (drop-in fopen/fgets/fclose). */
+typedef ccx_zfile *CCX_INFILE;
+#define CCX_FOPEN(p)     ccx_zopen(p)
+#define CCX_FGETS(b,n,f) ccx_zgets((b),(n),(f))
+#define CCX_FCLOSE(f)    ccx_zclose(f)
+#else
+typedef FILE *CCX_INFILE;
+#define CCX_FOPEN(p)     fopen((p),"r")
+#define CCX_FGETS(b,n,f) fgets((b),(n),(f))
+#define CCX_FCLOSE(f)    fclose(f)
+#endif
 
 void readinput(char *jobnamec,char **inpcp,ITG *nline,ITG *nset,
 	       ITG *ipoinp,ITG **inpp,ITG **ipoinpcp,ITG *ithermal,
@@ -29,7 +42,7 @@ void readinput(char *jobnamec,char **inpcp,ITG *nline,ITG *nset,
   /*   reads and stores the input deck in inpcp; determines the
        number of sets  */
 
-  FILE *f1[10];
+  CCX_INFILE f1[10];
 
   char buff[1320]="", fninp[132]="", includefn[132]="", *inpc=NULL,
        textpart[2112]="",*set=NULL;
@@ -61,7 +74,7 @@ void readinput(char *jobnamec,char **inpcp,ITG *nline,ITG *nset,
 
   strcpy2(fninp,jobnamec,132);
   strcat(fninp,".inp");
-  if((f1[in]=fopen(fninp,"r"))==NULL){
+  if((f1[in]=CCX_FOPEN(fninp))==NULL){
       printf(" *ERROR in readinput: cannot open file %s\n",fninp);
       exit(201);
   }
@@ -69,8 +82,8 @@ void readinput(char *jobnamec,char **inpcp,ITG *nline,ITG *nset,
   /* starting to read the input file */
 
   do{
-      if(fgets(buff,1320,f1[in])==NULL){
-	  fclose(f1[in]);
+      if(CCX_FGETS(buff,1320,f1[in])==NULL){
+	  CCX_FCLOSE(f1[in]);
 	  if(in!=0){
 	      in--;
 	      continue;
@@ -179,7 +192,7 @@ void readinput(char *jobnamec,char **inpcp,ITG *nline,ITG *nset,
 	      printf(" *ERROR in readinput: include statements can \n not be cascaded over more than 9 levels\n");
 	      exit(201);
 	  }
-	  if((f1[in]=fopen(includefn,"r"))==NULL){
+	  if((f1[in]=CCX_FOPEN(includefn))==NULL){
 	      printf(" *ERROR in readinput: cannot open file %s\n",includefn);
 	      exit(201);
 	  }
