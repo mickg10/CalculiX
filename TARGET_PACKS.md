@@ -5,10 +5,10 @@ fork in the content-addressed repository:
 
 - repository: `https://github.com/mickg10/calculi_target_packs`;
 - registry commit:
-  `fc0af0c67235a9e8a69cde5d33502de27a5a12c2`;
-- immutable release tag: `packs-v11-20260722`;
+  `97a2e85b19168e9a081c72252e6eb1e164c07e39`;
+- immutable release tag: `packs-v12-20260722`;
 - index SHA-256:
-  `f68e882e9d88c8aca6b1b132a39de89c210069649d18c66177f99987d7a61d05`;
+  `01a03e0128db49718e2f412964f1572d158db278be5f8b08fecaf3f0d92bb5b4`;
 - machine-readable binding: `tt_gmg/target_pack_registry.json`.
 
 Do not identify a target by a local pathname, a branch, “latest,” or a release
@@ -34,7 +34,8 @@ each manifest then binds every release object by full SHA-256 and byte count.
 | `matrix_free_payloaded_transfer_generation8_p0_green_wip_20260722` | superseded generation-8 WIP; marker-free p035/p030 P0 GREEN and immutable, no topology/operator/Krylov/p010/response | `ebcfa948df07075ef9a4a944cf1dd3227c3dcd4caffd59281b5f80732c77eba9` |
 | `matrix_free_payloaded_transfer_generation8_p1a_green_wip_20260722` | superseded generation-8 WIP; all ten p035 P1A setup/RHS/resource cases GREEN and immutable, no action/Krylov/p010/response | `99310dd22ddb4a595055ab0ad2386fd62ecb83b302fda9f4c60167221f50c1d5` |
 | `matrix_free_payloaded_transfer_generation8_p1b_preparation_green_wip_20260722` | superseded generation-8 WIP; response-blind P1B plan/freeze/exact logical ledger GREEN without launch | `28c185c0cacf16d7a503a462e91343fe2a857086f7bf688af7457d696ec11936` |
-| `matrix_free_payloaded_transfer_generation8_p1b_terminal_red_wip_20260722` | current generation-8 WIP; all ten p035 fixed-screen cases integrity-GREEN, terminal no-candidate RED, P2 and later work locked | `d768717ab5a36abe53a5bb29aff0490d33ff9bd16abb09e85f128dcd7415ff87` |
+| `matrix_free_payloaded_transfer_generation8_p1b_terminal_red_wip_20260722` | superseded generation-8 WIP; all ten p035 fixed-screen cases integrity-GREEN, terminal no-candidate RED, P2 and later work locked | `d768717ab5a36abe53a5bb29aff0490d33ff9bd16abb09e85f128dcd7415ff87` |
+| `matrix_free_payloaded_transfer_generation9_global_polynomial_p035_green_wip_20260722` | current generation-9 WIP; D3 and D2 p035 screens GREEN, only a new p030 plan is authorized | `6e76954791cecc100b47f5ea243dec1202cafea5062206ad5e06adf8190be40f` |
 
 The primary TT-GMG target is the compressed row236 fine dump:
 
@@ -50,14 +51,66 @@ The primary TT-GMG target is the compressed row236 fine dump:
 ```sh
 git clone https://github.com/mickg10/calculi_target_packs.git
 cd calculi_target_packs
-git checkout fc0af0c67235a9e8a69cde5d33502de27a5a12c2
+git checkout 97a2e85b19168e9a081c72252e6eb1e164c07e39
 python3 scripts/rebuild_index.py --check
 python3 scripts/verify_registry.py
 python3 scripts/fetch_pack.py row236_ttgmg_fine_v1 --dest downloads
 ```
 
-For the current transfer continuation, fetch the SHA-bound Generation-8 P1B
-terminal-RED archive and the unchanged p010 model and payload together:
+For the current transfer continuation, fetch the SHA-bound Generation-9
+p035 terminal-GREEN archive and the unchanged p010 model and payload together:
+
+```sh
+python3 scripts/fetch_pack.py \
+  matrix_free_payloaded_transfer_generation9_global_polynomial_p035_green_wip_20260722 \
+  --dest downloads --extract
+```
+
+Its archive is `13,334,004` bytes at SHA-256
+`a4f11bdd30c2f1baadc2e258c840691381d7622bf47a8fc9c86d4237e8a0b1f8`.
+The normalized tar is `101,345,280` bytes at SHA-256
+`f251920627e86266d306ee25543648495717deec9d406652b4e0f5bf48e21a08`
+with 877 members. Two independent archive builds are byte-identical. The
+archive's exact 843-entry Generation-9 manifest is SHA-256
+`a444b327cfc51c3e63d794379cc9bc0a636382d0807c74948bdc1ab87b9d9a08`.
+It retains frozen predecessor pointer v4 and excludes its v5 self-pointer.
+
+The p010 model/payload remain exact v3 SHA references
+`1515b4d2b1385a5303ffbe65b22094a298f7e156c709ac65b3328894cf63679a`
+and `397fb88719d1e041e628bb001f1dd98a251fe7bbb403441aa8b31126609ded8f`;
+Generation 9 did not open or evaluate them.
+
+Generation-9 plan/audit and source-freeze/audit SHA-256 are
+`ecd74d279cee41e96da65689b96b8f065b99001011b3b30ff04e7d99c823a6fc`,
+`5c11a32ba403cc12a657b29d1a18968250af1fe19873590d4fd002debfe51adf`,
+`be1de4daae4c0ca94f6822a47c7be633e2664ba4675c381cdec8c14f01cc4d96`,
+and `60d2752eca604388ecf2113cfee365034fcb9d39d0bccb6a68230ee379a54dd3`.
+Four frozen-order p035 cases completed with exact 15-record streams, 36
+fixed solves, 576 PCG/preconditioner applications, and zero swaps.
+
+Full-grid audit SHA-256 is
+`d66075a310e7216e20b06a203fc4719930325588aabe8281166bec62a58fb65e`;
+the decision is `GREEN_G9_P035_CANDIDATE_FOR_NEW_P030_PLAN`. Degree 3 ranks
+first at maximum residual `0.195882489`, `0.260456584` of its frozen
+Generation-8 baseline, median wall fraction `2.828290496`, `683,167,673`
+persistent bytes, and `1,287,663,616` peak bytes. Degree 2 also passes at
+`0.365562827`, `0.534374426`, `1.939851712`, `683,167,673`, and
+`1,287,630,848` bytes. Both are p035 calibration results only.
+
+A fresh exact-tag clone passed the registry checks and `3/3` tests. Public
+Release downloads of all three objects matched compressed and unpacked
+identities and extracted safely. The public package and its independently
+reconstructed manifest-only tree each pass `350/350` tests plus T1 and every
+auxiliary package check. Verification transcript SHA-256 is
+`63fd5d441ee58f5d395e250e8cf186d3661f281c007c850e578f20684ad615a4`.
+
+The only newly granted numerical authority is to write and independently
+audit a new response-blind p030 plan. P030 execution, p010, physical forcing
+or response, GPU/Metal acceptance, T5, T6-T14, N1/N2/N3, and product
+authority remain locked.
+
+For the preceding Generation-8 v11 checkpoint, fetch the terminal-RED
+archive and the unchanged p010 model and payload together:
 
 ```sh
 python3 scripts/fetch_pack.py \
