@@ -1,10 +1,10 @@
 {
   "schema": "tt_gmg_target_pack_registry_pointer_v1",
   "repository": "https://github.com/mickg10/calculi_target_packs",
-  "registry_commit": "1465d52411f295c2305dd03ce14df59bcefe474a",
-  "release_tag": "packs-v8-20260722",
+  "registry_commit": "2d275960626268dec3e00c86574658b3bedde53c",
+  "release_tag": "packs-v9-20260722",
   "index_path": "packs/index.json",
-  "index_sha256": "19ef420bea0dda1b386561babeaec873c0aff1cd68d77499cfa851999d0cff04",
+  "index_sha256": "2dfe799e664def136a9d3f6c4b260d521e40bd57991056e437483236fb7e8dbc",
   "packs": {
     "matrix_free_payloaded_transfer_wip_20260719": {
       "manifest_sha256": "7813f50775c665d698fd18ac082950b867945803bc9e6b3201d7c756ab74ce79",
@@ -321,6 +321,75 @@
         "operator_or_preconditioner_run": false,
         "krylov_run": false,
         "physical_forcing_or_transfer_output_run": false,
+        "target_response_run": false,
+        "gpu_or_metal_run": false
+      }
+    },
+    "matrix_free_payloaded_transfer_generation8_p1a_green_wip_20260722": {
+      "manifest_sha256": "99310dd22ddb4a595055ab0ad2386fd62ecb83b302fda9f4c60167221f50c1d5",
+      "status": "work_in_progress",
+      "authority": "generation8_p035_p1a_setup_rhs_resource_green_complete_immutable_no_action_krylov_p010_response_not_T5",
+      "objects": {
+        "source_archive": {
+          "release_tag": "packs-v9-20260722",
+          "sha256": "cabc7eb41dff367004636bb1318dcd75aef263325457774cde20bd5e71df05bd",
+          "bytes": 13260261,
+          "unpacked_sha256": "e7a810f0c90de7fa04f1ab1a85de5d10c5e9dd4d43dad1573a30ec4b736fe3ed",
+          "unpacked_bytes": 101017600,
+          "member_count": 742,
+          "internal_manifest_entries": 690,
+          "internal_manifest_sha256": "d38c9f18395f4e4744046b0ecaad00e4adda40bd58fb4cd174e4fc9b9e97e1a8",
+          "frozen_predecessor_pointer_path": "reference/target_pack_registry_v1.json",
+          "frozen_predecessor_pointer_sha256": "001417b7a4c631ab21971761d6411480156fae0cf787e7e4dc8591f43662d925",
+          "v9_self_pointer_in_archive": false
+        },
+        "p010_model": {
+          "release_tag": "packs-v3-20260720",
+          "sha256": "1515b4d2b1385a5303ffbe65b22094a298f7e156c709ac65b3328894cf63679a",
+          "bytes": 4723841,
+          "unpacked_sha256": "7e8befe1d992ad75c2f6ae6c790291c5c41faf87980358b5205df7db8d326a4c",
+          "unpacked_bytes": 120334988
+        },
+        "p010_payload": {
+          "release_tag": "packs-v3-20260720",
+          "sha256": "397fb88719d1e041e628bb001f1dd98a251fe7bbb403441aa8b31126609ded8f",
+          "bytes": 409974,
+          "unpacked_sha256": "64bc1ac8118d558299fca43de91c490f67469eddeb6001848051f07783806720",
+          "unpacked_bytes": 5040280,
+          "total_kg": 0.372
+        }
+      },
+      "generation8_p1a_evidence": {
+        "execution_plan_sha256": "3d593562262cb688e424f0d4ed690ca2ec92998b9eda6b3bf27063b085699f3e",
+        "execution_plan_audit_sha256": "d76cac3bd8bcd8a723296f6956c83b0863abb88be7ab30fa8ca0422ea973c0ee",
+        "execution_source_freeze_sha256": "3e874cad9a110e81adcf1cf1536682ee2ed79db1a8d4c5c26a21671cd6855338",
+        "execution_source_freeze_audit_sha256": "ca38ed220b3e0986954b866d751a4858374fe26d8449b53c343d9760244be854",
+        "selected_host_preflight_sha256": "d6ae2fcc4eb22043a477f678babb90b47a4cf0ca1ddffc4aa1d37a8a6db01787",
+        "selected_host_preflight_audit_sha256": "bffcce97aab58a4ed0d74de8ef09e3776c659b638bb2278c69a821f567441d6b",
+        "terminal_prefix_audit_sha256": "efa54be5b80dd95cf1a5ea8b3d1ffda33fa7a744d1dddb5050a3d72f0921fb57",
+        "terminal_prefix_audit_bytes": 6029,
+        "platform": "Linux:x86_64",
+        "host": "research3",
+        "p035_active_equations": 3897114,
+        "consumed_case_count": 10,
+        "green_case_count": 10,
+        "rhs_audit_count": 30,
+        "native_nonzero_exit_count": 0,
+        "process_swap_count": 0,
+        "maximum_persistent_bytes": 1995747860,
+        "maximum_transient_audit_bytes": 729578988,
+        "maximum_peak_rss_bytes": 2725326848,
+        "configuration_count": 0,
+        "preconditioner_application_count": 0,
+        "operator_application_count": 0,
+        "pcg_iteration_count": 0,
+        "physical_forcing_or_response_count": 0,
+        "supported_platform_native_tests": 298,
+        "supported_platform_recursive_tests": 298,
+        "decision": "green_complete_p1a_setup_rhs_resource_checkpoint_only",
+        "p1a_rerun_locked": true,
+        "p1b_run": false,
+        "p030_or_p010_run": false,
         "target_response_run": false,
         "gpu_or_metal_run": false
       }
