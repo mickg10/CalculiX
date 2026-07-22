@@ -5,10 +5,10 @@ fork in the content-addressed repository:
 
 - repository: `https://github.com/mickg10/calculi_target_packs`;
 - registry commit:
-  `5e900adc73fcb684996bf12d55bd0d3fb0e8d1d4`;
-- immutable release tag: `packs-v10-20260722`;
+  `fc0af0c67235a9e8a69cde5d33502de27a5a12c2`;
+- immutable release tag: `packs-v11-20260722`;
 - index SHA-256:
-  `421eb14fa059b11ca352d1853beba585eb385f758eea6c04a55ac8335bddec5b`;
+  `f68e882e9d88c8aca6b1b132a39de89c210069649d18c66177f99987d7a61d05`;
 - machine-readable binding: `tt_gmg/target_pack_registry.json`.
 
 Do not identify a target by a local pathname, a branch, “latest,” or a release
@@ -33,7 +33,8 @@ each manifest then binds every release object by full SHA-256 and byte count.
 | `matrix_free_payloaded_transfer_generation7_execution_repair_red_wip_20260721` | superseded generation-7 WIP; P1A stopped terminal RED at setup case four before RHS/operator/PCG, no P1B, p010, or target response | `4571cd7ea53c09237c16b8c1602d15b49ba6755562327e07809b38ef959a862c` |
 | `matrix_free_payloaded_transfer_generation8_p0_green_wip_20260722` | superseded generation-8 WIP; marker-free p035/p030 P0 GREEN and immutable, no topology/operator/Krylov/p010/response | `ebcfa948df07075ef9a4a944cf1dd3227c3dcd4caffd59281b5f80732c77eba9` |
 | `matrix_free_payloaded_transfer_generation8_p1a_green_wip_20260722` | superseded generation-8 WIP; all ten p035 P1A setup/RHS/resource cases GREEN and immutable, no action/Krylov/p010/response | `99310dd22ddb4a595055ab0ad2386fd62ecb83b302fda9f4c60167221f50c1d5` |
-| `matrix_free_payloaded_transfer_generation8_p1b_preparation_green_wip_20260722` | current generation-8 WIP; response-blind P1B plan/freeze/exact logical ledger GREEN without launch, no real-input open/action/Krylov/p010/response | `28c185c0cacf16d7a503a462e91343fe2a857086f7bf688af7457d696ec11936` |
+| `matrix_free_payloaded_transfer_generation8_p1b_preparation_green_wip_20260722` | superseded generation-8 WIP; response-blind P1B plan/freeze/exact logical ledger GREEN without launch | `28c185c0cacf16d7a503a462e91343fe2a857086f7bf688af7457d696ec11936` |
+| `matrix_free_payloaded_transfer_generation8_p1b_terminal_red_wip_20260722` | current generation-8 WIP; all ten p035 fixed-screen cases integrity-GREEN, terminal no-candidate RED, P2 and later work locked | `d768717ab5a36abe53a5bb29aff0490d33ff9bd16abb09e85f128dcd7415ff87` |
 
 The primary TT-GMG target is the compressed row236 fine dump:
 
@@ -49,89 +50,93 @@ The primary TT-GMG target is the compressed row236 fine dump:
 ```sh
 git clone https://github.com/mickg10/calculi_target_packs.git
 cd calculi_target_packs
-git checkout 5e900adc73fcb684996bf12d55bd0d3fb0e8d1d4
+git checkout fc0af0c67235a9e8a69cde5d33502de27a5a12c2
 python3 scripts/rebuild_index.py --check
 python3 scripts/verify_registry.py
 python3 scripts/fetch_pack.py row236_ttgmg_fine_v1 --dest downloads
 ```
 
 For the current transfer continuation, fetch the SHA-bound Generation-8 P1B
-non-launching preparation archive and the unchanged p010 model and payload
-together:
+terminal-RED archive and the unchanged p010 model and payload together:
 
 ```sh
 python3 scripts/fetch_pack.py \
-  matrix_free_payloaded_transfer_generation8_p1b_preparation_green_wip_20260722 \
+  matrix_free_payloaded_transfer_generation8_p1b_terminal_red_wip_20260722 \
   --dest downloads --extract
 ```
 
 Its archive SHA-256 is
-`53389bce616fea61408e848794acf87121e7300259a1734f5fde301c2b1c4b7b`;
+`699f56a19024df2bec0bc8a43e6267dba2b23a2c7446db7e3d0a85ca94d61e41`;
 the compressed p010 model/payload SHAs are
 `1515b4d2b1385a5303ffbe65b22094a298f7e156c709ac65b3328894cf63679a`
 and `397fb88719d1e041e628bb001f1dd98a251fe7bbb403441aa8b31126609ded8f`.
-The p010 objects remain immutable v3 release objects; v10 references rather
-than duplicates them. Generation 8 did not open, scan, or evaluate them in
-P1B preparation. The immutable P1A/v9 checkpoint remains the execution
-predecessor: all ten p035 setup/RHS/resource cases are GREEN, their markers
-and evidence may not be removed or rerun, and no action or Krylov work was
-performed there.
+The p010 objects remain immutable v3 release objects; v11 references rather
+than duplicates them. Generation 8 P1B did not open, scan, or evaluate p010.
 
-The P1B preparation plan/audit SHA-256 values are
-`02a3a05664696b42ead6911e58c01dda38df032223fcb20bc7bcc5a0b07b33e4`
-and `3f9242647449b03be3632581e2e2f7d629b752a958f4f92f5feb08f373138611`;
-the audit is `43/43` GREEN and authorizes implementation only. The immutable
-source-freeze/audit SHA-256 values are
-`8affee65d09c306b1c460b0655feb027dd2777c5269e3ae4fd76c7742731f544`
-and `dc6058d5c241c6ca6170236a980e922198c9d4a490d57633fa94c1a8b310f507`.
-The exact logical-ledger/audit SHA-256 values are
-`686ab598a3dfc5592e901e3fabb8c51758ae09a2a74a137c459512563e493cda`
-and `06f0d9067c89a9b357661cd373a3cfec0f6b08e8865228a6ea3035344ebdef74`.
-That ledger fixes five candidates, structure and exact `0.372 kg` distributed
-mass, three frequencies, three deterministic RHS streams, exactly sixteen
-PCG iterations, and ninety future solves. It inherits the residual, matched
-baseline, wall-time, `4 GiB` persistent, `8 GiB` peak, zero-swap, and maximum
-two-promotion limits without relaxing them.
+Selected-host preflight/audit SHA-256 are
+`b3800ce62f3bb21d1d65dca1204ca5d9beef14b7089b888410fa5bf56bd1bc52`
+and `95040f2affda5a1c46a86f2765f8540c85829d8fb296c2803f7a8be41996ea47`;
+the audit passed `31/31` on quiet Linux `research3`. All ten frozen p035
+fixed-screen cases were then consumed exactly once in the preregistered
+order. All native exits are zero, all ten integrity records are GREEN, and
+the run contains exactly 90 fixed solves, 1,440 PCG iterations, 1,440
+preconditioner applications, and zero process swaps. Terminal prefix audit
+SHA-256 is
+`42faca1e660b27d7ce9a892e6c3f825e5e477cfa10120ff117634efe1d80f39d`.
 
-Preparation was strictly non-launching: it opened no real model or payload,
-created no run directory or marker, and performed no topology, hierarchy,
-configuration, preconditioner, operator, RHS-vector, PCG, spectrum, forcing,
-transfer, p030, p010, GPU, or Metal work. P1B execution remains unauthorized
-until a distinct response-blind execution plan, controller, adversarial
-contract, source freeze, and independent audit exist.
+The independent full-grid audit SHA-256 is
+`8cb6f52cf584286e1078bafea2ad8fb66a39f452bb283156cc6576f1f3eef46f`;
+its exact decision is `RED_P1B_NO_CANDIDATE_P2_LOCKED` and promotion count
+is zero. Candidate maximum true residuals are `0.928473`, `0.967945`,
+`0.922097`, and `0.897765` against the fixed `0.7` limit. Worst matched-
+baseline fractions are `1.47152`, `1.56919`, `1.55049`, and `1.52893`
+against the fixed `0.9` limit. All four pass wall-time, persistent-memory,
+peak-RSS, and zero-swap gates; the three `h1.20` variants use about
+`1.187 GB` persistent / `1.654 GB` peak, and `h0.70` uses `2.460 GB` /
+`2.931 GB`. This is a convergence-quality failure, not a RAM or GPU-
+throughput failure. More GPU cannot make the same fixed preconditioner pass.
 
-A fresh public clone at the exact v10 tag downloaded the release archive and
-both reused p010 SHA objects, verified every compressed and unpacked identity,
-and safely extracted the package. The source, recursive clean copy, exact
-registry staging tree, staging recursive copy, and fresh public extraction
-passed `311/311` tests plus native, T1, package-schema, manifest, and
-no-heavy-work checks. The archive also preserves both platform freezes. On
-Linux, point the verifier to the packaged frozen executables before running
-it:
+The exact 64-file raw set is preserved by file-manifest/evidence/audit/nested-
+archive SHA-256
+`1cf5f8572e5bdb93d54578f7342417ad16782dfb71367d641017d1216868230e`,
+`0dbd9ee0db112cb5a26686d6dcda50d10acb0a7998e55b56d20f054c24e446b0`,
+`68c9b85caff979b68841bc9347616aa7bd88f1098e7b2c66e7a873efb023c7d6`,
+and `762682b1cecc759612e9c254ab4851029649d4b19f41824d3319867310cdb1d0`.
+No P1B marker or raw record may be removed, changed, reused, or rerun.
+
+A fresh public clone at the exact v11 tag downloaded the release archive and
+both reused p010 SHA objects, verified all compressed and unpacked identities,
+and safely extracted the package. The extracted tree and its recursive
+manifest-only reconstruction each passed `337/337` tests plus native, T1,
+package-schema, manifest, input-identity, and no-heavy-work checks. On Linux,
+point the verifier to the packaged frozen executables before running it:
 
 ```sh
 export GENERATION8_BUILD_DIR="$PWD/reference/linux_x86_64_cpu_fp64_gen8"
 ./scripts/verify_release.sh
 ```
 
-The archive is `12,647,172` bytes and unpacks to normalized tar SHA-256
-`d58dda65d1a40cb7cf7b519d5828587a65d30b709a88a466dc102710752448fc`,
-`95,477,760` bytes, with `730` members. Its 700-entry internal manifest is
+The archive is `12,923,454` bytes and unpacks to normalized tar SHA-256
+`a536e129242d4ffba74c85f2f07d2ef364025a5f757cf898d9f245cf595ce9a3`,
+`98,426,880` bytes, with `812` members. Its 781-entry internal manifest is
 SHA-256
-`3b7536017241b7ed00a14ac3969c0a662be8a6fff09923114dc241eacdb55314`.
-The archive intentionally retains exact v9 predecessor pointer
-`reference/target_pack_registry_v2.json`, SHA-256
-`a10060f21979ea97b76a90e48fec9dbc22d0e4e9c1d2840c73bf7a6ba0ddc2d8`,
-because the frozen P1B sources bind it. The v10 self-pointer is absent under
-the acyclic-pointer protocol. After public verification, the live package
-added successor pointer `reference/target_pack_registry_v3.json`, SHA-256
+`90424ff731f29caf9df4e2943c0967293011307176af31ad82addbc68bc03545`.
+The archive intentionally retains exact v10 predecessor pointer
+`reference/target_pack_registry_v3.json`, SHA-256
 `15916b0927f8accbec3fe843bc4e8208dd48e9ce14858b302fe8b158c2d3a98c`,
-and its resulting 701-entry live manifest is SHA-256
-`64d5a9f23bd05c9bdca185f9679a3b93d9d6fd73e3572e9de60137e7ca17949c`.
-Those live successor bytes are intentionally not self-included in the v10
-archive. This pack is transport/evidence, not T5 or product authority.
-P0/P1A reruns, P1B execution, p030 topology/calibration, p010, and target
-response are forbidden.
+and contains no v11 self-pointer. After public verification, the live package
+added distinct successor pointer `reference/target_pack_registry_v4.json`,
+SHA-256
+`27903f73e989871106f6719b1f8e7166495c466993d29cbffc1d35d52198e649`,
+and its resulting 782-entry live manifest is SHA-256
+`78f6e13afae3abf9ef3ed6ef6a633366a35d43730f58a35ce9de484d557ff76b`.
+Those live successor bytes are intentionally not self-included in v11.
+
+This pack is transport/evidence, not T5 or product authority. P2, p030,
+p010, physical forcing/response, GPU/Metal acceptance, T5, T6-T14, and
+N1/N2/N3 remain locked. Any continuation requires a new response-blind
+mathematical preregistration and a materially different preconditioner or
+bounded block-Krylov design.
 
 The fetcher selects the exact release tag/asset from the pinned manifest and
 checks compressed identity plus the declared unpacked identity before safe
