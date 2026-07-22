@@ -20,6 +20,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "CalculiX.h"
+#ifdef CCX_ACCEL
+#include "accel.h"
+#endif
 #ifdef SPOOLES
 #include "spooles.h"
 #endif
@@ -669,6 +672,11 @@ void linstatic(double *co,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
     if(*isolver==0){
 #ifdef SPOOLES
+#ifdef CCX_ACCEL
+      /* hand CalculiX's in-memory coord/DOF map to the Accelerate/GMG backend (solve=gmg|auto needs it to
+         reconstruct the voxel grid). No-op for the stock direct path. */
+      accel_set_coordmap_(co,nactdof,nk,mi);
+#endif
       spooles(ad,au,adb,aub,&sigma,b,icol,irow,neq,nzs,&symmetryflag,
               &inputformat,&nzs[2]);
 #else

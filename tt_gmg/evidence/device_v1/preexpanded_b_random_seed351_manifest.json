@@ -1,0 +1,39 @@
+{
+  "bitwise_source_transform": true,
+  "build_seconds": 3.3267338275909424,
+  "created_unix_s": 1784117232.4646094,
+  "files": [
+    {
+      "bytes": 262766592,
+      "path": "/home/ttuser/ttgmg/device_v1/shifted_b0_random_seed351.bf16",
+      "sha256": "aa4f49cfad55f001986b3c37b77bbf37e3b5c3ae3d4a9539540f2f849a62acee",
+      "split": 0
+    },
+    {
+      "bytes": 262766592,
+      "path": "/home/ttuser/ttgmg/device_v1/shifted_b1_random_seed351.bf16",
+      "sha256": "03607c2a3df8e591e959da68e1afde795c63d31f34ce21eca33956c81a772e68",
+      "split": 1
+    },
+    {
+      "bytes": 262766592,
+      "path": "/home/ttuser/ttgmg/device_v1/shifted_b2_random_seed351.bf16",
+      "sha256": "26dc2984854246c2c01be8dbd61f7164445f611be9530a4528d315033bc9476a",
+      "split": 2
+    }
+  ],
+  "representation": "three BF16 splits in exact [chip][local_group][offset*3+input][TT-tile-lane] order",
+  "schema": "tt_gmg_preexpanded_resident_vector_v1",
+  "shape_per_split": [
+    8,
+    198,
+    81,
+    1024
+  ],
+  "source_halo": "/home/ttuser/ttgmg/device_v1/halo_random_seed351.bf16",
+  "source_halo_sha256": "11ddb17bb9b2e89be71949cc755f26d6ee53de885ed8c8a828d8b8e532f0c572",
+  "source_layout": "/home/ttuser/ttgmg/device_v1/device_layout.json",
+  "source_layout_schema": "tt_gmg_device_layout_v1",
+  "timed_kernel_scalar_materialization_required": false,
+  "vector_tag": "random_seed351"
+}

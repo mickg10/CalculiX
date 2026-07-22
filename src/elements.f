@@ -445,7 +445,11 @@ c     Bernhardi end
           endif
           return
         endif
+#ifdef CCX_FAST_PARSE
+        call ccxftoi(textpart(1),i,istat)
+#else
         read(textpart(1)(1:10),'(i10)',iostat=istat) i
+#endif
         if(istat.gt.0) then
           call inputerror(inpc,ipoinpc,iline,
      &         "*ELEMENT%",ier)
@@ -477,7 +481,11 @@ c     Bernhardi end
         nkon=nkon+nopeexp
 !     
         do j=2,min(n,nope+1)
+#ifdef CCX_FAST_PARSE
+          call ccxftoi(textpart(j),kon(indexe+j-1),istat)
+#else
           read(textpart(j)(1:10),'(i10)',iostat=istat) kon(indexe+j-1)
+#endif
           if(istat.gt.0) then
             call inputerror(inpc,ipoinpc,iline,
      &           "*ELEMENT%",ier)
@@ -498,8 +506,12 @@ c     Bernhardi end
             endif
             if(nteller+n.gt.nope) n=nope-nteller
             do j=1,n
-              read(textpart(j)(1:10),'(i10)',iostat=istat) 
+#ifdef CCX_FAST_PARSE
+              call ccxftoi(textpart(j),kon(indexe+nteller+j),istat)
+#else
+              read(textpart(j)(1:10),'(i10)',iostat=istat)
      &             kon(indexe+nteller+j)
+#endif
               if(istat.gt.0) then
                 call inputerror(inpc,ipoinpc,iline,
      &               "*ELEMENT%",ier)

@@ -1,0 +1,92 @@
+{
+  "schema": "tt_gmg_gate_contract_v1",
+  "contract_date": "2026-07-14",
+  "target": "row236_8x_wormhole",
+  "performance_gates": [
+    {
+      "id": "G1",
+      "label": "cold_host_setup",
+      "metric": "seconds",
+      "maximum": 3.0,
+      "minimum_samples": 1,
+      "required_tags": ["real_row236", "real_8x_wormhole", "hierarchy", "bcsr", "bf16x3_all_terms", "measured", "durable"]
+    },
+    {
+      "id": "G2",
+      "label": "full_bf16x3_upload",
+      "metric": "seconds",
+      "maximum": 0.3,
+      "minimum_samples": 1,
+      "required_tags": ["real_row236", "real_8x_wormhole", "bf16x3_all_terms", "all_8_chips", "measured", "durable"]
+    },
+    {
+      "id": "G3",
+      "label": "correct_persistent_resident_x_fine_spmv",
+      "metric": "seconds",
+      "maximum": 0.003,
+      "minimum_samples": 3,
+      "required_tags": ["real_row236", "real_8x_wormhole", "correct_output", "full_operator", "all_8_chips", "resident_x", "persistent_program", "no_host_xy_roundtrip", "measured", "durable"]
+    },
+    {
+      "id": "G4",
+      "label": "complete_accelerated_pcg",
+      "metric": "seconds",
+      "maximum": 1.0,
+      "minimum_samples": 3,
+      "required_tags": ["real_row236", "real_8x_wormhole", "complete_pcg", "device_resident_vectors", "fp64_true_residual_gate", "correct_output", "measured", "durable"]
+    },
+    {
+      "id": "G5",
+      "label": "solution_download_and_unpermute",
+      "metric": "seconds",
+      "maximum": 0.2,
+      "minimum_samples": 1,
+      "required_tags": ["real_row236", "real_8x_wormhole", "complete_solution", "measured", "durable"]
+    },
+    {
+      "id": "COLD",
+      "label": "cold_complete_solver_run",
+      "metric": "seconds",
+      "maximum": 5.0,
+      "minimum_samples": 3,
+      "required_tags": ["real_row236", "real_8x_wormhole", "complete_solver_run", "cold_setup", "full_upload", "fp64_true_residual_gate", "correct_output", "measured", "durable"]
+    },
+    {
+      "id": "WARM",
+      "label": "warm_complete_solver_run",
+      "metric": "seconds",
+      "maximum": 1.5,
+      "minimum_samples": 3,
+      "required_tags": ["real_row236", "real_8x_wormhole", "complete_solver_run", "cache_hit_proven", "operator_resident", "fp64_true_residual_gate", "correct_output", "measured", "durable"]
+    },
+    {
+      "id": "STRETCH",
+      "label": "cold_overlapped_complete_solver_run",
+      "metric": "seconds",
+      "maximum": 2.0,
+      "minimum_samples": 3,
+      "required_tags": ["real_row236", "real_8x_wormhole", "complete_solver_run", "cold_setup", "full_upload", "overlap_measured", "critical_path_reported", "fp64_true_residual_gate", "correct_output", "measured", "durable"]
+    }
+  ],
+  "acceptance_invariants": {
+    "reduced_dump": {
+      "golden_max_u": 95.8129714,
+      "max_u_absolute_tolerance": 0.0002,
+      "required_rc": 0,
+      "true_relative_residual_rule": "true_rel < min(2*tol, 1e-2)"
+    },
+    "full_ccx": {
+      "golden_max_u": 107.0569734213,
+      "max_u_relative_tolerance": 0.01,
+      "required_rc": 0,
+      "true_relative_residual_rule": "true_rel < min(2*tol, 1e-2)",
+      "requires_frd_readback": true,
+      "requires_opt_in_ccx_path": true
+    },
+    "safety": {
+      "fp64_true_residual_gate_required": true,
+      "cpu_fallback_required": true,
+      "backend_default_off": true
+    }
+  }
+}

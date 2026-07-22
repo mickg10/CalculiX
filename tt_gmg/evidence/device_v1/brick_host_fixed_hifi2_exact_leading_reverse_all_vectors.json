@@ -1,0 +1,101 @@
+{
+  "brick_operator": "/home/ttuser/ttgmg/staged/row236_brick_v1.bin",
+  "device_mac": {
+    "a_bf16_splits": 3,
+    "accumulator_bias": 0.0,
+    "accumulator_bias_scale": 0.0,
+    "accumulator_chunk_terms": 0,
+    "b_bf16_splits": 3,
+    "b_low_terms": null,
+    "cross_terms": 6,
+    "fidelity_batch_terms": 0,
+    "fixed_hifi2_exact_leading": true,
+    "fixed_hifi2_fidelity_phases_per_compensated_term": 18,
+    "fixed_hifi2_mac_calls_per_compensated_term": 9,
+    "hifi2_products": [],
+    "hifi3_products": [],
+    "math_fidelity": 4,
+    "term_order": "reverse"
+  },
+  "fine_dump": "/home/ttuser/ttgmg/staged/row236_fine.bin",
+  "metadata": {
+    "active_nodes": 1290738,
+    "occupancy_count": 1290738,
+    "pass": true,
+    "roundtrip_ok": true
+  },
+  "pass": true,
+  "schema": "tt_gmg_brick_operator_verification_v1",
+  "thresholds": {
+    "constant_max_error_over_term_scale": 2e-06,
+    "l2_relative": 2e-05,
+    "max_relative": 5e-05
+  },
+  "vectors": [
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 91.92232513427734,
+        "minimum": -97.03560638427734
+      },
+      "brick_oracle_seconds": 19.590091943740845,
+      "l2_relative": 3.508870402323395e-07,
+      "max_absolute": 0.00010449073232621231,
+      "max_error_over_term_scale": 5.574064367214781e-08,
+      "max_relative": 1.0891428206740082e-06,
+      "name": "random",
+      "pass": true,
+      "reference_seconds": 1.1820333003997803,
+      "vector_max_absolute": 5.489653829320215
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 28.087434768676758,
+        "minimum": -15.601181030273438
+      },
+      "brick_oracle_seconds": 19.571353435516357,
+      "l2_relative": 1.1243523667345058e-05,
+      "max_absolute": 2.4891342031985175e-05,
+      "max_error_over_term_scale": 6.497973743965728e-08,
+      "max_relative": 1.6817267217313903e-06,
+      "name": "smooth",
+      "pass": true,
+      "reference_seconds": 0.998990535736084,
+      "vector_max_absolute": 1.121784735399536
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 68.50714874267578,
+        "minimum": -66.97137451171875
+      },
+      "brick_oracle_seconds": 19.408273458480835,
+      "l2_relative": 2.7800745045394677e-07,
+      "max_absolute": 4.212484323318222e-05,
+      "max_error_over_term_scale": 2.5364768018446026e-08,
+      "max_relative": 6.149070529830373e-07,
+      "name": "boundary",
+      "pass": true,
+      "reference_seconds": 0.9725584983825684,
+      "vector_max_absolute": 4.863473666854254
+    },
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 32.378822326660156,
+        "minimum": -17.897090911865234
+      },
+      "brick_oracle_seconds": 19.446619510650635,
+      "l2_relative": 9.573583382518696e-06,
+      "max_absolute": 4.437501428089519e-06,
+      "max_error_over_term_scale": 1.299504152486816e-08,
+      "max_relative": 2.541943363976083e-07,
+      "name": "constant",
+      "pass": true,
+      "reference_seconds": 0.9754457473754883,
+      "vector_max_absolute": 1.0
+    }
+  ],
+  "verification_seconds": 83.88900661468506
+}

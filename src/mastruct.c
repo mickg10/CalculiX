@@ -26,6 +26,7 @@
 #define max(a,b) ((a) >= (b) ? (a) : (b))
 
 static ITG *neq1,*irow1,*mast11,*jq1,kflag1,num_cpus;
+void insert_set_coo(int);   /* fast cache-friendly COO structure build (insert.c) */
 
 void mastruct(ITG *nk, ITG *kon, ITG *ipkon, char *lakon, ITG *ne,
 	      ITG *nodeboun, ITG *ndirboun, ITG *nboun, ITG *ipompc,
@@ -46,7 +47,7 @@ void mastruct(ITG *nk, ITG *kon, ITG *ipkon, char *lakon, ITG *ne,
     ist1,ist2,node1,node2,nmast,ifree,icalcnactdof,
     index1,index2,m,node,nzs_,ist,kflag,indexe,nope,*mast1=NULL,
     *irow=NULL,icolumn,nmastboun,mt=mi[1]+1,*next=NULL,nopeold=0,
-    indexeold,identical,jstart,iatleastonenonzero,idof,ndof,*ithread=NULL;
+    indexeold,identical,jstart,iatleastonenonzero,idof,ndof,usecoo,*ithread=NULL;
 
   /* variables for multithreading procedure */
 
@@ -341,6 +342,15 @@ void mastruct(ITG *nk, ITG *kon, ITG *ipkon, char *lakon, ITG *ne,
        next(ipointer(i))  points to further nonzero elements in 
        column i */
       
+  /* Fast cache-friendly structure build (COO + counting sort) for the safe common case: mechanical static,
+     no MPC, no superelement/contact -> only insert() fires and every column index is < neq[1]. Replaces the
+     dependent random pointer-chase (chain walk) with a counting sort; byte-identical jq/irow/icol. Falls back
+     to the linked-list build otherwise. Disable with CCX_MASTRUCT_COO=0. */
+  usecoo=(*nmpc==0)&&(*ithermal<2)&&(*nmethod==1);
+  if(usecoo){ char*ev=getenv("CCX_MASTRUCT_COO"); if(ev&&atoi(ev)==0) usecoo=0; }
+  if(usecoo){ for(i=0;i<*ne;i++){ if(ipkon[i]<0) continue; if((lakon[8*i]=='U')||(lakon[8*i]=='E')){usecoo=0;break;} } }
+  insert_set_coo(usecoo);
+
   for(i=0;i<4**nk;++i){
     ipointer[i]=0;
   }
@@ -806,17 +816,32 @@ void mastruct(ITG *nk, ITG *kon, ITG *ipkon, char *lakon, ITG *ne,
   //        X X X  |x x x
 
   RENEW(irow,ITG,ifree);
-  nmast=0;
-  jq[0]=1;
-  for(i=0;i<neq[1];i++){
-    index=ipointer[i];
-    do{
-      if(index==0) break;
-      irow[nmast++]=mast1[index-1];
-      index=next[index-1];
-    }while(1);
-    jq[i+1]=nmast+1;
+  if(usecoo){
+    /* counting sort: COO (mast1[k]=row 1-based, next[k]=col 0-based) -> CSR (jq 1-based / irow). In COO mode
+       ipointer was never used for chaining (still 0); reuse it as the per-column count, then as the 0-based
+       scatter cursor. All accesses are sequential reads + independent (prefetchable) scattered writes -- no
+       dependent pointer-chase, so no cache/TLB-miss latency stall. Output matches the chain walk after the
+       per-column sort+dedup below (only the pre-sort order differs). */
+    for(i=0;i<neq[1];i++) ipointer[i]=0;
+    for(j=0;j<ifree;j++) ipointer[next[j]]++;
+    jq[0]=1; for(i=0;i<neq[1];i++) jq[i+1]=jq[i]+ipointer[i];
+    for(i=0;i<neq[1];i++) ipointer[i]=jq[i]-1;
+    for(j=0;j<ifree;j++){ icolumn=next[j]; irow[ipointer[icolumn]++]=mast1[j]; }
+    nmast=ifree;
+  }else{
+    nmast=0;
+    jq[0]=1;
+    for(i=0;i<neq[1];i++){
+      index=ipointer[i];
+      do{
+        if(index==0) break;
+        irow[nmast++]=mast1[index-1];
+        index=next[index-1];
+      }while(1);
+      jq[i+1]=nmast+1;
+    }
   }
+  insert_set_coo(0);   /* reset: subsequent callers (mastructse, etc.) use the linked-list build */
 
   /* sorting the row numbers within each column */
   

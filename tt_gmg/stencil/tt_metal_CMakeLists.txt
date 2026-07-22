@@ -1,0 +1,55 @@
+cmake_minimum_required(VERSION 3.22...4.2)
+project(metal_example_spmv_mac)
+
+add_executable(metal_example_spmv_mac)
+target_sources(metal_example_spmv_mac PRIVATE spmv_mac.cpp)
+
+add_executable(metal_example_brick_spmv)
+target_sources(metal_example_brick_spmv PRIVATE brick_spmv.cpp)
+
+add_executable(metal_example_canonical_packed_spmv)
+target_sources(
+    metal_example_canonical_packed_spmv
+    PRIVATE canonical_packed_spmv.cpp)
+
+add_executable(metal_example_canonical_dynamic_spmv)
+target_sources(
+    metal_example_canonical_dynamic_spmv
+    PRIVATE canonical_dynamic_spmv.cpp)
+
+add_executable(metal_example_offline_compile_affine_roles)
+target_sources(
+    metal_example_offline_compile_affine_roles
+    PRIVATE offline_compile_affine_roles.cpp)
+target_include_directories(
+    metal_example_offline_compile_affine_roles
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/tt_metal
+        ${CMAKE_SOURCE_DIR}/tt_metal/common
+        ${CMAKE_SOURCE_DIR}/tt_metal/api/tt-metalium
+        ${CMAKE_SOURCE_DIR}/tt_metal/impl/dispatch)
+
+if(NOT TARGET TT::Metalium)
+    find_package(TT-Metalium REQUIRED)
+endif()
+target_link_libraries(metal_example_spmv_mac PUBLIC TT::Metalium)
+target_link_libraries(metal_example_brick_spmv PUBLIC TT::Metalium)
+target_link_libraries(
+    metal_example_canonical_packed_spmv
+    PUBLIC TT::Metalium)
+target_link_libraries(
+    metal_example_canonical_dynamic_spmv
+    PUBLIC TT::Metalium)
+target_link_libraries(
+    metal_example_offline_compile_affine_roles
+    PUBLIC TT::Metalium yaml-cpp::yaml-cpp)
+if(TARGET TT::CommonPCH)
+    tt_reuse_precompile_headers(metal_example_spmv_mac TT::CommonPCH)
+    tt_reuse_precompile_headers(metal_example_brick_spmv TT::CommonPCH)
+    tt_reuse_precompile_headers(
+        metal_example_canonical_packed_spmv TT::CommonPCH)
+    tt_reuse_precompile_headers(
+        metal_example_canonical_dynamic_spmv TT::CommonPCH)
+    tt_reuse_precompile_headers(
+        metal_example_offline_compile_affine_roles TT::CommonPCH)
+endif()
