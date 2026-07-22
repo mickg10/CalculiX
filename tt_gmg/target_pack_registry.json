@@ -1,10 +1,10 @@
 {
   "schema": "tt_gmg_target_pack_registry_pointer_v1",
   "repository": "https://github.com/mickg10/calculi_target_packs",
-  "registry_commit": "98545757bbf0f0d0b2dcaa9d0c2cfb91e3b63f55",
-  "release_tag": "packs-v7-20260721",
+  "registry_commit": "1465d52411f295c2305dd03ce14df59bcefe474a",
+  "release_tag": "packs-v8-20260722",
   "index_path": "packs/index.json",
-  "index_sha256": "d1da250383e973c5cae6d1c7660ba2a884de7588e530a27b1201690921f8a747",
+  "index_sha256": "19ef420bea0dda1b386561babeaec873c0aff1cd68d77499cfa851999d0cff04",
   "packs": {
     "matrix_free_payloaded_transfer_wip_20260719": {
       "manifest_sha256": "7813f50775c665d698fd18ac082950b867945803bc9e6b3201d7c756ab74ce79",
@@ -259,6 +259,68 @@
         "p1b_run": false,
         "p030_run": false,
         "p010_scan_run": false,
+        "target_response_run": false,
+        "gpu_or_metal_run": false
+      }
+    },
+    "matrix_free_payloaded_transfer_generation8_p0_green_wip_20260722": {
+      "manifest_sha256": "ebcfa948df07075ef9a4a944cf1dd3227c3dcd4caffd59281b5f80732c77eba9",
+      "status": "work_in_progress",
+      "authority": "generation8_marker_free_p035_p030_input_and_header_preflight_green_immutable_no_topology_operator_krylov_p010_response_not_T5",
+      "objects": {
+        "source_archive": {
+          "release_tag": "packs-v8-20260722",
+          "sha256": "907782b8bdc89938c46578f38dc9bdec090c2299b280798a8500426ff37b14d7",
+          "bytes": 12495463,
+          "unpacked_sha256": "83f04bb6c27b5706bbea615603e550a3a661fdbd084d2d78196fb0f42129be18",
+          "unpacked_bytes": 93706240,
+          "member_count": 638,
+          "internal_manifest_entries": 609,
+          "internal_manifest_sha256": "9c193b1ed60114efa39f547b92a70f7700bc1deddc5deee945d2a0649b142183"
+        },
+        "p010_model": {
+          "release_tag": "packs-v3-20260720",
+          "sha256": "1515b4d2b1385a5303ffbe65b22094a298f7e156c709ac65b3328894cf63679a",
+          "bytes": 4723841,
+          "unpacked_sha256": "7e8befe1d992ad75c2f6ae6c790291c5c41faf87980358b5205df7db8d326a4c",
+          "unpacked_bytes": 120334988
+        },
+        "p010_payload": {
+          "release_tag": "packs-v3-20260720",
+          "sha256": "397fb88719d1e041e628bb001f1dd98a251fe7bbb403441aa8b31126609ded8f",
+          "bytes": 409974,
+          "unpacked_sha256": "64bc1ac8118d558299fca43de91c490f67469eddeb6001848051f07783806720",
+          "unpacked_bytes": 5040280,
+          "total_kg": 0.372
+        }
+      },
+      "generation8_p0_evidence": {
+        "orchestration_plan_sha256": "83ab52c9fb1ca3ddc5da5bf4f093a0e43fe9b0272e1cfc99fcd01ae8f54ab994",
+        "payload_record_count_addendum_sha256": "73214498e19dd696d44e66d8ab88f21134b328b84a077b56f95a98354f3ed265",
+        "source_freeze_sha256": "8215746ee85a998b49d6eb94287091e82a52e8c5c8be72f8f46df5347396beda",
+        "source_freeze_audit_sha256": "471847b10b6ecf5652efaa67ac72f606925e9acf2ffe0010d1aaf7b2b9342992",
+        "p0_summary_sha256": "7d834266418561d1c7bcca503d4c384b588ae9f586dd8fb22daedb75e7b4567d",
+        "p0_independent_audit_sha256": "001d36fad5fc4bcf55c1d8db675efaa8935221aca40c810d4ce01b79519b43e1",
+        "post_observation_test_lock_sha256": "9d433db85be83f81aa94e6289fc67d8cdfc9b2e127b002f914a3262807e9b04c",
+        "packaging_audit_sha256": "959de784606bf1713c2768d9a66779ea95becbd5be3881ea29ed4460f8c0ea60",
+        "packaging_recursive_verify_sha256": "2e1f099f255d4b1f795b2f7768055decb86b06297d4aacc279966eb3c2de0b13",
+        "full_input_hashes_matched": 4,
+        "native_raw_headers_matched": 2,
+        "maximum_resident_bytes": 4575232,
+        "swaps": 0,
+        "generation8_markers": 0,
+        "supported_platform_native_tests": 266,
+        "supported_platform_recursive_tests": 266,
+        "decision": "green_marker_free_p0_checkpoint_only",
+        "p0_rerun_locked": true,
+        "p1a_launch": false,
+        "p1b_run": false,
+        "p030_topology_or_calibration_run": false,
+        "p010_run": false,
+        "topology_or_hierarchy_run": false,
+        "operator_or_preconditioner_run": false,
+        "krylov_run": false,
+        "physical_forcing_or_transfer_output_run": false,
         "target_response_run": false,
         "gpu_or_metal_run": false
       }
