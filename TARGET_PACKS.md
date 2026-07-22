@@ -5,10 +5,10 @@ fork in the content-addressed repository:
 
 - repository: `https://github.com/mickg10/calculi_target_packs`;
 - registry commit:
-  `18a2be4fceae92fa1e0a029016a2a72798f20773`;
-- immutable release tag: `packs-v6-20260721`;
+  `98545757bbf0f0d0b2dcaa9d0c2cfb91e3b63f55`;
+- immutable release tag: `packs-v7-20260721`;
 - index SHA-256:
-  `033a28f25b460294c483b0448b100781f6c82f3ab73f06669b78c919d86e7a1c`;
+  `d1da250383e973c5cae6d1c7660ba2a884de7588e530a27b1201690921f8a747`;
 - machine-readable binding: `tt_gmg/target_pack_registry.json`.
 
 Do not identify a target by a local pathname, a branch, “latest,” or a release
@@ -29,7 +29,8 @@ each manifest then binds every release object by full SHA-256 and byte count.
 | `matrix_free_payloaded_transfer_block_schwarz_wip_20260720` | superseded generation-2 WIP; p010 topology storage green, Stage 1 convergence red | `d4f373fc1745bcdbdce3dc451e756447f583ee30ff63af4e0574603ccf27e6b0` |
 | `matrix_free_payloaded_transfer_modal_schwarz_red_wip_20260721` | superseded generation-3 WIP; exact modal-Schwarz algebra green, Stage 1 convergence red and consumed | `d3122b2855a08908e46a57d3feea67964d372ba280a2390d5a3dcd8df106223b` |
 | `matrix_free_payloaded_transfer_smoothed_aggregation_red_wip_20260721` | superseded generation-4 WIP; p035/p030 fixed calibration complete, no candidate selected, no target response | `fd5502b9a6f4f2f46069a6f5d107c7b021c908cb456c3f3b0ad88cd096a73ffa` |
-| `matrix_free_payloaded_transfer_coarse_polynomial_red_wip_20260721` | current generation-6 WIP; P1 consumed terminal RED before PCG, no candidate selected, no p010 or target response | `e42e667f2a14da4f4e368fc499a44db0ad68f2e8ede6f25603ca9e3ddc2ddd9f` |
+| `matrix_free_payloaded_transfer_coarse_polynomial_red_wip_20260721` | superseded generation-6 WIP; P1 consumed terminal RED before PCG, no candidate selected, no p010 or target response | `e42e667f2a14da4f4e368fc499a44db0ad68f2e8ede6f25603ca9e3ddc2ddd9f` |
+| `matrix_free_payloaded_transfer_generation7_execution_repair_red_wip_20260721` | current generation-7 WIP; P1A stopped terminal RED at setup case four before RHS/operator/PCG, no P1B, p010, or target response | `4571cd7ea53c09237c16b8c1602d15b49ba6755562327e07809b38ef959a862c` |
 
 The primary TT-GMG target is the compressed row236 fine dump:
 
@@ -45,38 +46,52 @@ The primary TT-GMG target is the compressed row236 fine dump:
 ```sh
 git clone https://github.com/mickg10/calculi_target_packs.git
 cd calculi_target_packs
-git checkout 18a2be4fceae92fa1e0a029016a2a72798f20773
+git checkout 98545757bbf0f0d0b2dcaa9d0c2cfb91e3b63f55
 python3 scripts/rebuild_index.py --check
 python3 scripts/verify_registry.py
 python3 scripts/fetch_pack.py row236_ttgmg_fine_v1 --dest downloads
 ```
 
-For the current transfer continuation, fetch the SHA-bound generation-6
+For the current transfer continuation, fetch the SHA-bound generation-7
 source/evidence archive and the unchanged p010 model and payload together:
 
 ```sh
 python3 scripts/fetch_pack.py \
-  matrix_free_payloaded_transfer_coarse_polynomial_red_wip_20260721 \
+  matrix_free_payloaded_transfer_generation7_execution_repair_red_wip_20260721 \
   --dest downloads --extract
 ```
 
 Its archive SHA-256 is
-`05552e852a569ecfee8c9318766a87dbdb8bc27d6b0c8f727234180b9e87972e`;
+`34e37135598621bd6d721f2ffc401b57c9e0b2c9553501d90a7b3707d2b3aca6`;
 the compressed p010 model/payload SHAs are
 `1515b4d2b1385a5303ffbe65b22094a298f7e156c709ac65b3328894cf63679a`
 and `397fb88719d1e041e628bb001f1dd98a251fe7bbb403441aa8b31126609ded8f`.
-The p010 objects remain immutable v3 release objects; v6 references rather
-than duplicates them. Generation 6 did not scan or evaluate them. Its exact
-ten-case p035 P1 screen consumed all ten markers once, but every native
-process returned `1` before any PCG iteration: six cases failed the
-production-size Rademacher unit-norm guard and four distributed six-field
-cases failed a generic response-blind setup gate before emitting its
-individual predicate. No final JSONL, convergence value, candidate selection,
-p010 scan, or target response exists. A fresh public clone/download verified
-all compressed/decompressed objects and passed `223/223` tests plus `223/223`
-again recursively. This pack is transport/evidence, not T5 or product
-authority; P1 rerun, P2, selection, P3, p010, and target response are
-forbidden.
+The p010 objects remain immutable v3 release objects; v7 references rather
+than duplicates them. Generation 7 did not scan or evaluate them. Its frozen
+p035 P1A setup/RHS census stopped at case four of ten. The two Generation-2
+baselines and structure-only `h0.70/d3/k20` are GREEN; the distributed
+`0.372 kg` version is RED because the level-0 mass Galerkin relative value
+`2.32119363768037e-12` exceeds the frozen `2e-12` limit. The RED process
+returned before RHS allocation, configuration, operator/preconditioner
+application, or PCG. Six later P1A cases and all P1B/p030/p010/target work are
+absent. Maximum setup RSS was `2,490,826,752` bytes, maximum persistent state
+was `1,995,736,395` bytes, and swaps were zero; this is a setup-audit failure,
+not a memory or convergence result.
+
+A fresh public clone/download verified every compressed and decompressed
+object and passed `238/238` Linux tests plus `238/238` again recursively. The
+archive preserves both platform freezes. On Linux, point the verifier to the
+packaged frozen executables before running it:
+
+```sh
+export GENERATION7_BUILD_DIR="$PWD/reference/linux_x86_64_cpu_fp64_gen7"
+./scripts/verify_release.sh
+```
+
+The successful public Linux log SHA-256 is
+`bf9812f9fdabe96f1cf921d98613fb5d4f7b2ed86de40dcd371b49e29206025b`.
+This pack is transport/evidence, not T5 or product authority. Generation-7
+P1A rerun/completion, P1B, p030, p010, and target response are forbidden.
 
 The fetcher selects the exact release tag/asset from the pinned manifest and
 checks compressed identity plus the declared unpacked identity before safe

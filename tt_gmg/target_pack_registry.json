@@ -1,10 +1,10 @@
 {
   "schema": "tt_gmg_target_pack_registry_pointer_v1",
   "repository": "https://github.com/mickg10/calculi_target_packs",
-  "registry_commit": "18a2be4fceae92fa1e0a029016a2a72798f20773",
-  "release_tag": "packs-v6-20260721",
+  "registry_commit": "98545757bbf0f0d0b2dcaa9d0c2cfb91e3b63f55",
+  "release_tag": "packs-v7-20260721",
   "index_path": "packs/index.json",
-  "index_sha256": "033a28f25b460294c483b0448b100781f6c82f3ab73f06669b78c919d86e7a1c",
+  "index_sha256": "d1da250383e973c5cae6d1c7660ba2a884de7588e530a27b1201690921f8a747",
   "packs": {
     "matrix_free_payloaded_transfer_wip_20260719": {
       "manifest_sha256": "7813f50775c665d698fd18ac082950b867945803bc9e6b3201d7c756ab74ce79",
@@ -196,6 +196,71 @@
         "p3_run": false,
         "p010_scan_run": false,
         "target_response_run": false
+      }
+    },
+    "matrix_free_payloaded_transfer_generation7_execution_repair_red_wip_20260721": {
+      "manifest_sha256": "4571cd7ea53c09237c16b8c1602d15b49ba6755562327e07809b38ef959a862c",
+      "status": "work_in_progress",
+      "authority": "generation7_p1a_terminal_red_setup_audit_before_rhs_operator_pcg_no_p1b_no_p010_no_target_response_not_T5",
+      "objects": {
+        "source_archive": {
+          "release_tag": "packs-v7-20260721",
+          "sha256": "34e37135598621bd6d721f2ffc401b57c9e0b2c9553501d90a7b3707d2b3aca6",
+          "bytes": 12347773,
+          "unpacked_sha256": "8a01b3b3ccd049bc6d1db6f435bcc26ca7a8b12d235dc5525488f400645f7109",
+          "unpacked_bytes": 89354240,
+          "member_count": 533,
+          "internal_manifest_entries": 510,
+          "internal_manifest_sha256": "1325f276bbd3e8920caf26854bc44e1c5ca3c6c1f885ce55aebf6cc292313c68"
+        },
+        "p010_model": {
+          "release_tag": "packs-v3-20260720",
+          "sha256": "1515b4d2b1385a5303ffbe65b22094a298f7e156c709ac65b3328894cf63679a",
+          "bytes": 4723841,
+          "unpacked_sha256": "7e8befe1d992ad75c2f6ae6c790291c5c41faf87980358b5205df7db8d326a4c",
+          "unpacked_bytes": 120334988
+        },
+        "p010_payload": {
+          "release_tag": "packs-v3-20260720",
+          "sha256": "397fb88719d1e041e628bb001f1dd98a251fe7bbb403441aa8b31126609ded8f",
+          "bytes": 409974,
+          "unpacked_sha256": "64bc1ac8118d558299fca43de91c490f67469eddeb6001848051f07783806720",
+          "unpacked_bytes": 5040280,
+          "total_kg": 0.372
+        }
+      },
+      "generation7_evidence": {
+        "plan_sha256": "c7a23cff0cda0279685c8d7ba343d9b743406e7bfcf6a37d7727d975c87adc0d",
+        "plan_audit_sha256": "f94cf0c6afdd38055a60ce5e6424c3b121fd84e24ce072a111a1297c5e8c5786",
+        "source_freeze_sha256": "14da3b052c1e716c92a85ec3dd444a61b4fe74c9a6fcf22b68eec51916b57857",
+        "anchor_preflight_sha256": "8d44f8b069897fdf1f5ee7f7228f80ad8750708efbdb7427a7c3d988e8bf245d",
+        "terminal_red_evidence_sha256": "29416602081d57ebad2964e79daa63eeb48e69f8f14b146f5515d9a97df6cd77",
+        "terminal_red_audit_sha256": "bae9604f07041e89a0c3b901bd416744e0ec34b06655469184c142e0efc70f83",
+        "terminal_red_files_manifest_sha256": "497767cd567c36dc1933afd4fb7eab67f91a655c250a474b8cc20eb1b45bf4ef",
+        "terminal_red_nested_archive_sha256": "42c99aa30259420323ec441504e380ca4e4109fb65c007953950502d26103d9a",
+        "public_linux_registry_verify_sha256": "bf9812f9fdabe96f1cf921d98613fb5d4f7b2ed86de40dcd371b49e29206025b",
+        "p1a_planned_cases": 10,
+        "p1a_validated_prefix_cases": 4,
+        "p1a_markers_consumed": 4,
+        "p1a_green_cases": 3,
+        "p1a_red_cases": 1,
+        "p1a_locked_absent_cases": 6,
+        "red_controlling_member": "level_0_mass_galerkin_relative",
+        "red_controlling_value": 2.32119363768037e-12,
+        "frozen_limit": 2e-12,
+        "p1a_red_rhs_vectors": 0,
+        "configuration_count": 0,
+        "operator_application_count": 0,
+        "pcg_iteration_count": 0,
+        "maximum_setup_resident_bytes": 2490826752,
+        "maximum_persistent_bytes": 1995736395,
+        "swaps": 0,
+        "decision": "red_terminal_before_p1b",
+        "p1b_run": false,
+        "p030_run": false,
+        "p010_scan_run": false,
+        "target_response_run": false,
+        "gpu_or_metal_run": false
       }
     },
     "modal_v18b_solver_targets_20260715": {
