@@ -1,0 +1,20 @@
+{
+  "b_bit_mismatches_by_split": [
+    0,
+    0,
+    0
+  ],
+  "checks": {
+    "packed_reference_bitwise_exact": true,
+    "packed_shifted_b_bitwise_exact": true
+  },
+  "created_unix_s": 1784120009.4723244,
+  "host_only": true,
+  "passing": true,
+  "reference_bit_mismatches": 0,
+  "schema": "tt_gmg_canonical_packed_vector_verification_v1",
+  "vector_tag": "random_seed351",
+  "verified_b_words": 314523648,
+  "verified_reference_words": 3883008,
+  "verify_seconds": 3.027635097503662
+}

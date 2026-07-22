@@ -20,6 +20,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "CalculiX.h"
+#ifdef CCX_ACCEL
+#include "accel.h"
+#endif
 
 #define min(a,b) ((a) <= (b) ? (a) : (b))
 #define max(a,b) ((a) >= (b) ? (a) : (b))
@@ -50,9 +53,23 @@ void frd(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,ITG *ne0,
      iselect=+1 means only those nodes for which inum positive
      ist, i.e. structural nodes
      iselect=0  means both of the above */
-  
+
+#ifdef CCX_ACCEL_ARROW
+  /* optional: dump nodal fields (coords, displacement, optional stress) as Arrow IPC. No-op unless set.
+     Requested explicitly via env, so fail closed (like the fast .dat) if the write fails -- a downstream
+     pipeline must never treat a missing/partial Arrow file as a successful run. */
+  { const char *e=getenv("CCX_ACCEL_OUT_ARROW");
+    if(e&&*e){ const char *es=getenv("CCX_ACCEL_OUT_ARROW_STRESS");
+               /* match frd's node selection: output[3]=='a' is the "all nodes" mode (ioutall) -> pass inum=NULL
+                  so every node is written; otherwise filter inum[i]==0 exactly as frd does. */
+               const int *sel = (strcmp1(&output[3],"a")==0) ? (const int *)0 : inum;
+               if(ccx_arrow_write(e,(long)*nk,mi[1]+1,co,v,(es&&*es)?stn:0,sel)!=0){
+                 fprintf(stderr,"[accel] Arrow output '%s' failed -> failing closed (exit 202)\n",e);
+                 exit(202); } } }
+#endif
+
   FILE *f1;
-  
+
   char c[2]="C",m1[4]=" -1",m2[4]=" -2",m3[4]=" -3",
     p0[6]="    0",p1[6]="    1",p2[6]="    2",p3[6]="    3",p4[6]="    4",
     p5[6]="    5",p6[6]="    6",p7[6]="    7",p8[6]="    8",p9[6]="    9",
@@ -203,7 +220,7 @@ void frd(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,ITG *ne0,
     fprintf(f1,"%5sUHOST                                                              \n",p1);
     fprintf(f1,"%5sUPGM               CalculiX                                        \n",p1);
     fprintf(f1,"%5sUVERSION           Version DEVELOPMENT                             \n",p1);
-    fprintf(f1,"%5sUCOMPILETIME       Mon Jun  8 19:18:34 CEST 2026                    \n",p1);
+    fprintf(f1,"%5sUCOMPILETIME       Wed Jul  1 01:39:20 EDT 2026                    \n",p1);
     fprintf(f1,"%5sUDIR                                                               \n",p1);
     fprintf(f1,"%5sUDBN                                                               \n",p1);
     

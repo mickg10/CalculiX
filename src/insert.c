@@ -21,6 +21,12 @@
 #include <string.h>
 #include "CalculiX.h"
 
+/* COO mode (set by mastruct.c for the safe common case): store (row,col) flat in mast1[]/next[] instead of a
+   per-column linked list, so the structure can be materialized with a cache-friendly counting sort instead of
+   a dependent random pointer-chase. Default off -> all other callers keep the original linked-list behavior. */
+static int insert_coo_mode=0;
+void insert_set_coo(int m){ insert_coo_mode=m; }
+
 void insert(ITG *ipointer, ITG **mast1p, ITG **nextp, ITG *i1,
 	    ITG *i2, ITG *ifree, ITG *nzs_){
 
@@ -59,9 +65,16 @@ void insert(ITG *ipointer, ITG **mast1p, ITG **nextp, ITG *i1,
       RENEW(mast1,ITG,*nzs_);
       RENEW(next,ITG,*nzs_);
   }
-  mast1[*ifree]=idof1;
-  next[*ifree]=ipointer[idof2];
-  ipointer[idof2]=++*ifree;
+  if(insert_coo_mode){
+    /* COO append: mast1=row (1-based), next=col (0-based); no per-column chain. */
+    mast1[*ifree]=idof1;
+    next[*ifree]=idof2;
+    ++*ifree;
+  }else{
+    mast1[*ifree]=idof1;
+    next[*ifree]=ipointer[idof2];
+    ipointer[idof2]=++*ifree;
+  }
 
   *mast1p=mast1;
   *nextp=next;

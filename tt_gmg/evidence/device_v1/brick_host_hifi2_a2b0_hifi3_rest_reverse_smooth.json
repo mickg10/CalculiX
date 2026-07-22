@@ -1,0 +1,63 @@
+{
+  "brick_operator": "/home/ttuser/ttgmg/staged/row236_brick_v1.bin",
+  "device_mac": {
+    "a_bf16_splits": 3,
+    "accumulator_bias": 0.0,
+    "accumulator_bias_scale": 0.0,
+    "accumulator_chunk_terms": 0,
+    "b_bf16_splits": 3,
+    "b_low_terms": null,
+    "cross_terms": 6,
+    "hifi2_products": [
+      [
+        2,
+        0
+      ]
+    ],
+    "hifi3_products": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        1
+      ]
+    ],
+    "math_fidelity": 4,
+    "term_order": "reverse"
+  },
+  "fine_dump": "/home/ttuser/ttgmg/staged/row236_fine.bin",
+  "metadata": {
+    "active_nodes": 1290738,
+    "occupancy_count": 1290738,
+    "pass": true,
+    "roundtrip_ok": true
+  },
+  "pass": true,
+  "schema": "tt_gmg_brick_operator_verification_v1",
+  "thresholds": {
+    "constant_max_error_over_term_scale": 2e-06,
+    "l2_relative": 2e-05,
+    "max_relative": 5e-05
+  },
+  "vectors": [
+    {
+      "accumulator_bias": 0.0,
+      "accumulator_prefix_extrema": {
+        "maximum": 28.087432861328125,
+        "minimum": -15.601178169250488
+      },
+      "brick_oracle_seconds": 13.703793048858643,
+      "l2_relative": 9.789548809599895e-06,
+      "max_absolute": 1.7202808529792613e-05,
+      "max_error_over_term_scale": 4.490854611431609e-08,
+      "max_relative": 1.1622685010798359e-06,
+      "name": "smooth",
+      "pass": true,
+      "reference_seconds": 1.181448221206665,
+      "vector_max_absolute": 1.121784735399536
+    }
+  ],
+  "verification_seconds": 15.464826822280884
+}

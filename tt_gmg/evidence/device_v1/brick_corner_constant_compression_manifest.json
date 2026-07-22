@@ -1,0 +1,184 @@
+{
+  "schema": "tt_gmg_corner_constant_compression_v1",
+  "lossless": true,
+  "source_layout": "chip,group,term,output_component,lane",
+  "compressed_layout": "chip,group,corner,split,coefficient_type,lane",
+  "chips": 8,
+  "groups_per_chip": 198,
+  "corner_offsets": [
+    0,
+    2,
+    6,
+    8,
+    18,
+    20,
+    24,
+    26
+  ],
+  "coefficient_triples_bf16_bits": [
+    [
+      16143,
+      14901,
+      46080
+    ],
+    [
+      48842,
+      47670,
+      46592
+    ],
+    [
+      48911,
+      47669,
+      13312
+    ]
+  ],
+  "type_map_corner_input_output": [
+    [
+      [
+        1,
+        2,
+        2
+      ],
+      [
+        2,
+        1,
+        2
+      ],
+      [
+        2,
+        2,
+        1
+      ]
+    ],
+    [
+      [
+        1,
+        2,
+        0
+      ],
+      [
+        2,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    [
+      [
+        1,
+        0,
+        2
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        2,
+        0,
+        1
+      ]
+    ],
+    [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        2
+      ],
+      [
+        0,
+        2,
+        1
+      ]
+    ],
+    [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        2
+      ],
+      [
+        0,
+        2,
+        1
+      ]
+    ],
+    [
+      [
+        1,
+        0,
+        2
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        2,
+        0,
+        1
+      ]
+    ],
+    [
+      [
+        1,
+        2,
+        0
+      ],
+      [
+        2,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    [
+      [
+        1,
+        2,
+        2
+      ],
+      [
+        2,
+        1,
+        2
+      ],
+      [
+        2,
+        2,
+        1
+      ]
+    ]
+  ],
+  "source_sha256": {
+    "operator_a0.bf16": "bc1a495d6ba93a70c634ff8d5d624e9c2dbb2328ff4ac8030c6ef2a948c885dd",
+    "operator_a1.bf16": "df7a45858d703e0b25a762138585fea444c22e72936e2dd390089a5e37b49ce6",
+    "operator_a2.bf16": "eebb20524c319a3d67d57451781da407fce9eaa012694019fcab3aadd62ab966"
+  },
+  "full_corner_reconstruction_bitwise_mismatches": 0,
+  "artifact": "/home/ttuser/ttgmg/device_v1/corner_a_exact.bf16",
+  "artifact_bytes": 233570304,
+  "artifact_sha256": "034e4717863271d1c69df024cfff25e1c6fd740d090d82ca5a0a1c07257e9c2c",
+  "compressed_tiles_per_chip": 14256,
+  "original_corner_tiles_per_chip": 42768
+}

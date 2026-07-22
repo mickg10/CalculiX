@@ -1,0 +1,32 @@
+RUN start=2026-07-15T13:56:55+00:00
+ARTIFACT_PREFLIGHT pass=1 files=15 vector=random_seed351
+SAFETY portal_jobs={"jobs":[]}
+SAFETY global_portal_state={"controller_jobs_nonterminal":{},"controller_runs_nonterminal":{},"idle":true,"portal_submissions_nonterminal":{}}
+SAFETY fresh_boot_id=b9b8dca3-ec0a-49a8-9635-2789d6d17841
+SAFETY waiting_for_tt_fold_settle_seconds=558
+SAFETY tt_fold_active_age_seconds=600
+SAFETY pre_stop_dstate=none
+SAFETY pre_stop_global_portal_state={"controller_jobs_nonterminal":{},"controller_runs_nonterminal":{},"idle":true,"portal_submissions_nonterminal":{}}
+SAFETY pre_stop_systemd_jobs=0
+SAFETY pre_stop_interactive_users=0
+SERVICE after_stop=inactive
+SAFETY post_stop_global_portal_state={"controller_jobs_nonterminal":{},"controller_runs_nonterminal":{},"idle":true,"portal_submissions_nonterminal":{}}
+SAFETY device_holders=none
+SAFETY devices=/dev/tenstorrent/0 /dev/tenstorrent/1 /dev/tenstorrent/2 /dev/tenstorrent/3 /dev/tenstorrent/by-id
+SAFETY dstate=none
+SAFETY post_stop_settle_seconds=60
+SAFETY post_settle_device_holders=none
+SAFETY post_settle_dstate=none
+WORKLOAD begin=2026-07-15T14:07:33+00:00
+WORKLOAD timeout_seconds=300
+CANONICAL_PACKED_INPUT schema=tt_gmg_canonical_packed_layout_v1 vector=random_seed351 groups_per_chip=158 base_groups=133 fallback_groups_max=25 term_order=reverse products_base=864 products_fallback=1404
+UPLOAD canonical_packed_ms=547.659 bytes=943718400
+PROGRAM_BUILD host_ms=5.989 stages=1 base_cores=42 fallback_cores=14 base_max_groups_per_core=4 fallback_max_groups_per_core=2
+WARMUP correct=1 l2_rel=9.314343407e-07 max_rel=1.590476355e-06 max_abs=1.525878906e-04 nonfinite=0
+SAMPLE index=0 workload_ms=1.945499 correct=1 l2_rel=9.314343407e-07 max_rel=1.590476355e-06 max_abs=1.525878906e-04 nonfinite=0
+SAMPLE index=1 workload_ms=1.822259 correct=1 l2_rel=9.314343407e-07 max_rel=1.590476355e-06 max_abs=1.525878906e-04 nonfinite=0
+SAMPLE index=2 workload_ms=1.858679 correct=1 l2_rel=9.314343407e-07 max_rel=1.590476355e-06 max_abs=1.525878906e-04 nonfinite=0
+RESULT_JSON {"schema":"tt_gmg_canonical_packed_spmv_v1","vector":"random_seed351","samples_seconds":[0.001945499,0.001822259,0.001858679],"median_seconds":0.001858679,"all_correct":true,"l2_limit":2e-5,"max_relative_limit":5e-5,"g3_budget_seconds":0.003,"g3_pass":true}
+WORKLOAD exit=0 end=2026-07-15T14:07:37+00:00
+SERVICE restarting tt-fold
+SERVICE tt-fold=active api=ready online_workers=3 device_holders=3 jobs={"jobs":[]}
